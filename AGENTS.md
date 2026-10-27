@@ -52,7 +52,7 @@ main.go ──→ service ──→ engine ──→ omp / pi
 | 概念 | 唯一落点 | 不许 |
 |---|---|---|
 | 引擎进程 | `backend/engine` | 在 service 里 `exec.Command`（例外：跑引擎自己的 CLI 取插件列表，收口在 `service/proc.go`） |
-| 「这个引擎能干什么」 | `backend/engine/caps.go` | 在 service / 前端里 `if kind ==` |
+| 「这个引擎能干什么」 | `backend/engine/engine.go` 的 `Caps` | 在 service / 前端里 `if kind ==` |
 | 引擎探测（版本与种类） | `backend/engine/probe.go` | 在 service 里跑 `--version` |
 | 一个引擎的落盘布局 | `backend/env/layout.go` | 在别处拼 `~/.omp/...` 或 `~/.pi/...` |
 | 引擎配置文件格式 | `backend/env/ompcfg`（YAML）/ `picfg`（JSONC） | 在别处 `yaml.Unmarshal` / `json.Unmarshal` 那些文件 |
@@ -69,15 +69,7 @@ main.go ──→ service ──→ engine ──→ omp / pi
 
 - 所有对外错误用 `pkg.AppError`：`Code` + `Message`（给用户看）+ `Detail`（给日志看）
 - `Message` 必须能直接显示给用户，说人话，且给下一步
-- 错误码段位（全表见 `docs/ERROR-CODES.md`）：
-
-| 段 | 域 | 段 | 域 |
-|---|---|---|---|
-| 1xxx | 内部 | 5xxx | 技能 / 插件 / 能力不支持 |
-| 2xxx | 启动 | 6xxx | 会话 |
-| 3xxx | 引擎进程 / 协议 | 7xxx | 入参 / 鉴权 |
-| 4xxx | 模型 / 凭据 | 8xxx | 文件 / 路径 |
-
+- 错误码段位与前端处置表见 `docs/ERROR-CODES.md`（唯一落点）
 - 底层错误用 `pkg.Wrap(code, message, err)` 收口，不把 `err.Error()` 直接当 message
 - HTTP 恒回 200，错误在 body 的 `code` 里；前端拦截器统一抛 `ApiError`
 - **命令不存在时不发出去**，直接返回 `CodeEngineUnsupported`；前端本该已隐藏入口
@@ -133,3 +125,42 @@ main.go ──→ service ──→ engine ──→ omp / pi
 - 一次提交一件事；消息写清「为什么」，不写「改了哪些文件」
 - 提交前：`go build ./backend/...`、`go test ./backend/... -count=1`、`cd frontend && npm run build`
 - 不放宽门禁来让代码通过
+
+## 10. 文档
+
+文档是给人读的，讲**现状**。四条纪律：
+
+1. **只写现状，不写历史**。每句话描述「现在是什么 / 为什么这么设计 / 代价是什么」。
+   不写「这次新增了 X」「之前是 Y」「契约版本从 3 升到 4 的过程」。
+   契约版本只写当前值 + 变更规则。
+2. **不点外部参考项目**。只讲我们怎么设计、怎么实现。技术栈里用到的库名照写
+   （那是「用什么」），但不要写「借鉴了某某项目」或指向外部源码树的路径。
+3. **一个事实一个落点**。同一件事只在唯一一处写全，其余地方写「见 X」。
+   平行复述必然漂移，漂移了没人知道哪份是对的。
+4. **能自检**。改完文档跑一遍：
+
+   ```bash
+   grep -rn "D:\gitFiles\|packages/\|曾出现\|早期版本\|早先版本\|双引擎改造" docs/ README.md DESIGN.md AGENTS.md
+   ```
+
+   应当没有输出。
+
+注释的尺度：**字段有注释、方法有签名、每个文件有一句大概说明**就够了。
+不要把实现细节写进注释——那是文档的活。注释只讲「为什么」，不讲「是什么」。
+
+文档的归属：
+
+| 文档 | 讲什么 |
+|---|---|
+| `README.md` | 门面：是什么、能干什么、不干什么、技术栈、怎么跑起来、文档索引 |
+| `AGENTS.md` | 工程规范（唯一权威） |
+| `DESIGN.md` | 视觉与交互原则（为什么这样呈现） |
+| `docs/ARCHITECTURE.md` | 分层、关键决策、启动时序、一次对话的链路、优势与局限 |
+| `docs/ENGINE-MATRIX.md` | 引擎能力的唯一事实来源 + 已知边界 |
+| `docs/PROTOCOL.md` | 与引擎的 RPC 契约与帧处置 |
+| `docs/API-CONTRACT.md` | HTTP 与 SSE 契约 + 服务端实现要点 |
+| `docs/DATA-MODEL.md` | 数据归属与写边界 |
+| `docs/PAGE-STRUCTURE.md` | 前端页面的事实（有什么字段、什么操作） |
+| `docs/DEVELOPMENT.md` | 环境、命令、调试、常见问题 |
+| `docs/ERROR-CODES.md` | 错误码与前端处置表 |
+| `docs/modules/*.md` | 各模块的实现说明（定位 → 设计 → 契约 → 流程 → 不变量 → 取舍） |

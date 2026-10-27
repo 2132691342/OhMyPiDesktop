@@ -88,8 +88,8 @@ pi ：主动发一次 get_state（25s 上限）→ 有回包就证明读循环�
 | `login` | `providerId` | `provider` |
 | `get_subagent_messages` 的返回游标 | `nextByte` | `next` |
 
-改这些命令时，对照 `oh-my-pi/packages/coding-agent/src/modes/rpc/wire/commands.ts`
-（omp）与 `pi/packages/coding-agent/src/modes/rpc/rpc-types.ts`（pi）逐字核对。
+改这些命令时，以引擎自带的命令表定义为准逐字核对：参数名写错不会报错，
+引擎只会当成缺参，于是界面表现为「点了没反应」。
 
 **调用纪律**：发任何命令前先查 `Caps.Commands`。命令不存在时
 service 层返回 `ErrUnsupported`，界面据此隐藏控件——**不要发出去再处理报错**，

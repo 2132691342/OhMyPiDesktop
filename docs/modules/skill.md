@@ -1,4 +1,4 @@
-# SPEC-04 技能与插件（skill / plugin）
+# 技能与插件（skill / plugin）
 
 ## 定位
 

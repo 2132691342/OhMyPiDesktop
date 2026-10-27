@@ -13,6 +13,22 @@
 | `/usage` | 用量 | 花了多少 token，花在哪 | pi 只有会话内用量 |
 | `/settings` | 设置 | 外观、引擎路径、工作目录、关于 | 引擎路径按引擎分开 |
 
+## 状态归属
+
+| 状态 | 住哪 | 理由 |
+|---|---|---|
+| 当前轮（流式块） | `stores/chat.turn` | 高频变化，只在这一处 |
+| 历史轮 | `stores/chat.history` | 由后端投影，前端不再算 |
+| 引擎选择（omp/pi） | `stores/app.engineKind` + 后端设置 | 输入框与多个页面共用 |
+| 子代理 roster | `stores/agents.roster` | 仅 omp；随会话切换清空 |
+| 会话列表 | `stores/app.sessions` | 跨页共用 |
+| 设置 | `stores/app.settings` + 后端设置 | 主题切换要立刻生效 |
+| 引擎状态 | `stores/app.engines`（复数） | 页头连接灯与设置页共用 |
+| 提问卡片 | `stores/chat.asks` | 队列语义：一次只显示一张，答完弹下一张 |
+
+**为什么历史由后端投影**：块顺序、工具结果按 `toolCallId` 配对，这两条规则只该有一份实现。
+前端再写一遍必然漂移，而漂移的表现是「刷新之后消息顺序变了」。
+
 ## 应用骨架
 
 ```

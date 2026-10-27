@@ -32,6 +32,30 @@ go test  ./backend/... -count=1
 cd frontend && npm run build
 ```
 
+## 验证真实引擎
+
+改了协议翻译或会话投影后，必须真起一个引擎跑一轮——单元测试测不到
+「引擎真的这么吐帧」。`tools/smoke` 做这件事：
+
+```bash
+go run ./tools/smoke -engine omp -msg "Reply with exactly: OK"
+go run ./tools/smoke -engine pi  -msg "Reply with exactly: OK"
+```
+
+它打印事件计数、事件顺序、会话文件位置、用量与最后一轮的块。
+**要看的三处**：
+
+1. 事件顺序里 `chat:start → chat:turn → … → chat:turn_end → chat:settled → chat:done`
+   齐全且顺序正确——这是「一轮怎么算完」的直接体现。
+2. 最后一轮的块与引擎实际说的一致（正文、思考、工具卡都在）。
+3. 用量与上下文水位非零。
+
+`tools/smoke` 也可以指定工作目录与引擎路径：
+
+```bash
+go run ./tools/smoke -engine pi -dir D:\gitFiles\pi -msg "hi"
+```
+
 ## 调试真实引擎
 
 界面里发生的每一件事，都能在终端里复现。这是排障最快的路。

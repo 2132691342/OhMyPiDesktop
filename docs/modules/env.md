@@ -1,4 +1,4 @@
-# SPEC-02 环境（env）
+# 环境（env）
 
 ## 定位
 
@@ -22,7 +22,7 @@ backend/env/
 
 ```
 对每个 kind：候选 = [设置里的 engine.path.<kind>] + [自管目录] + [PATH]
-对每个候选跑 engine.Detect → Identity（三步判据见 SPEC-01）
+对每个候选跑 engine.Detect → Identity（判据见 [ENGINE-MATRIX.md](../ENGINE-MATRIX.md)）
 ```
 
 三种结果，界面各有各的样子：
@@ -71,8 +71,8 @@ type Layout struct {
 | 技能 | `agent/skills` + `agent/managed-skills` | `agent/skills` |
 | 插件 | `~/.omp/plugins` | `agent/npm` |
 
-**两个引擎的环境变量名不同**（`OMP_CONFIG_DIR` vs `PI_CODING_AGENT_DIR`）。
-早先版本把 `PI_CONFIG_DIR` 当 omp 的根覆盖，那是错的——`PI_*` 前缀属于 pi。
+**两个引擎的环境变量名不同**：`OMP_CONFIG_DIR` 属 omp，`PI_CODING_AGENT_DIR` 属 pi。
+前缀按引擎归属，不可混用。
 
 `ResolveLayout` 按 kind 分叉，上层只拿这个结构、不再拼路径。
 **这是「路径形状」的唯一落点。**

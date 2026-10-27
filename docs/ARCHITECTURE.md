@@ -88,7 +88,7 @@ omp 是 pi 的 fork，两者协议家族相同（同一套 JSONL 信封、同一
 
 ```
 wails.Run
-  └─ OnStartup        → 读数据目录 / 打开 SQLite / 装 hub / 建 service / 建 server
+  └─ OnStartup        → 读数据目录 / 打开设置 / 装 hub / 建 service / 建 server
      （失败写 startErr，但一定关闭 startDone，让后面有确定的等待点）
      **不探测引擎**：探测要起子进程（pi 要起 Node），装配阶段不该等它
   └─ OnDomReady       → 等 startDone（上限 30s）→ server.Start()（回环随机端口）
@@ -213,21 +213,48 @@ Supervisor                      // 按 (Kind, WorkDir) 管理 Engine
 | 杀进程走 `taskkill /T` | 引擎会拉起子代理与 bash 工具进程，只杀父进程会留孤儿 |
 | 投影只在一个协程里写 | 翻译器跨协程共享必须加锁，否则块下标会错位 |
 
+## 引擎层的错误契约
+
+| 情况 | 返回 |
+|---|---|
+| 引擎没装（`Exe == ""`） | `CodeEngineUnsupported`，**不拉起进程** |
+| 等握手超时 | `CodeEngineTimeout` |
+| 进程启动即退出 | `CodeEngineDown`，`detail` 带退出原因 |
+| 单条命令超时 | `CodeEngineTimeout`，`message` 带命令名 |
+| 引擎回 `success:false` | `*CallError{Command, Message, Code}`（pi 的 `code` 为空） |
+| 帧解析失败 | 记日志 + 丢弃该帧；**不返回错误** |
+
+**帧解析失败不返回错误**是刻意的：引擎可能发我们还不认识的新帧，
+让它触发一次错误只会让整个会话失败，忽略未知帧才是向前兼容的做法。
+
 ## 前端状态归属
 
-| 状态 | 住哪 | 理由 |
-|---|---|---|
-| 当前轮（流式块） | `stores/chat.turn` | 高频变化，只在这一处 |
-| 历史轮 | `stores/chat.history` | 由后端投影，前端不再算 |
-| 引擎选择（omp/pi） | `stores/app.engineKind` + 后端设置 | 输入框与多个页面共用 |
-| 子代理 roster | `stores/agents.roster` | 仅 omp；随会话切换清空 |
-| 会话列表 | `stores/app.sessions` | 跨页共用 |
-| 设置 | `stores/app.settings` + 后端 KV | 主题切换要立刻生效 |
-| 引擎状态 | `stores/app.engines`（复数） | 页头连接灯与设置页共用 |
-| 提问卡片 | `stores/chat.asks` | 队列语义：一次只显示一张，答完弹下一张 |
+见 [PAGE-STRUCTURE.md](PAGE-STRUCTURE.md) 的「状态归属」一节。
 
-**为什么历史由后端投影**：块顺序、工具结果按 `toolCallId` 配对，这两条规则只该有一份实现。
-前端再写一遍必然漂移，而漂移的表现是「刷新之后消息顺序变了」。
+## 优势与局限
+
+### 优势
+
+| 优势 | 来源 |
+|---|---|
+| 引擎能力自动跟随 | 界面按 `Caps` 渲染，引擎新增能力只要补一条能力表，不用改界面逻辑 |
+| 终端与界面看到的是同一份东西 | 会话、模型、技能、插件都读写引擎自己的落盘位置，不存第二份 |
+| 强引擎的能力不被砍掉 | 双引擎分别实现 `Dialect`，共同部分复用，分叉部分显式 |
+| 长会话不卡 | 增量渲染 + 块级 markdown 缓存 + O(1) 事件投递，三处都不随字数平方增长 |
+| 前端很薄 | 历史轮由后端投影，块顺序与工具配对只有一份实现 |
+| 改起来不慌 | 协议翻译、会话投影、配置读写各有唯一落点，改一处不会牵出别处 |
+| 断线能自愈 | 事件带序号，环形窗口内可补发，超窗则明确要求前端拉快照对账 |
+
+### 局限
+
+| 局限 | 原因 |
+|---|---|
+| 跨目录会话不能同时跑 | 一个目录一个进程，`cwd` 是进程级属性 |
+| pi 的部分能力弱于 omp | 引擎侧限制，见 [ENGINE-MATRIX.md](ENGINE-MATRIX.md) 的「已知边界」 |
+| 只支持 Windows | 进程管理依赖 `taskkill /T` 与 `CREATE_NO_WINDOW` |
+| 换 omp profile 要重启进程 | profile 隔离了设置、凭据、会话、缓存 |
+| 引擎升级可能带来意外 | 协议是引擎的私有契约，引擎改了帧名我们要跟着改（靠「未知帧忽略」兜底） |
+| 不能编排子代理团队 | omp 没有 spawn RPC，pi 连子代理都没有 |
 
 ## 关键取舍
 

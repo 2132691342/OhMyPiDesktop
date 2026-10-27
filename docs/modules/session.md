@@ -1,4 +1,4 @@
-# SPEC-03 会话（session）
+# 会话（session）
 
 ## 定位
 

@@ -10,6 +10,17 @@
 - HTTP 状态码恒为 200（除 SSE 与鉴权失败）；前端按 `code` 分流
 - 契约里的切片字段永远不是 `null`（构造处一律初始化）
 
+## 中间件顺序（是硬要求）
+
+```
+r.Use(s.cors())    // 处理 OPTIONS 预检并结束
+r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
+```
+
+浏览器的自定义头请求（`X-Desktop-Token`）会先发 `OPTIONS` 预检。
+`guard` 只放行 GET/POST，**顺序反了，每个带令牌的请求都会先失败在预检上**，
+前端看到的是 `Network Error` 而不是 403——很难联想到是预检的问题。
+
 ## 路径约定
 
 `/api/v1/{resource}/{action}`：动作段在最后。只允许 **GET 与 POST**。
@@ -184,6 +195,47 @@ data: {"seq":42,"event":"chat:patch","data":{…},"sent_at":1793000000000}
 - 开场帧 `stream:open` 带当前 `seq`。
 - **投递必须 O(1)**：慢消费者丢最旧的帧并发 `chat:gap`，绝不阻塞广播。
 
+### 服务端实现要点
+
+事件总线（`backend/hub`）是唯一出口，对外只有三个动作：
+
+```go
+func (h *Hub) Emit(sessionID, name string, data any)
+func (h *Hub) Subscribe(buf int) (*Sub, uint64)   // 返回开场 seq
+func (h *Hub) Sub.Close()
+```
+
+`Sub` 持一个有界 channel；满了就丢最旧的帧并发 `chat:gap`。
+帧只序列化一次，多个订阅者共享同一份 `[]byte`——大帧广播不能变成
+O(订阅者数 × 帧大小)。
+
+**关闭订阅的规则**（唯一的 panic 面）：
+
+1. 订阅者的 channel 永远不由订阅端 `close`；
+2. `Sub.Close()` 只置 `dead` 标志并从集合摘除（持写锁）；
+3. `Emit` 持**读锁**遍历——摘除需要写锁，因此「遍历中摘除」不会发生；
+4. channel 交给 GC。
+
+一句话：**永不 close 一个可能还有人写的 channel**。
+
+### 断线重连与前端对账
+
+```
+GET /events?since=41
+  ├─ since 在环形窗口内 → 先补发 42..last
+  └─ since 太旧（窗口外）→ 直接发 stream:open{seq}，让前端自己拉快照
+```
+
+前端维护 `lastSeq`：
+
+| 收到的 seq | 动作 |
+|---|---|
+| `seq == lastSeq+1` | 接受，`lastSeq = seq` |
+| `seq > lastSeq+1` | 跳号：接受该帧，并触发一次全量对账（拉 `chat/state`） |
+| `seq <= lastSeq` | 丢弃（重连重复） |
+
+**为什么不补齐一切**：假装补全会让界面带着半截状态继续跑，比明确对账更危险。
+
 ### 事件表
 
 | 事件 | 载荷要点 |
@@ -229,5 +281,5 @@ data: {"seq":42,"event":"chat:patch","data":{…},"sent_at":1793000000000}
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`4`（双引擎改造：`Bootstrap.engine` 单值 → `engines[] + caps + layouts`，
-`ChatState` 增加 `kind` / `caps`，模型条目字段改为 `context_window` / `max_tokens`）。
+当前：`4`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+只增可选字段不需要。

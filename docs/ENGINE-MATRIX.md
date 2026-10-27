@@ -3,9 +3,11 @@
 本文件是**唯一的引擎能力事实来源**。所有「该能力能不能做」的判断以这里为准；
 未在此列出的能力，一律视为「两引擎都没有」。
 
-- `omp` = OhMyPi，bin `omp`，包 `@oh-my-pi/pi-coding-agent`（pi 的 fork）
-- `pi` = Pi，bin `pi`，包 `@earendil-works/pi-coding-agent`
-- 引用 `OMP/...` 指 `D:\gitFiles\oh-my-pi`，`PI/...` 指 `D:\gitFiles\pi`
+- `omp` = OhMyPi，可执行文件 `omp`
+- `pi` = Pi，可执行文件 `pi`
+
+两者协议家族相同（同一套 JSONL 信封、同源会话文件），能力差得很远。
+本文件只陈述**引擎侧的事实**；我们如何处置这些差异，见 [PROTOCOL.md](PROTOCOL.md)。
 
 > 本应用**不安装**任何引擎。引擎必须由用户自己装好并在 `PATH`（或被显式指定路径）上。
 > 缺少引擎时我们只做两件事：**说明缺什么**、**给出安装命令原文**。
@@ -14,13 +16,13 @@
 
 | 维度 | omp | pi |
 |---|---|---|
-| 版本串 | `omp/18.13.1`（`OMP packages/utils/src/cli.ts:460`） | `1.4.0` 裸版本号（`PI .../src/main.ts:635`） |
+| 版本串 | `omp/18.13.1`（`${bin}/${version}`） | `1.4.0` 裸版本号 |
 | `--help` 首行 | `${bin} v${version}` + `USAGE` | `${APP_NAME} - AI coding assistant …` + `Usage:` |
 | `--mode` 取值 | `text｜json｜rpc｜acp｜rpc-ui` | `text｜json｜rpc` |
 | 启动参数 `--cwd` | **接受**，与进程 cwd 二者皆可 | **不接受**（`Unknown option: --cwd`），只用进程 cwd |
 | 首帧 `ready` | 有（含 `protocolVersion` / `maxFrameBytes`） | **无**（直接进读循环） |
 | 协议 v2 + 分片 | 有 `negotiate_protocol` + `rpc_chunk` | **无** |
-| 命令数 | 约 50 | 34（`PI .../rpc-types.ts:24-70`） |
+| 命令数 | 约 50 | 34 |
 | 子代理 | **有**（`task` 工具 + 5 个 RPC + 3 个帧） | **无** |
 | 上下文用量 | `get_state.contextUsage` | `get_session_stats.contextUsage`（`get_state` 里没有） |
 | 配置文件 | `~/.omp/agent/{config.yml,models.yml,mcp.json}` + `~/.omp/plugins/` | `~/.pi/agent/{settings.json,models.json,auth.json,mcp.json}` + `npm/` |
@@ -137,7 +139,7 @@ Node（约 3.5 秒）。所以探测结果缓存一分钟，两个引擎并发�
 | 权威名单 | `get_subagents` → `RpcSubagentSnapshot[]`：`id/index/agent/agentSource/description/status/task/assignment/sessionFile/lastUpdate/progress/parentToolCallId` |
 | 进度 | `subagent_progress.progress`：`completionPercent/stage/currentTool/cost/tokens/contextTokens/contextWindow/durationMs` |
 | 子代理对话 | `get_subagent_messages{subagentId,fromByte}` → 字节游标增量 |
-| 干预 | `steer_subagent{id,message}` / `cancel_subagent{id}`（`false` 是幂等答案） |
+| 干预 | `steer_subagent{subagentId,message}` / `cancel_subagent{subagentId}`（`false` 是幂等答案） |
 
 必须处理的三处坑：
 
@@ -148,7 +150,20 @@ Node（约 3.5 秒）。所以探测结果缓存一分钟，两个引擎并发�
 3. **帧不是可靠流**。终态 `subagent_lifecycle` 到达时该 id 同时被移出 roster，
    所以「终态帧」可能是我们最后一次见到它。开局与每次 `prompt` 之后都要对账一次。
 
-## 8. 不做的三件事（明确写死）
+## 8. 已知边界
+
+这些是**引擎侧的限制**，不是本应用的取舍。界面遇到时只能如实呈现，
+不能自己发明绕过的办法。
+
+| 项 | 现状 | 为什么 |
+|---|---|---|
+| pi 的技能无法彻底禁用 | 只能摘出系统提示（`disable-model-invocation`），仍可 `/skill:name` 显式调用 | 引擎没有「禁用某条技能」的开关 |
+| pi 的排队条目只能整批清空 | 只能 `clear_queue`，不能移除单条 | omp 反过来：只有 `remove_queued_message`，没有 `clear_queue` |
+| pi 的命令清单只能拉取 | 引擎不推送更新 | omp 推 `available_commands_update` |
+| omp 的 profile 切换要重启进程 | 设置里可填 profile，但换 profile 要重开进程 | profile 隔离了设置、凭据、会话、缓存 |
+| 会话导出 HTML | 引擎支持，界面未接入 | 使用频率低 |
+
+## 9. 不做的三件事（明确写死）
 
 | 不做 | 原因 |
 |---|---|
