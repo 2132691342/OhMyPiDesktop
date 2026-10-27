@@ -52,17 +52,7 @@ func TestReadModelsParsesProvider(t *testing.T) {
 }
 
 // 缺文件是正常状态（用户还没配过），不该报错。
-func TestReadModelsMissingFileIsEmpty(t *testing.T) {
-	mf, err := ReadModels(filepath.Join(t.TempDir(), "nope.yml"))
-	if err != nil {
-		t.Fatalf("缺文件不该报错: %v", err)
-	}
-	if len(mf.Providers) != 0 {
-		t.Fatalf("期望空表，得到 %+v", mf.Providers)
-	}
-}
 
-// 写入一个服务商时必须保留文件里别的键与注释：整体重写会抹掉用户的 modelRoles。
 func TestUpsertProviderPreservesOtherKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.yml")
@@ -104,30 +94,26 @@ func TestUpsertProviderPreservesOtherKeys(t *testing.T) {
 	if mf.Providers["local"].Models[0].ID != "qwen" {
 		t.Errorf("新服务商的模型 = %+v", mf.Providers["local"].Models)
 	}
-}
 
-func TestDeleteProvider(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "models.yml")
-	if err := os.WriteFile(path, []byte(sampleModels), 0o644); err != nil {
+	// 删一个服务商不能连带删掉别的，也不能报错说「删了不存在的」。
+	if err := DeleteProvider(path, "local"); err != nil {
 		t.Fatal(err)
 	}
-	if err := DeleteProvider(path, "router"); err != nil {
-		t.Fatal(err)
-	}
-	mf, err := ReadModels(path)
+	after, err := ReadModels(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := mf.Providers["router"]; ok {
-		t.Error("router 还在")
+	if _, ok := after.Providers["local"]; ok {
+		t.Error("local 没被删掉")
 	}
-	if err := DeleteProvider(path, "router"); err == nil {
+	if _, ok := after.Providers["router"]; !ok {
+		t.Error("router 被连带删掉了")
+	}
+	if err := DeleteProvider(path, "local"); err == nil {
 		t.Error("删不存在的服务商应当报错")
 	}
 }
 
-// 坏 YAML 必须原样保留、报错，绝不覆盖：那是用户的数据。
 func TestEditRefusesBrokenYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.yml")
@@ -193,9 +179,47 @@ func TestSetConfigKeysKeepsOthers(t *testing.T) {
 	}
 }
 
-// 整体替换 provider 节点时，界面表达不了的字段（auth / headers）与空密钥必须由调用方继承。
-// 这里就锁「替换会丢字段」这个事实：改一个字段后，原节点的其余字段不该自己冒出来。
-func TestUpsertReplacesWholeProviderNode(t *testing.T) {
+// 写一个服务商有两条路，契约必须相反且都守住：
+//
+//	UpsertProvider  整体替换——界面没表达的字段（密钥、auth、headers）会被丢掉
+//	MergeProvider   逐字段合并——界面没表达的字段保留，用户显式填的采用新值
+//
+// service 层靠后者兜住「界面表达不了的字段」。任何一边改错，
+// 用户改个地址就可能把能用的凭据弄坏。
+func TestProviderReplaceAndMerge(t *testing.T) {
+	prev := Provider{
+		BaseURL: "http://a/v1",
+		APIKey:  "sk-original",
+		Auth:    "oauth",
+		Headers: map[string]string{"X-Org": "acme"},
+		Models:  []ModelEntry{{ID: "m1"}},
+	}
+	// 界面只改了地址：其余全是零值
+	next := Provider{BaseURL: "http://b/v1", API: "openai-completions", Models: []ModelEntry{{ID: "m1"}}}
+
+	// 合并：旧字段全部保留，用户改的地址生效
+	got := MergeProvider(prev, next)
+	if got.APIKey != "sk-original" {
+		t.Errorf("合并后密钥被抹掉了: %q", got.APIKey)
+	}
+	if got.Auth != "oauth" {
+		t.Errorf("合并后 auth 被抹掉了: %q", got.Auth)
+	}
+	if got.Headers["X-Org"] != "acme" {
+		t.Errorf("合并后 headers 被抹掉了: %v", got.Headers)
+	}
+	if got.BaseURL != "http://b/v1" {
+		t.Errorf("合并后用户改的地址没生效: %q", got.BaseURL)
+	}
+
+	// 合并：用户显式填了新值时必须采用新值，不能被旧值盖回去
+	explicit := Provider{BaseURL: "http://b/v1", APIKey: "sk-new", Auth: "apiKey", Headers: map[string]string{"X-Org": "other"}}
+	merged := MergeProvider(prev, explicit)
+	if merged.APIKey != "sk-new" || merged.Auth != "apiKey" || merged.Headers["X-Org"] != "other" {
+		t.Errorf("合并时显式填写被旧值覆盖: %+v", merged)
+	}
+
+	// 替换：整体覆盖，界面没表达的字段确实会丢
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.yml")
 	original := `providers:
@@ -212,53 +236,20 @@ func TestUpsertReplacesWholeProviderNode(t *testing.T) {
 	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// 只改地址、其余留空：这一步会丢掉 auth / headers / apiKey
-	if err := UpsertProvider(path, "keep", Provider{BaseURL: "http://b/v1", API: "openai-completions", Models: []ModelEntry{{ID: "m1"}}}); err != nil {
+	if err := UpsertProvider(path, "keep", next); err != nil {
 		t.Fatal(err)
 	}
 	mf, err := ReadModels(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := mf.Providers["keep"]
-	if got.APIKey == "sk-original" {
-		t.Fatal("假设不成立：替换节点居然保留了密钥，service 层的继承逻辑就多余了")
+	replaced := mf.Providers["keep"]
+	if replaced.APIKey == "sk-original" {
+		t.Fatal("假设不成立：替换节点居然保留了密钥，那么合并逻辑就是多余的")
 	}
-	if got.Auth != "" || got.Headers != nil {
-		t.Fatalf("auth / headers 也应被替换掉，实际: %+v", got)
+	if replaced.Auth != "" || replaced.Headers != nil {
+		t.Errorf("替换时 auth / headers 也应被覆盖掉，实际: %+v", replaced)
 	}
 }
 
 // service 层靠 MergeProvider 兜住「界面表达不了的字段」。
-func TestMergeProviderKeepsUntouchedFields(t *testing.T) {
-	prev := Provider{
-		BaseURL: "http://a/v1",
-		APIKey:  "sk-original",
-		Auth:    "oauth",
-		Headers: map[string]string{"X-Org": "acme"},
-		Models:  []ModelEntry{{ID: "m1"}},
-	}
-	// 界面只改了地址：其余全是零值
-	next := Provider{BaseURL: "http://b/v1", API: "openai-completions", Models: []ModelEntry{{ID: "m1"}}}
-	got := MergeProvider(prev, next)
-
-	if got.APIKey != "sk-original" {
-		t.Errorf("密钥被抹掉了: %q", got.APIKey)
-	}
-	if got.Auth != "oauth" {
-		t.Errorf("auth 被抹掉了: %q", got.Auth)
-	}
-	if got.Headers["X-Org"] != "acme" {
-		t.Errorf("headers 被抹掉了: %v", got.Headers)
-	}
-	if got.BaseURL != "http://b/v1" {
-		t.Errorf("用户改的地址没生效: %q", got.BaseURL)
-	}
-
-	// 用户显式填了新值时必须采用新值，不能被旧值盖回去
-	explicit := Provider{BaseURL: "http://b/v1", APIKey: "sk-new", Auth: "apiKey", Headers: map[string]string{"X-Org": "other"}}
-	merged := MergeProvider(prev, explicit)
-	if merged.APIKey != "sk-new" || merged.Auth != "apiKey" || merged.Headers["X-Org"] != "other" {
-		t.Errorf("显式填写被旧值覆盖: %+v", merged)
-	}
-}

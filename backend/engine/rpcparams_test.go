@@ -3,11 +3,9 @@ package engine
 import "testing"
 
 // 参数名写错是**静默失败**：引擎把它当成缺参，回 success:false 或者干脆不动，
-// 界面上就是「点了没反应」。这类错已经踩过两次，所以对着真实命令表钉住。
+// 界面上就是「点了没反应」。所以对着引擎的命令表钉死。
 //
-// 期望值来自引擎源码里逐字抄来的 params 声明：
-//   omp  oh-my-pi/packages/coding-agent/src/modes/rpc/wire/commands.ts
-//   pi   pi/packages/coding-agent/src/modes/rpc/rpc-types.ts
+// 期望值是引擎命令表里逐字抄来的 params 声明。
 func TestRPCParamNames(t *testing.T) {
 	cases := []struct {
 		cmd    string

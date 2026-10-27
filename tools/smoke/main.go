@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -26,30 +27,32 @@ import (
 )
 
 func main() {
-	engineName := flagOr("-engine", "omp")
-	dir := flagOr("-dir", os.TempDir())
-	msg := flagOr("-msg", "Reply with exactly: OK")
-	exe := flagOr("-exe", "")
+	engineName := flag.String("engine", "omp", "引擎种类：omp / pi")
+	dir := flag.String("dir", os.TempDir(), "工作目录")
+	msg := flag.String("msg", "Reply with exactly: OK", "发出去的那句话")
+	exe := flag.String("exe", "", "引擎可执行文件路径（默认从 PATH 探测）")
+	flag.Parse()
 
-	kind := engine.Kind(engineName)
+	kind := engine.Kind(*engineName)
 	if !kind.Valid() {
-		fmt.Println("未知引擎:", engineName)
+		fmt.Println("未知引擎:", *engineName)
 		os.Exit(2)
 	}
+	dirPath, msgText, exePath := *dir, *msg, *exe
 
-	dbPath := dir + string(os.PathSeparator) + "smoke-" + engineName + ".db"
+	dbPath := dirPath + string(os.PathSeparator) + "smoke-" + string(kind) + ".json"
 	_ = os.Remove(dbPath)
 	store, err := repo.Open(dbPath)
 	must(err)
 	defer store.Close()
 	h := hub.New(512)
-	svc, err := service.New(service.Options{Store: store, Hub: h, DataDir: dir, Version: "smoke"})
+	svc, err := service.New(service.Options{Store: store, Hub: h, DataDir: dirPath, Version: "smoke"})
 	must(err)
 
-	if exe != "" {
-		must(store.Set(domain.KeyEngineExePrefix+engineName, exe))
+	if exePath != "" {
+		must(store.Set(domain.KeyEngineExePrefix+string(kind), exePath))
 	}
-	must(svc.SetWorkspace(dir))
+	must(svc.SetWorkspace(dirPath))
 	must(svc.SetActive(kind))
 
 	events := map[string]int{}
@@ -84,7 +87,7 @@ func main() {
 		}
 	}()
 
-	runID, err := svc.Send(ctx, kind, "", msg)
+	runID, err := svc.Send(ctx, kind, "", msgText)
 	fmt.Println("send ->", runID, "err:", errText(err))
 	if err != nil {
 		os.Exit(1)
@@ -148,15 +151,6 @@ func dedupe(in []string) []string {
 		}
 	}
 	return out
-}
-
-func flagOr(name, def string) string {
-	for i, a := range os.Args {
-		if a == name && i+1 < len(os.Args) {
-			return os.Args[i+1]
-		}
-	}
-	return def
 }
 
 func must(err error) {

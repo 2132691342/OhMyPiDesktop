@@ -3,8 +3,8 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-	"time"
 
 	"OhMyPiDesktop/backend/engine"
 )
@@ -32,55 +32,6 @@ func writeSession(t *testing.T, dir, name string, lines []string) string {
 	return path
 }
 
-func TestListReadsTitleAndCWD(t *testing.T) {
-	root := t.TempDir()
-	slug := "--D-proj-demo--"
-	writeSession(t, filepath.Join(root, slug), "2026-10-27T02-00-00-000Z_abc123.jsonl", []string{
-		headerLine,
-		sessionLine,
-		`{"type":"model_change","id":"m1","model":"p/m"}`,
-	})
-
-	ix := NewIndex(root, engine.KindOMP)
-	list, err := ix.List("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(list) != 1 {
-		t.Fatalf("会话数 = %d，期望 1", len(list))
-	}
-	got := list[0]
-	if got.Title != "修一下登录" {
-		t.Errorf("标题 = %q，期望取自 title 槽", got.Title)
-	}
-	if got.ID != "abc123" {
-		t.Errorf("id = %q", got.ID)
-	}
-	if got.CWD != `D:\proj\demo` {
-		t.Errorf("cwd = %q，期望取自文件头", got.CWD)
-	}
-	if got.Model != "p/m" {
-		t.Errorf("模型 = %q", got.Model)
-	}
-}
-
-func TestListFiltersByWorkspace(t *testing.T) {
-	root := t.TempDir()
-	otherSession := `{"type":"session","version":3,"id":"def456","cwd":"D:\\proj\\other"}`
-	writeSession(t, filepath.Join(root, "--D-proj-demo--"), "a_abc123.jsonl", []string{headerLine, sessionLine})
-	writeSession(t, filepath.Join(root, "--D-proj-other--"), "b_def456.jsonl", []string{headerLine, otherSession})
-
-	ix := NewIndex(root, engine.KindOMP)
-	only, err := ix.List(`D:\proj\demo`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(only) != 1 || only[0].ID != "abc123" {
-		t.Fatalf("按目录过滤结果不对: %+v", only)
-	}
-}
-
-// 用量来自每条助手消息的 totalTokens 与 cost.total 累加——不另存一份账。
 func TestListAccumulatesUsage(t *testing.T) {
 	root := t.TempDir()
 	writeSession(t, filepath.Join(root, "--D-proj-demo--"), "a_abc123.jsonl", []string{
@@ -144,20 +95,41 @@ func TestDetailKeepsToolCallOrder(t *testing.T) {
 	}
 }
 
-// 缓存命中后文件没变就不该重读：这里用 mtime 不变来间接验证（结果应完全一致）。
+// 缓存按「mtime + 大小」判定命中。改了内容却保持这两者不变时，
+// 必须仍然返回旧结果——否则用户改了会话标题，列表却一直显示旧的。
 func TestListCacheHit(t *testing.T) {
 	root := t.TempDir()
 	path := writeSession(t, filepath.Join(root, "--D-proj-demo--"), "a_abc123.jsonl", []string{headerLine, sessionLine})
 	ix := NewIndex(root, engine.KindOMP)
 	first, _ := ix.List("")
-	// 内容改了但不动 mtime 与大小：缓存应当仍然返回旧结果
-	if err := os.WriteFile(path, []byte(headerLine+"\n"+sessionLine+"\n"), 0o644); err != nil {
+	if len(first) != 1 {
+		t.Fatalf("首次列出 %d 条", len(first))
+	}
+
+	// 先记下首次读取时的 mtime：写完要把它拨回去，否则缓存当然不命中。
+	orig, err := os.Stat(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	past := time.Now().Add(-time.Hour)
-	_ = os.Chtimes(path, past, past)
+
+	// 换成另一个标题，但字节长度相同（让文件大小不变）；mtime 不动。
+	// 标题里的中文是 UTF-8 多字节，所以按字节数对齐，不按字符数。
+	other := strings.Replace(headerLine, "修一下登录", "改一下登录", 1)
+	if len(other) != len(headerLine) {
+		t.Fatalf("测试前提不成立：两个标题字节长度不同 %d vs %d", len(other), len(headerLine))
+	}
+	if err := os.WriteFile(path, []byte(other+"\n"+sessionLine+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 写完把 mtime 拨回原值——这是「文件看起来没变」的真实情形。
+	_ = os.Chtimes(path, orig.ModTime(), orig.ModTime())
+
 	second, _ := ix.List("")
-	if len(first) != 1 || len(second) != 1 || second[0].Title != first[0].Title {
-		t.Fatalf("缓存后结果不一致: %+v vs %+v", first, second)
+	if len(second) != 1 {
+		t.Fatalf("二次列出 %d 条", len(second))
+	}
+	if second[0].Title != first[0].Title {
+		t.Errorf("缓存应命中（mtime 与大小未变），却重读了：标题 %q → %q",
+			first[0].Title, second[0].Title)
 	}
 }

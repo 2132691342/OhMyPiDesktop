@@ -116,6 +116,34 @@ func TestTranslateResetClearsTurn(t *testing.T) {
 	}
 }
 
+// 增量与全量必须等价：同一条消息，引擎可能先发全量快照再发增量，
+// 也可能只发增量。两种路径累加出来的块必须一模一样。
+//
+// 这条错了不会报错，只会让界面在某些模型上把正文显示两遍或显示一半。
+func TestTranslateDeltaEqualsFullSnapshot(t *testing.T) {
+	// 路径一：逐段增量
+	inc := NewTranslator()
+	inc.BeginTurn("run-1", "hi", "")
+	inc.Apply("message_update", json.RawMessage(`{"assistantMessageEvent":{"type":"text_start","contentIndex":0}}`))
+	inc.Apply("message_update", json.RawMessage(`{"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"你好"}}`))
+	inc.Apply("message_update", json.RawMessage(`{"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"，世界"}}`))
+
+	// 路径二：直接给全量（text_end 带完整 content）
+	full := NewTranslator()
+	full.BeginTurn("run-1", "hi", "")
+	full.Apply("message_update", json.RawMessage(`{"assistantMessageEvent":{"type":"text_start","contentIndex":0}}`))
+	full.Apply("message_update", json.RawMessage(`{"assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"你好，世界"}}`))
+
+	gotInc := inc.Current()
+	gotFull := full.Current()
+	if len(gotInc.Blocks) != len(gotFull.Blocks) {
+		t.Fatalf("块数不同：增量 %d，全量 %d", len(gotInc.Blocks), len(gotFull.Blocks))
+	}
+	if gotInc.Blocks[0].Text != gotFull.Blocks[0].Text {
+		t.Errorf("正文不同：增量 %q，全量 %q", gotInc.Blocks[0].Text, gotFull.Blocks[0].Text)
+	}
+}
+
 // 一条新的助手消息要重置 contentIndex 映射：新消息的 index 从 0 重新开始，
 // 不重置就会把新消息的第一段正文追加到上一段的块里。
 func TestTranslateNewAssistantMessageResetsIndices(t *testing.T) {

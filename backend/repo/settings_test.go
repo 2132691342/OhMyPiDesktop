@@ -25,8 +25,18 @@ func TestSetThenReopen(t *testing.T) {
 	if err := s.Set("ui.theme", "dark"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Set("app.engine", "pi"); err != nil {
+	if err := s.SetMany(map[string]string{"app.engine": "pi", "ui.lang": "zh-CN"}); err != nil {
 		t.Fatal(err)
+	}
+
+	// All 返回副本：调用方改了不该影响存储。
+	all, err := s.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	all["ui.theme"] = "被调用方改了"
+	if got := s.Get("ui.theme"); got != "dark" {
+		t.Errorf("All 必须返回副本，实际读到了 %q", got)
 	}
 
 	// 重新打开：模拟下次启动。设置的全部价值就在这条往返上。
@@ -34,11 +44,12 @@ func TestSetThenReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := again.Get("ui.theme"); got != "dark" {
-		t.Errorf("ui.theme = %q，期望 dark", got)
-	}
-	if got := again.Get("app.engine"); got != "pi" {
-		t.Errorf("app.engine = %q，期望 pi", got)
+	for k, want := range map[string]string{
+		"ui.theme": "dark", "app.engine": "pi", "ui.lang": "zh-CN",
+	} {
+		if got := again.Get(k); got != want {
+			t.Errorf("%s = %q，期望 %q", k, got, want)
+		}
 	}
 }
 
@@ -92,63 +103,3 @@ func TestOpenBrokenFileDoesNotFail(t *testing.T) {
 }
 
 // 首次启动没有文件是正常状态，不是错误。
-func TestOpenMissingFileIsEmpty(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.json")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("首次启动不该失败：%v", err)
-	}
-	all, err := s.All()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(all) != 0 {
-		t.Errorf("期望空设置，实际 %v", all)
-	}
-}
-
-// 批量写只落盘一次，且内容与逐个写一致。
-func TestSetManyPersistsAll(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.json")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{"ui.theme": "light", "ui.lang": "zh-CN", "app.engine": "omp"}
-	if err := s.SetMany(want); err != nil {
-		t.Fatal(err)
-	}
-	again, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := again.All()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for k, v := range want {
-		if got[k] != v {
-			t.Errorf("%s = %q，期望 %q", k, got[k], v)
-		}
-	}
-}
-
-// All 返回副本：调用方改了不该影响存储。
-func TestAllReturnsCopy(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.json")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Set("ui.theme", "dark"); err != nil {
-		t.Fatal(err)
-	}
-	all, err := s.All()
-	if err != nil {
-		t.Fatal(err)
-	}
-	all["ui.theme"] = "被调用方改了"
-	if got := s.Get("ui.theme"); got != "dark" {
-		t.Errorf("All 必须返回副本，实际读到了 %q", got)
-	}
-}

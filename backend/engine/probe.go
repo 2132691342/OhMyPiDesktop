@@ -123,6 +123,19 @@ func probeVersion(ctx context.Context, exe string) (string, bool) {
 
 // matchKind 确认这个 exe 真的是我们要的那个引擎。
 func matchKind(ctx context.Context, kind Kind, exe, version string) bool {
+	help := ""
+	if kind != KindOMP || !isOMPVersion(version) {
+		// omp 的标准输出不需要复核帮助，先拿到 help 以备后续判据使用。
+		help = runHelp(ctx, exe)
+	}
+	return matchKindWithHelp(kind, version, help)
+}
+
+// matchKindWithHelp 是判据本身，与进程无关，所以能被直接测。
+//
+// 拆出来是为了让测试打真身：判据是一串条件分支，如果只在 matchKind 里，
+// 每次验证都得真起一个进程，慢且脆。help 由调用方提供。
+func matchKindWithHelp(kind Kind, version, help string) bool {
 	if kind == KindOMP {
 		// `omp/18.13.1` 是 omp 的标准输出，可以直接认。
 		if isOMPVersion(version) {
@@ -131,7 +144,7 @@ func matchKind(ctx context.Context, kind Kind, exe, version string) bool {
 		// 别的 name/semver：可能是被 OMP_APP_NAME 改过 bin 的 omp，
 		// 也可能根本不是。靠 --help 的小节标题确认，不认前缀形状。
 		if rePrefixed.MatchString(version) {
-			return helpIsOMP(runHelp(ctx, exe))
+			return helpIsOMP(help)
 		}
 		return false
 	}
@@ -139,20 +152,18 @@ func matchKind(ctx context.Context, kind Kind, exe, version string) bool {
 	if !reBare.MatchString(version) {
 		return false
 	}
-	out := runHelp(ctx, exe)
-	if helpIsOMP(out) {
+	if helpIsOMP(help) {
 		return false // 其实是 omp
 	}
 	// 正向确认它是 pi，而不是「不是 omp 的任何东西」。
-	return strings.Contains(out, "Usage:") || strings.Contains(out, "--mode")
+	return strings.Contains(help, "Usage:") || strings.Contains(help, "--mode")
 }
 
 // isOMPVersion 判断 --version 输出是不是 omp 的标准格式。
 //
-// omp 打 `${bin}/${version}`，bin 默认是 `omp`（packages/utils/src/dirs.ts:23），
-// 但可以被 OMP_APP_NAME 改掉——所以只认 `omp/` 前缀这一种确定情形，
-// 其余交给 helpIsOMP。有意不用宽松的 `name/semver` 匹配：那会把将来改打
-// `pi/1.4.0` 的版本误判成 omp。
+// omp 打 `${bin}/${version}`，bin 默认是 `omp`，但可以被 OMP_APP_NAME 改掉——
+// 所以只认 `omp/` 前缀这一种确定情形，其余交给 helpIsOMP。
+// 有意不用宽松的 `name/semver` 匹配：那会把将来改打 `pi/1.4.0` 的版本误判成 omp。
 func isOMPVersion(version string) bool {
 	return strings.HasPrefix(version, "omp/")
 }

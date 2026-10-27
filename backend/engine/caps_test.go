@@ -11,22 +11,22 @@ import (
 // 引擎只回 success:false 或者干脆静默丢弃，界面表现为「点了没反应」。
 // 所以这里把「哪条命令属于谁」钉死，改 Caps 或改命令名时必须一起改。
 
-// 引擎命令表里的真实条目（从 oh-my-pi / pi 的协议定义逐字抄来）。
+// 引擎命令表里的真实条目（逐字抄自各引擎的协议定义）。
 // 只列我们真的会发的那些——没发的命令不需要在这里。
 var engineCommands = map[Kind]map[string]bool{
 	KindOMP: {
 		"prompt": true, "steer": true, "follow_up": true, "abort": true,
 		"new_session": true, "switch_session": true, "fork": true,
 		"get_state": true, "get_session_stats": true, "get_messages": true,
-		"set_model": true, "cycle_model": true, "get_available_models": true,
+		"set_model": true, "get_available_models": true,
 		"set_thinking_level": true, "get_available_thinking_levels": true,
 		"compact": true, "set_auto_compaction": true, "set_session_name": true,
-		"negotiate_protocol": true, "available_commands_update": true,
+		"negotiate_protocol": true,
 		// 子代理
 		"set_subagent_subscription": true, "get_subagents": true,
 		"get_subagent_messages": true, "cancel_subagent": true, "steer_subagent": true,
 		// 队列：只有逐条移除，没有 clear_queue
-		"remove_queued_message": true, "promote_queued_message": true,
+		"remove_queued_message": true,
 		// 登录
 		"get_login_providers": true, "login": true,
 	},
@@ -34,7 +34,7 @@ var engineCommands = map[Kind]map[string]bool{
 		"prompt": true, "steer": true, "follow_up": true, "abort": true,
 		"new_session": true, "switch_session": true, "fork": true,
 		"get_state": true, "get_session_stats": true, "get_messages": true,
-		"set_model": true, "cycle_model": true, "get_available_models": true,
+		"set_model": true, "get_available_models": true,
 		"set_thinking_level": true, "get_available_thinking_levels": true,
 		"compact": true, "set_auto_compaction": true, "set_session_name": true,
 		"get_commands": true,
@@ -43,17 +43,18 @@ var engineCommands = map[Kind]map[string]bool{
 	},
 }
 
-// 每个能力开关都必须对应引擎命令表里的真实命令。
-func TestCapsOnlyClaimRealCommands(t *testing.T) {
-	// 每条 Caps 字段 → 它依赖的命令。空表示不依赖 RPC。
-	depends := map[string]string{
-		"QueueEdit":  "remove_queued_message",
-		"QueueClear": "clear_queue",
-	}
+// 能力开关 ↔ 依赖的命令。双向断言：开关为真则命令必须存在，
+// 开关为假则命令必须不存在（否则就有一处能力被漏声明，界面会永远藏着入口）。
+var capsCommands = map[string]string{
+	"QueueEdit":  "remove_queued_message",
+	"QueueClear": "clear_queue",
+}
 
+// TestCapsMatchCommandTable 守住「能力声明 ↔ 引擎真实命令表」的一致性。
+func TestCapsMatchCommandTable(t *testing.T) {
 	for kind, cmds := range engineCommands {
 		caps := CapsFor(kind)
-		for field, cmd := range depends {
+		for field, cmd := range capsCommands {
 			on := capOn(caps, field)
 			_, exists := cmds[cmd]
 			if on && !exists {
@@ -66,23 +67,24 @@ func TestCapsOnlyClaimRealCommands(t *testing.T) {
 	}
 }
 
-// ClearQueue 在 omp 上必须拒绝，在 pi 上必须放行到发命令这一步。
-func TestClearQueueRespectsCaps(t *testing.T) {
+// TestQueueOpsRespectCaps 守住运行时门控：能力为假的引擎必须拒绝该操作，
+// 而不是发出一条注定失败的命令。
+func TestQueueOpsRespectCaps(t *testing.T) {
 	omp := &Engine{Kind: KindOMP, dialect: fakeDialect{caps: CapsFor(KindOMP)}}
-	if err := omp.ClearQueue(nil); err == nil {
-		t.Fatal("omp 没有 clear_queue，ClearQueue 必须返回不支持")
-	}
 	pi := &Engine{Kind: KindPi, dialect: fakeDialect{caps: CapsFor(KindPi)}}
-	if !pi.Caps().QueueClear {
-		t.Fatal("pi 有 clear_queue，Caps.QueueClear 必须为真")
-	}
-}
 
-// RemoveQueued 在 pi 上必须拒绝。
-func TestRemoveQueuedRespectsCaps(t *testing.T) {
-	pi := &Engine{Kind: KindPi, dialect: fakeDialect{caps: CapsFor(KindPi)}}
+	if err := omp.ClearQueue(nil); err == nil {
+		t.Error("omp 没有 clear_queue，ClearQueue 必须拒绝")
+	}
 	if _, err := pi.RemoveQueued(nil, "m", "steering"); err == nil {
-		t.Fatal("pi 没有 remove_queued_message，RemoveQueued 必须返回不支持")
+		t.Error("pi 没有 remove_queued_message，RemoveQueued 必须拒绝")
+	}
+	// 放行一侧只能断言能力位为真：fakeDialect 不启动进程，发不出命令。
+	if !pi.Caps().QueueClear {
+		t.Error("pi 有 clear_queue，Caps.QueueClear 必须为真")
+	}
+	if !omp.Caps().QueueEdit {
+		t.Error("omp 有 remove_queued_message，Caps.QueueEdit 必须为真")
 	}
 }
 

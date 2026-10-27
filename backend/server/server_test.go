@@ -42,26 +42,32 @@ func loopback(req *http.Request) *http.Request {
 	return req
 }
 
-// 缺令牌必须拒绝：端口就在本机上，猜不到端口≠猜不到令牌，两道都要在。
-func TestRequiresToken(t *testing.T) {
+// 令牌闸门有四个状态，一个都不能错：
+//
+//	无令牌 → 403（端口在本机上，猜到端口不等于猜到令牌）
+//	头令牌 → 200（前端正常请求）
+//	查询令牌 → 200（SSE 走 EventSource，它设不了自定义头）
+//	/health → 200 且不需要令牌（只用来看服务在不在）
+func TestTokenGate(t *testing.T) {
 	_, h := testServer(t)
+
+	// 无令牌
 	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
-		t.Fatalf("无令牌的请求状态 = %d，期望 403", rec.Code)
+		t.Errorf("无令牌的请求状态 = %d，期望 403", rec.Code)
 	}
-}
 
-func TestAcceptsHeaderToken(t *testing.T) {
-	_, h := testServer(t)
-	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
+	// 头令牌
+	req = loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
 	req.Header.Set("X-Desktop-Token", "secret-token")
-	rec := httptest.NewRecorder()
+	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("状态 = %d，期望 200；body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("头令牌状态 = %d，期望 200；body=%s", rec.Code, rec.Body.String())
 	}
+	// 200 的响应也必须是统一外壳
 	var envelope struct {
 		Code string          `json:"code"`
 		Data json.RawMessage `json:"data"`
@@ -70,18 +76,26 @@ func TestAcceptsHeaderToken(t *testing.T) {
 		t.Fatalf("响应不是统一外壳: %v", err)
 	}
 	if envelope.Code != "0" {
-		t.Fatalf("code = %q，期望 0", envelope.Code)
+		t.Errorf("code = %q，期望 0", envelope.Code)
 	}
-}
 
-// SSE 走查询参数带令牌：EventSource 不能设自定义头。
-func TestAcceptsQueryToken(t *testing.T) {
-	_, h := testServer(t)
-	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings?token=secret-token", nil))
-	rec := httptest.NewRecorder()
+	// 查询令牌
+	req = loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings?token=secret-token", nil))
+	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("状态 = %d，期望 200", rec.Code)
+		t.Errorf("查询令牌状态 = %d，期望 200", rec.Code)
+	}
+
+	// 健康探测
+	req = loopback(httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("health 状态 = %d，期望 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "ok") {
+		t.Errorf("health body = %s", rec.Body.String())
 	}
 }
 
@@ -100,20 +114,7 @@ func TestRejectsOtherMethods(t *testing.T) {
 }
 
 // 健康探测不需要令牌（只用来看服务在不在），但它不该泄漏任何业务数据。
-func TestHealthNeedsNoToken(t *testing.T) {
-	_, h := testServer(t)
-	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("状态 = %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "ok") {
-		t.Errorf("body = %s", rec.Body.String())
-	}
-}
 
-// 错误也必须是统一外壳（HTTP 200 + code），否则前端拦截器分不出业务失败与网络故障。
 func TestErrorUsesEnvelope(t *testing.T) {
 	_, h := testServer(t)
 	req := loopback(httptest.NewRequest(http.MethodPost, "/api/v1/settings/workspace", strings.NewReader(`{"path":"Z:\\definitely\\missing\\dir"}`)))

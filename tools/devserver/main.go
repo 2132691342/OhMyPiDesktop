@@ -2,8 +2,9 @@
 //
 // 用法：
 //
-//	go run ./tools/devserver -port 7801 -token dev
+//	go run ./tools/devserver -token dev
 //
+// 端口由服务自选（随机回环端口），启动后会把实际端口与令牌打出来。
 // 它不嵌前端：前端用 npm run dev 起 Vite，然后在浏览器控制台里
 // localStorage 设 omp.dev.port / omp.dev.token 即可直连。
 package main
@@ -37,7 +38,7 @@ func main() {
 		fmt.Println("数据目录不可写:", err)
 		os.Exit(1)
 	}
-	store, err := repo.Open(dir + string(os.PathSeparator) + "dev.db")
+	store, err := repo.Open(dir + string(os.PathSeparator) + "dev.json")
 	must(err)
 	defer store.Close()
 
