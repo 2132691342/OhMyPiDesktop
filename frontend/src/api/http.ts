@@ -124,6 +124,8 @@ export const api = {
     post<{ ok: boolean }>('/chat/followup', { engine, session, message }),
   clearQueue: (engine: EngineKind, session: string) =>
     post<{ ok: boolean }>('/chat/clear-queue', { engine, session }),
+  removeQueued: (engine: EngineKind, session: string, message: string, queue: string) =>
+    post<{ removed: boolean }>('/chat/remove-queued', { engine, session, message, queue }),
   compact: (engine: EngineKind, session: string, instructions = '') =>
     post<{ ok: boolean }>('/chat/compact', { engine, session, instructions }),
   answer: (engine: EngineKind, session: string, request: UIResponse) =>

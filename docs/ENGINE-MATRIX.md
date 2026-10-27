@@ -40,7 +40,8 @@
 | `todos` | ✅ | — | 不显示待办阶段 |
 | `login` | ✅ | — | 模型页「登录」区与 `chat:open_url` 抽屉不渲染 |
 | `fragments` | ✅ | — | 收 `rpc_chunk` 做分片重组 |
-| `queue_edit` | ✅ | — | 排队条目不显示「移除 / 提前发送」 |
+| `queue_edit` | ✅ | — | 排队条目可逐条移除（`remove_queued_message`）；pi 没有这条命令 |
+| `queue_clear` | — | ✅ | 一次性清空排队（`clear_queue`）；omp 的命令表里没有这条 |
 | `live_steer_count` | ✅ | — | 不读 `queue_update.liveSteered` |
 | `skill_toggle` | ✅ | — | 技能行不显示开关（pi 走另一条路，见 §6） |
 | `extensions` | ✅ | ✅ | 插件页可管理 |

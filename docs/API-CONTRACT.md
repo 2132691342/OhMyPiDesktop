@@ -80,7 +80,8 @@
 | POST | `/chat/stop` | 停止 `{engine, session}` |
 | POST | `/chat/steer` | 插话 `{engine, session, message}` |
 | POST | `/chat/followup` | 排队 `{engine, session, message}` |
-| POST | `/chat/clear-queue` | 清空排队 `{engine, session}` |
+| POST | `/chat/clear-queue` | 清空排队 `{engine, session}`（仅 `caps.queue_clear`） |
+| POST | `/chat/remove-queued` | 移除单条排队 `{engine, session, message, queue}` → `{removed}`（仅 `caps.queue_edit`） |
 | POST | `/chat/compact` | 压缩上下文 `{engine, session, instructions?}` |
 | POST | `/chat/answer` | 回答提问 `{engine, session, request}` |
 | POST | `/chat/new` | 在当前目录开新会话 `{engine}` |

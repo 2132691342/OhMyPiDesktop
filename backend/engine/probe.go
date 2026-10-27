@@ -149,11 +149,11 @@ func CapsFor(kind Kind) Caps {
 	if kind == KindOMP {
 		return Caps{
 			Subagents: true, Goals: true, Todos: true, Login: true, Fragments: true,
-			QueueEdit: true, LiveSteerCount: true, SkillToggle: true, Extensions: true,
+			QueueEdit: true, QueueClear: false, LiveSteerCount: true, SkillToggle: true, Extensions: true,
 			ExportHTML: true, SlashCommands: true,
 		}
 	}
-	return Caps{Extensions: true, ExportHTML: true}
+	return Caps{Extensions: true, ExportHTML: true, QueueClear: true}
 }
 
 // InstallHint 返回该引擎的安装命令原文。

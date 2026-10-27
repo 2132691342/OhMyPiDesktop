@@ -531,9 +531,33 @@ func (e *Engine) FollowUp(ctx context.Context, message string) error {
 	return e.Call(ctx, "follow_up", map[string]any{"message": message}, nil, 30*time.Second)
 }
 
-// ClearQueue 清空排队消息。
+// ClearQueue 一次性清空排队消息。
+//
+// 只有 pi 有 clear_queue；omp 的命令表里没有这条（它只提供逐条移除），
+// 所以能力由 Caps.QueueClear 表达，界面按 caps 隐藏而不是发一个必然失败的调用。
 func (e *Engine) ClearQueue(ctx context.Context) error {
+	if !e.Caps().QueueClear {
+		return pkg.New(pkg.CodeEngineUnsupported,
+			string(e.Kind)+" 不支持一次性清空排队，请逐条移除", "")
+	}
 	return e.Call(ctx, "clear_queue", nil, nil, 20*time.Second)
+}
+
+// RemoveQueued 移除一条排队消息（仅 omp）。queue 取 steering / followUp。
+func (e *Engine) RemoveQueued(ctx context.Context, message, queue string) (bool, error) {
+	if !e.Caps().QueueEdit {
+		return false, pkg.New(pkg.CodeEngineUnsupported,
+			string(e.Kind)+" 不支持移除单条排队消息", "")
+	}
+	if queue != "followUp" {
+		queue = "steering"
+	}
+	var out struct {
+		Removed bool `json:"removed"`
+	}
+	err := e.Call(ctx, "remove_queued_message",
+		map[string]any{"message": message, "queue": queue}, &out, 20*time.Second)
+	return out.Removed, err
 }
 
 // Compact 手动压缩上下文。

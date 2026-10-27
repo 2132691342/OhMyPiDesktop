@@ -148,6 +148,8 @@ export default {
     queuedCount: '排队 {n} 条',
     clearQueue: '清空排队',
     queueCleared: '排队已清空',
+    removeQueued: '移除这一条',
+    queueGone: '这条已不在队列里',
     openLinkDismiss: '先不管',
   },
   agents: {

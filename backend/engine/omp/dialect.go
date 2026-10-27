@@ -25,6 +25,7 @@ func Caps() engine.Caps {
 		Login:          true,
 		Fragments:      true,
 		QueueEdit:      true,
+		QueueClear:     false, // omp 没有 clear_queue，只能逐条移除
 		LiveSteerCount: true,
 		SkillToggle:    true,
 		Extensions:     true,

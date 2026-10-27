@@ -45,7 +45,7 @@
 | 项 | 现状 | 为什么先不做 |
 |---|---|---|
 | pi 的技能「彻底禁用」 | 只能摘出系统提示（`disable-model-invocation`），仍可 `/skill:name` 调 | 引擎没有这个开关；界面不发明 |
-| pi 的排队条目编辑 | 只能「清空排队」 | 引擎没有移除单条的 RPC |
+| pi 的排队条目编辑 | 只能「清空排队」（`clear_queue`）；omp 反过来只能逐条移除（`remove_queued_message`） | 两边命令表不同，各自用 `Caps.QueueClear` / `Caps.QueueEdit` 表达 |
 | pi 的命令清单 | 只能拉取，不订阅推送 | 引擎不推 |
 | 会话导出 HTML | 引擎支持（`export_html`），界面未接入 | 使用频率低，先不做 |
 | 非 Windows | 只有 `proc_windows.go` | 项目只面向 Windows |

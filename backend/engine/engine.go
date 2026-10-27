@@ -43,7 +43,8 @@ type Caps struct {
 	Todos          bool `json:"todos"`           // 待办阶段（todoPhases）
 	Login          bool `json:"login"`           // 界面里发起 OAuth
 	Fragments      bool `json:"fragments"`       // 协议 v2 分片重组
-	QueueEdit      bool `json:"queue_edit"`      // 移除 / 提前排队的消息
+	QueueEdit      bool `json:"queue_edit"`      // 移除 / 提前排队单条消息（remove_queued_message）
+	QueueClear     bool `json:"queue_clear"`     // 一次性清空排队（clear_queue）
 	LiveSteerCount bool `json:"live_steer_count"` // queue_update.liveSteered
 	SkillToggle    bool `json:"skill_toggle"`    // 靠 frontmatter 启停技能
 	Extensions     bool `json:"extensions"`      // 扩展/插件 CLI 管理

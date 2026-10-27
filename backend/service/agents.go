@@ -78,24 +78,23 @@ func (a *App) AgentMessages(ctx context.Context, kind engine.Kind, id string, fr
 		return nil, err
 	}
 	var out struct {
-		Entries      []map[string]any `json:"entries"`
-		Messages     []map[string]any `json:"messages"`
-		Next         int64            `json:"next"`
-		From         int64            `json:"from"`
-		Reset        bool             `json:"reset"`
-		TotalBytes   int64            `json:"totalBytes"`
+		Entries  []map[string]any `json:"entries"`
+		Messages []map[string]any `json:"messages"`
+		NextByte int64            `json:"nextByte"`
+		FromByte int64            `json:"fromByte"`
+		Reset    bool             `json:"reset"`
 	}
-	if err := proc.Call(ctx, "get_subagent_messages", map[string]any{
-		"subagentId": id, "fromByte": from,
-	}, &out, 20*time.Second); err != nil {
+	if err := proc.Call(ctx, "get_subagent_messages", engine.SubagentMessagesParams(id, from), &out, 20*time.Second); err != nil {
 		return nil, err
 	}
 	page := &TranscriptPage{
 		Entries:  orEmpty(out.Entries),
 		Messages: orEmpty(out.Messages),
-		Next:     out.Next,
+		Next:     out.NextByte,
 		Reset:    out.Reset,
 	}
+	// nextByte 是「下一次该从哪读」的游标；引擎没给（老版本）就原地不动，
+	// 不能退回到 from，否则同一段会被反复重读。
 	if page.Next == 0 {
 		page.Next = from
 	}
@@ -109,7 +108,7 @@ func (a *App) SteerAgent(ctx context.Context, kind engine.Kind, id, message stri
 	if err != nil {
 		return err
 	}
-	return proc.Call(ctx, "steer_subagent", map[string]any{"id": id, "message": message}, nil, 30*time.Second)
+	return proc.Call(ctx, "steer_subagent", engine.SteerSubagentParams(id, message), nil, 30*time.Second)
 }
 
 // CancelAgent 硬杀一个子代理。返回 false 是幂等答案（它已经结束了），不是错误。
@@ -121,7 +120,7 @@ func (a *App) CancelAgent(ctx context.Context, kind engine.Kind, id string) (boo
 	var out struct {
 		Cancelled bool `json:"cancelled"`
 	}
-	if err := proc.Call(ctx, "cancel_subagent", map[string]any{"id": id}, &out, 30*time.Second); err != nil {
+	if err := proc.Call(ctx, "cancel_subagent", engine.CancelSubagentParams(id), &out, 30*time.Second); err != nil {
 		return false, err
 	}
 	return out.Cancelled, nil

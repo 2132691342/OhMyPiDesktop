@@ -20,6 +20,7 @@ export interface EngineCaps {
   login: boolean
   fragments: boolean
   queue_edit: boolean
+  queue_clear: boolean
   live_steer_count: boolean
   skill_toggle: boolean
   extensions: boolean

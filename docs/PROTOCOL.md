@@ -75,6 +75,22 @@ pi ：主动发一次 get_state（25s 上限）→ 有回包就证明读循环�
 `set_host_tools`、`get_login_providers` / `login` / `logout`、
 `predict_word`、`btw`、`live_*`，以及子代理那 5 条（见 §子代理）。
 
+仅 pi 的：`clear_queue`。**omp 的命令表里没有 `clear_queue`**——它只提供
+`remove_queued_message` 逐条移除。两者是不同的能力，所以分成
+`Caps.QueueEdit`（omp）与 `Caps.QueueClear`（pi），不能共用一个入口。
+
+**参数名陷阱**：协议里的参数名不统一，猜错不会报错，引擎只会当成缺参而静默不做。
+已踩过的：
+
+| 命令 | 正确参数 | 错误写法 |
+|---|---|---|
+| `steer_subagent` / `cancel_subagent` / `get_subagent_messages` | `subagentId` | `id` |
+| `login` | `providerId` | `provider` |
+| `get_subagent_messages` 的返回游标 | `nextByte` | `next` |
+
+改这些命令时，对照 `oh-my-pi/packages/coding-agent/src/modes/rpc/wire/commands.ts`
+（omp）与 `pi/packages/coding-agent/src/modes/rpc/rpc-types.ts`（pi）逐字核对。
+
 **调用纪律**：发任何命令前先查 `Caps.Commands`。命令不存在时
 service 层返回 `ErrUnsupported`，界面据此隐藏控件——**不要发出去再处理报错**，
 那会让用户看到「点了没反应」和一堆超时。

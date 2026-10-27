@@ -147,6 +147,8 @@ export default {
     "queuedCount": "{n} queued",
     "clearQueue": "Clear queue",
     "queueCleared": "Queue cleared",
+    "removeQueued": "Remove this one",
+    "queueGone": "Already gone from the queue",
     "openLinkDismiss": "Not now"
   },
   "agents": {

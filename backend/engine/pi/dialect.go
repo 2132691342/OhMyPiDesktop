@@ -25,6 +25,7 @@ func Caps() engine.Caps {
 		Login:          false,
 		Fragments:      false,
 		QueueEdit:      false,
+		QueueClear:     true, // pi 只有一次性 clear_queue，没有逐条移除
 		LiveSteerCount: false,
 		SkillToggle:    false,
 		Extensions:     true,

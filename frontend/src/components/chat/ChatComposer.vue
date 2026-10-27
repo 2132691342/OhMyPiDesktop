@@ -147,6 +147,16 @@ async function clearQueued() {
   }
 }
 
+async function dropQueued(message: string, queueName: 'steering' | 'followUp') {
+  try {
+    if (!(await chat.removeQueued(message, queueName))) {
+      chat.pushNotice('info', t('chat.queueGone'))
+    }
+  } catch (err) {
+    chat.promptError = err instanceof Error ? err.message : String(err)
+  }
+}
+
 async function pickModel(provider: string, id: string) {
   try {
     await chat.setModel(provider, id)
@@ -255,8 +265,28 @@ const hint = computed(() => {
     <div v-if="chat.queue.steering.length || chat.queue.followUp.length" class="queue-strip">
       <span class="dot busy" />
       {{ t('chat.queuedCount', { n: chat.queue.steering.length + chat.queue.followUp.length }) }}
+      <template v-if="chat.caps?.queue_edit">
+        <button
+          v-for="(m, i) in chat.queue.steering"
+          :key="'s' + i"
+          class="queue-chip"
+          :title="t('chat.removeQueued')"
+          @click="dropQueued(m, 'steering')"
+        >
+          {{ m }}<span class="x">×</span>
+        </button>
+        <button
+          v-for="(m, i) in chat.queue.followUp"
+          :key="'f' + i"
+          class="queue-chip"
+          :title="t('chat.removeQueued')"
+          @click="dropQueued(m, 'followUp')"
+        >
+          {{ m }}<span class="x">×</span>
+        </button>
+      </template>
       <button
-        v-if="chat.caps?.queue_edit"
+        v-if="chat.caps?.queue_clear"
         class="omp-btn text sm"
         :title="t('chat.clearQueue')"
         @click="clearQueued"
@@ -460,9 +490,51 @@ const hint = computed(() => {
   margin: 0 auto var(--omp-sp-2);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   font-size: var(--omp-fs-2xs);
   color: var(--omp-mute);
+}
+
+/* 排队条目：点一下移除这一条。截断到 18em，长句子不把整行撑开。 */
+.queue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 18em;
+  padding: 2px 7px;
+  border: 1px solid var(--omp-line);
+  border-radius: var(--omp-r-full);
+  background: var(--omp-surface);
+  color: var(--omp-ink-2);
+  font: inherit;
+  line-height: 1.5;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: background var(--omp-dur-fast) var(--omp-ease),
+    border-color var(--omp-dur-fast) var(--omp-ease), transform var(--omp-dur-fast) var(--omp-ease);
+}
+
+.queue-chip:hover {
+  transform: scale(1.03);
+  background: var(--omp-hover);
+  border-color: var(--omp-line-strong);
+}
+
+.queue-chip:active {
+  transform: scale(0.96);
+}
+
+.queue-chip .x {
+  color: var(--omp-mute);
+  font-size: 1.05em;
+  line-height: 1;
+}
+
+.queue-chip:hover .x {
+  color: var(--omp-brand);
 }
 
 .retry-strip {

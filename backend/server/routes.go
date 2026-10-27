@@ -44,6 +44,7 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.POST("/chat/steer", s.steer)
 	api.POST("/chat/followup", s.followUp)
 	api.POST("/chat/clear-queue", s.clearQueue)
+	api.POST("/chat/remove-queued", s.removeQueued)
 	api.POST("/chat/compact", s.compact)
 	api.POST("/chat/answer", s.answer)
 	api.POST("/chat/new", s.newChat)
@@ -336,6 +337,25 @@ func (s *Server) clearQueue(c *gin.Context) {
 			return nil, err
 		}
 		return gin.H{"ok": true}, nil
+	})
+}
+
+func (s *Server) removeQueued(c *gin.Context) {
+	var body struct {
+		Engine  string `json:"engine"`
+		Session string `json:"session"`
+		Message string `json:"message"`
+		Queue   string `json:"queue"`
+	}
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(ctx *gin.Context) (any, error) {
+		removed, err := s.svc.RemoveQueued(ctx, s2kind(body.Engine), body.Session, body.Message, body.Queue)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"removed": removed}, nil
 	})
 }
 

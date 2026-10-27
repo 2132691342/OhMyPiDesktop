@@ -212,6 +212,16 @@ export const useChatStore = defineStore('chat', () => {
     queue.value = { steering: [], followUp: [] }
   }
 
+  // 移除单条排队消息（仅 omp）：清空是 pi 的能力，逐条移除是 omp 的能力。
+  async function removeQueued(message: string, queueName: 'steering' | 'followUp') {
+    const res = await api.removeQueued(kind.value, sessionFile.value, message, queueName)
+    if (res.removed) {
+      if (queueName === 'steering') queue.value.steering = queue.value.steering.filter((m) => m !== message)
+      else queue.value.followUp = queue.value.followUp.filter((m) => m !== message)
+    }
+    return res.removed
+  }
+
   async function loadTurnFromEngine() {
     // 快照里可能已经有一轮正在跑（切回来时），此时用引擎消息还原，交给下次 prompt 接手
     if (!streaming.value) turn.value = null
@@ -347,6 +357,7 @@ export const useChatStore = defineStore('chat', () => {
     newChat,
     switchEngine,
     clearQueue,
+    removeQueued,
     loadTurnFromEngine,
     send,
     stop,

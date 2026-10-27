@@ -307,13 +307,22 @@ func (a *App) FollowUp(ctx context.Context, kind engine.Kind, sessionFile, messa
 	return e.FollowUp(ctx, message)
 }
 
-// ClearQueue 清空排队（仅 Capacity.QueueEdit 的引擎提供移除单条）。
+// ClearQueue 一次性清空排队（仅 Caps.QueueClear 的引擎提供）。
 func (a *App) ClearQueue(ctx context.Context, kind engine.Kind, sessionFile string) error {
 	e, err := a.engineForSession(kind, sessionFile)
 	if err != nil {
 		return err
 	}
 	return e.ClearQueue(ctx)
+}
+
+// RemoveQueued 移除一条排队消息（仅 Caps.QueueEdit 的引擎提供）。
+func (a *App) RemoveQueued(ctx context.Context, kind engine.Kind, sessionFile, message, queue string) (bool, error) {
+	e, err := a.engineForSession(kind, sessionFile)
+	if err != nil {
+		return false, err
+	}
+	return e.RemoveQueued(ctx, message, queue)
 }
 
 // Compact 手动压缩上下文。
@@ -569,7 +578,7 @@ func (a *App) Login(ctx context.Context, kind engine.Kind, provider string) erro
 		return pkg.New(pkg.CodeEngineUnsupported,
 			"pi 的登录在终端里做：pi auth", "")
 	}
-	return a.EngineFor(kind, a.Workspace()).Call(ctx, "login", map[string]any{"provider": provider}, nil, 60*time.Second)
+	return a.EngineFor(kind, a.Workspace()).Call(ctx, "login", engine.LoginParams(provider), nil, 600*time.Second)
 }
 
 // ---------------- 技能 ----------------
