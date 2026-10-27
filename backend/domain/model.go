@@ -1,20 +1,10 @@
 // Package domain 放跨层的领域模型：一个聚合根一个文件。
 package domain
 
-// Setting 是一条界面设置（KV）。只有界面自己的偏好存这里；
-// 凡是引擎已经有落盘位置的东西（模型、技能、插件、会话）一律不在这里存第二份。
-type Setting struct {
-	Key   string `gorm:"primaryKey;size:128" json:"key"`
-	Value string `gorm:"type:text" json:"value"`
-}
-
-// TableName 固定表名。
-func (Setting) TableName() string { return "settings" }
-
 // 设置键。集中在这里，避免字符串散落。
 const (
-	KeyTheme        = "ui.theme"     // light / dark / system
-	KeyLang         = "ui.lang"      // zh-CN / en
+	KeyTheme        = "ui.theme"      // light / dark / system
+	KeyLang         = "ui.lang"       // zh-CN / en
 	KeyWorkspace    = "app.workspace" // 上次用的工作目录
 	KeyProfile      = "app.profile"   // omp profile 名
 	KeyActiveEngine = "app.engine"    // 当前选中的引擎（omp / pi）

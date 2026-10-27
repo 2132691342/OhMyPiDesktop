@@ -56,17 +56,29 @@
 
 | 内容 | 位置 | 用途 |
 |---|---|---|
-| 界面设置 KV | `%LOCALAPPDATA%\OhMyPiDesktop\desktop.db`（SQLite WAL） | 主题 / 语言 / 字号 / 减少动效 / 上次工作目录 / **当前引擎** / 各引擎显式路径 |
+| 界面设置 | `%LOCALAPPDATA%\OhMyPiDesktop\settings.json` | 主题 / 语言 / 字号 / 减少动效 / 上次工作目录 / **当前引擎** / 各引擎显式路径 |
 | 日志 | 进程内环形缓冲（最近 500 行） | 设置页「日志」，进程重启即清 |
 
-**设置 KV 只有一张表**：
+**设置就是一个 JSON 对象**：
 
-```sql
-CREATE TABLE settings (
-  key   TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
+```json
+{
+  "app.engine": "pi",
+  "ui.lang": "zh-CN",
+  "ui.theme": "dark"
+}
 ```
+
+为什么不用数据库：这里存的全是「删了不丢任何对话」的东西——二三十个键、
+没有查询、没有关联、没有并发写者。为此背一个 SQLite（CGO 或纯 Go 移植几百 KB）
+不划算。JSON 还有个附带好处：用户出问题时能直接打开看、改、备份。
+
+写入纪律：内存读、落盘写；落盘走「临时文件 + Rename」，避免断电留下半个 JSON。
+键排序后序列化，让文件对人可读、对 diff 友好。空值等于删除。
+文件损坏时**改名留档为 `settings.json.broken` 并用空设置继续**——绝不能因为
+设置坏了就让应用起不来。
+
+早期版本用 `desktop.db`（SQLite）存同一份设置，**已不读取**。项目尚未正式发行，没有需要迁移的用户数据，所以不写迁移代码：留着 `desktop.db` 无害，删掉也不丢任何对话（它只存界面偏好）。
 
 `key` 常量集中在 `backend/domain/model.go` 的 `Key*`。当前用到的：
 
@@ -172,5 +184,5 @@ sessions/<编码cwd>/<ts>_<id>/          ← artifacts（子代理 transcript、
 
 要备份用户状态，只需两处（引擎自己的账本由引擎负责）：
 
-1. `%LOCALAPPDATA%\OhMyPiDesktop\desktop.db`（界面偏好，删了不丢任何对话）
+1. `%LOCALAPPDATA%\OhMyPiDesktop\settings.json`（界面偏好，删了不丢任何对话）
 2. 引擎各自的目录：`~/.omp/`、`~/.pi/`（删了等于换一台干净的机器）

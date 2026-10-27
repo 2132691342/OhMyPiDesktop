@@ -31,7 +31,7 @@ main.go ──→ service ──→ engine ──→ omp / pi
 | `backend/pkg` | 标准库 | 本模块任何包 |
 | `backend/domain` | 标准库 | 本模块任何包 |
 | `backend/hub` | 标准库 | 业务包 |
-| `backend/repo` | `domain` / `pkg` / gorm | `service` / `server` |
+| `backend/repo` | `domain` / `pkg` | `service` / `server` |
 | `backend/engine` | `pkg` | `service` / `server` / `repo` / `env` |
 | `backend/engine/omp` | `engine`（抽象）/ `pkg` | `engine/pi` / `service` |
 | `backend/engine/pi` | `engine`（抽象）/ `pkg` | `engine/omp` / `service` |

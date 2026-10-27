@@ -18,7 +18,7 @@ import (
 func testServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
 	dir := t.TempDir()
-	store, err := repo.Open(dir + "/t.db")
+	store, err := repo.Open(dir + "/settings.json")
 	if err != nil {
 		t.Fatal(err)
 	}

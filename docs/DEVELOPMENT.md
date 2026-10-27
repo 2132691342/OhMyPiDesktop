@@ -73,7 +73,7 @@ curl -H "X-Desktop-Token: <token>" http://127.0.0.1:<port>/api/v1/engines
 
 | 内容 | 位置 |
 |---|---|
-| 界面设置 | `%LOCALAPPDATA%\OhMyPiDesktop\desktop.db` |
+| 界面设置 | `%LOCALAPPDATA%\OhMyPiDesktop\settings.json` |
 | 日志 | 进程内环形缓冲（最近 500 行），重启即清 |
 | omp 的配置与会话 | `~/.omp/agent/` |
 | pi 的配置与会话 | `~/.pi/agent/` |

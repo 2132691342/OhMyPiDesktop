@@ -106,7 +106,7 @@ func (a *App) assemble() error {
 	pkg.SetLogDir(paths.LogDir)
 	pkg.Infof("app: 数据目录=%s", paths.DataDir)
 
-	store, err := repo.Open(paths.DBFile)
+	store, err := repo.Open(paths.SettingsFile)
 	if err != nil {
 		return err
 	}

@@ -15,14 +15,17 @@ import (
 
 // 探测：找出机器上装了哪些引擎、各是什么版本。
 //
-// 三步判据（全部只读、无副作用）：
-//  1. `<bin> --version`：`omp/18.13.1` 形如 name/semver → omp；裸 semver → 疑似 pi；
-//  2. 疑似 pi 时复核 `--help`：含 `USAGE` 或 ` v<ver>` → 其实是 omp
-//     （omp 遗留的 launch 子命令会打裸版本号）；
-//  3. 都没有结论就不再猜：靠目录存在性交叉印证，界面显示「版本未知」。
+// 两步判据（全部只读、无副作用）：
+//  1. `<bin> --version`：omp 打 `omp/18.13.1`（`${bin}/${version}`），
+//     pi 打裸 `1.4.0`。前者一眼可判，后者只算「疑似 pi」。
+//  2. 疑似 pi 时复核 `--help`：omp 的根帮助首行是 `omp v<ver>` 且有小节标题
+//     `USAGE`（大写），pi 的是 `Usage:`。omp 的遗留 launch 分支会打裸版本号，
+//     不复核就会把 omp 认成 pi。
 //
-// pi 的 --version 打裸版本号，omp 打带前缀的；这条差异是判别的唯一可靠入口，
-// 所以宁可三步也不靠可执行文件名。
+// 不靠可执行文件名判种：用户可能重命名它，omp 还允许用 `OMP_APP_NAME` 改 bin。
+//
+// 「没版本输出」就是「没找到」——界面显示安装命令，不猜、也不退化成
+// 「版本未知」这种半吊子状态。
 
 var (
 	rePrefixed = regexp.MustCompile(`^[A-Za-z][\w.-]*/\d+\.\d+\.\d+`)
@@ -118,20 +121,54 @@ func probeVersion(ctx context.Context, exe string) (string, bool) {
 	return "", false
 }
 
-// matchKind 用三步判据确认这个 exe 真的是我们要的那个引擎。
+// matchKind 确认这个 exe 真的是我们要的那个引擎。
 func matchKind(ctx context.Context, kind Kind, exe, version string) bool {
 	if kind == KindOMP {
-		return rePrefixed.MatchString(version) || strings.HasPrefix(version, "omp")
+		// `omp/18.13.1` 是 omp 的标准输出，可以直接认。
+		if isOMPVersion(version) {
+			return true
+		}
+		// 别的 name/semver：可能是被 OMP_APP_NAME 改过 bin 的 omp，
+		// 也可能根本不是。靠 --help 的小节标题确认，不认前缀形状。
+		if rePrefixed.MatchString(version) {
+			return helpIsOMP(runHelp(ctx, exe))
+		}
+		return false
 	}
-	// pi：裸版本号；但 omp 的遗留分支也会打裸版本号，所以要复核 --help。
+	// pi 打裸版本号；但 omp 的遗留分支也会打裸版本号，所以必须复核 --help。
 	if !reBare.MatchString(version) {
 		return false
 	}
-	out, _ := runCLI(ctx, exe, "--help")
-	if strings.Contains(out, "USAGE") || strings.Contains(out, " v"+version) {
+	out := runHelp(ctx, exe)
+	if helpIsOMP(out) {
 		return false // 其实是 omp
 	}
+	// 正向确认它是 pi，而不是「不是 omp 的任何东西」。
 	return strings.Contains(out, "Usage:") || strings.Contains(out, "--mode")
+}
+
+// isOMPVersion 判断 --version 输出是不是 omp 的标准格式。
+//
+// omp 打 `${bin}/${version}`，bin 默认是 `omp`（packages/utils/src/dirs.ts:23），
+// 但可以被 OMP_APP_NAME 改掉——所以只认 `omp/` 前缀这一种确定情形，
+// 其余交给 helpIsOMP。有意不用宽松的 `name/semver` 匹配：那会把将来改打
+// `pi/1.4.0` 的版本误判成 omp。
+func isOMPVersion(version string) bool {
+	return strings.HasPrefix(version, "omp/")
+}
+
+// helpIsOMP 看根帮助里有没有 omp 独有的小节标题。
+//
+// omp 的首行是 `omp v<ver>`，紧接一行全大写 `USAGE`（utils/src/cli.ts:299-300）；
+// pi 用的是 `Usage:`。这两个形状不会互相串。
+func helpIsOMP(help string) bool {
+	return strings.Contains(help, "\nUSAGE\n") || strings.HasPrefix(help, "omp v")
+}
+
+// runHelp 跑一次 --help；失败返回空串（判据会自然落到「不是」）。
+func runHelp(ctx context.Context, exe string) string {
+	out, _ := runCLI(ctx, exe, "--help")
+	return out
 }
 
 // runCLI 跑一条 CLI 并返回合并输出，带超时。

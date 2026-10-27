@@ -10,10 +10,10 @@ import (
 
 // Paths 是本应用的落盘位置。
 type Paths struct {
-	DataDir   string // %LOCALAPPDATA%\OhMyPiDesktop
-	DBFile    string // 界面设置 KV（sqlite）
-	ConfigDir string // viper 配置
-	LogDir    string
+	DataDir      string // %LOCALAPPDATA%\OhMyPiDesktop
+	SettingsFile string // 界面设置（一个 JSON 文件）
+	ConfigDir    string // viper 配置
+	LogDir       string
 }
 
 // Resolve 解析应用数据目录。纯 Windows 目标，LOCALAPPDATA 一定存在；
@@ -29,10 +29,10 @@ func Resolve() (Paths, error) {
 	}
 	dataDir := filepath.Join(base, "OhMyPiDesktop")
 	p := Paths{
-		DataDir:   dataDir,
-		DBFile:    filepath.Join(dataDir, "desktop.db"),
-		ConfigDir: dataDir,
-		LogDir:    filepath.Join(dataDir, "logs"),
+		DataDir:      dataDir,
+		SettingsFile: filepath.Join(dataDir, "settings.json"),
+		ConfigDir:    dataDir,
+		LogDir:       filepath.Join(dataDir, "logs"),
 	}
 	for _, dir := range []string{p.DataDir, p.LogDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
