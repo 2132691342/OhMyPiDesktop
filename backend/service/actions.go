@@ -438,21 +438,21 @@ func (a *App) Providers(kind engine.Kind) (*domain.ProvidersView, error) {
 		if err != nil {
 			return nil, err
 		}
-		out := &domain.ProvidersView{Providers: []domain.ProviderView{}, Path: layout.Models}
+		out := &domain.ProvidersView{Providers: []domain.ProviderView{}, ConfigPath: layout.Models}
 		for _, name := range f.Names() {
 			p := f.Providers[name]
 			v := domain.ProviderView{
-				Name:    name,
-				BaseURL: p.BaseURL,
-				API:     p.API,
-				Auth:    p.OAuth,
-				APIKey:  picfg.MaskKey(p.APIKey),
-				HasKey:  p.APIKey != "",
-				Models:  []domain.ModelEntry{},
+				ProviderName: name,
+				BaseURL:      p.BaseURL,
+				API:          p.API,
+				Auth:         p.OAuth,
+				APIKey:       picfg.MaskKey(p.APIKey),
+				HasKey:       p.APIKey != "",
+				Models:       []domain.ModelEntry{},
 			}
 			for _, m := range p.Models {
 				v.Models = append(v.Models, domain.ModelEntry{
-					ID: m.ID, Name: m.Name, API: m.API, Reasoning: m.Reasoning,
+					ModelID: m.ID, ModelName: m.Name, API: m.API, Reasoning: m.Reasoning,
 					Input: m.Input, ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens,
 				})
 			}
@@ -465,10 +465,10 @@ func (a *App) Providers(kind engine.Kind) (*domain.ProvidersView, error) {
 		return nil, err
 	}
 	view := f.View(layout.Models)
-	out := &domain.ProvidersView{Providers: []domain.ProviderView{}, Path: view.Path}
+	out := &domain.ProvidersView{Providers: []domain.ProviderView{}, ConfigPath: view.Path}
 	for _, p := range view.Providers {
 		out.Providers = append(out.Providers, domain.ProviderView{
-			Name: p.Name, BaseURL: p.BaseURL, API: p.API, Auth: p.Auth,
+			ProviderName: p.Name, BaseURL: p.BaseURL, API: p.API, Auth: p.Auth,
 			APIKey: p.APIKey, HasKey: p.HasKey, Models: toDomainModels(p.Models),
 		})
 	}
@@ -498,7 +498,7 @@ func (a *App) UpsertProvider(kind engine.Kind, name string, p domain.ProviderVie
 		}
 		for _, m := range p.Models {
 			next.Models = append(next.Models, picfg.Model{
-				ID: m.ID, Name: m.Name, API: m.API, Reasoning: m.Reasoning,
+				ID: m.ModelID, Name: m.ModelName, API: m.API, Reasoning: m.Reasoning,
 				Input: m.Input, ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens,
 			})
 		}
@@ -515,7 +515,7 @@ func (a *App) UpsertProvider(kind engine.Kind, name string, p domain.ProviderVie
 	}
 	for _, m := range p.Models {
 		next.Models = append(next.Models, ompcfg.ModelEntry{
-			ID: m.ID, Name: m.Name, API: m.API, Reasoning: m.Reasoning,
+			ID: m.ModelID, Name: m.ModelName, API: m.API, Reasoning: m.Reasoning,
 			Input: m.Input, ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens,
 		})
 	}
@@ -871,7 +871,7 @@ func toDomainModels(list []ompcfg.ModelEntry) []domain.ModelEntry {
 	out := make([]domain.ModelEntry, 0, len(list))
 	for _, m := range list {
 		out = append(out, domain.ModelEntry{
-			ID: m.ID, Name: m.Name, API: m.API, Reasoning: m.Reasoning,
+			ModelID: m.ID, ModelName: m.Name, API: m.API, Reasoning: m.Reasoning,
 			Input: m.Input, ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens,
 		})
 	}

@@ -312,7 +312,7 @@ func (s *scope) remotes() []domain.GitRemoteVO {
 		if i := strings.LastIndex(url, " ("); i > 0 {
 			url = url[:i]
 		}
-		out = append(out, domain.GitRemoteVO{Name: name, URL: strings.TrimSpace(url)})
+		out = append(out, domain.GitRemoteVO{RemoteName: name, RemoteURL: strings.TrimSpace(url)})
 	}
 	return out
 }
@@ -322,7 +322,7 @@ func (s *scope) remoteNames() []string {
 	list := s.remotes()
 	names := make([]string, 0, len(list))
 	for _, r := range list {
-		names = append(names, r.Name)
+		names = append(names, r.RemoteName)
 	}
 	return names
 }
@@ -393,7 +393,7 @@ func (s *scope) changedFiles() ([]domain.GitFileVO, error) {
 		}
 		c := counts[entry.path]
 		out = append(out, domain.GitFileVO{
-			Path:      rel,
+			FilePath:  rel,
 			Status:    entry.status,
 			Staged:    entry.staged,
 			Conflict:  entry.conflict,
@@ -490,14 +490,14 @@ func (s *scope) diffAll() (*domain.GitDiffVO, error) {
 		lines = append(lines, add...)
 		total += rest
 	}
-	return &domain.GitDiffVO{Path: "", Lines: lines, Dropped: total, Truncated: total > 0}, nil
+	return &domain.GitDiffVO{FilePath: "", Lines: lines, Dropped: total, Truncated: total > 0}, nil
 }
 
 // diffOne 单个文件的差异；未跟踪文件同样补读正文。
 func (s *scope) diffOne(full, wsRel, rootRel string) (*domain.GitDiffVO, error) {
 	if !s.isTracked(rootRel) {
 		lines, dropped := s.untrackedSection(wsRel, rootRel)
-		return &domain.GitDiffVO{Path: wsRel, Lines: lines, Dropped: dropped, Truncated: dropped > 0}, nil
+		return &domain.GitDiffVO{FilePath: wsRel, Lines: lines, Dropped: dropped, Truncated: dropped > 0}, nil
 	}
 	args := []string{"diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U3"}
 	if s.hasHead() {
@@ -509,7 +509,7 @@ func (s *scope) diffOne(full, wsRel, rootRel string) (*domain.GitDiffVO, error) 
 		return nil, err
 	}
 	lines, dropped := parseDiff(res.stdout, s.headerToWorkspace)
-	return &domain.GitDiffVO{Path: wsRel, Lines: lines, Dropped: dropped, Truncated: dropped > 0}, nil
+	return &domain.GitDiffVO{FilePath: wsRel, Lines: lines, Dropped: dropped, Truncated: dropped > 0}, nil
 }
 
 // untrackedInScope 列出工作区内未跟踪且未被忽略的文件（仓库根相对路径）。

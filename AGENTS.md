@@ -94,6 +94,30 @@ main.go ──→ service ──→ engine ──→ omp / pi
 - 组件文件名 = 组件名（`ToolCallCard.vue` → `<ToolCallCard />`）
 - 引擎实现包名用引擎名（`engine/omp` / `engine/pi`），不写 `ompengine`
 
+### ID：ULID + 业务前缀
+
+标识符一律走 `pkg.NewULID*`，形如 `RUN_01J...`：
+
+- **不用 UUID**：无序，且读不出时间
+- **不用自增**：要中心发号，多进程会撞
+- **ULID** 前 48 位毫秒时间、后 80 位随机，字典序即时间序，不需要协调
+- **必须带前缀**（`pkg.Prefix*`）：日志里看到 `RUN_01J...` 就知道它是一轮对话，
+  不必回去翻生成它的那行代码
+- 同一毫秒内连续生成用 `NewULIDMonotonic`：随机段会把先后顺序丢掉
+
+### 字段：不许用裸名
+
+`domain` 里的字段**不许**是 `Name` / `Code` / `ID` / `Path` 这类裸词，
+一律带所属名词：`ProviderName` / `ModelID` / `FilePath` / `BranchName`。
+json tag 同步用 snake_case（`branch_name`）。
+
+理由不是好看：这些名字会一路进 JSON 与前端类型。`{"name": "main"}` 在
+分支、远端、服务商、文件四种响应里都出现，读的人只能靠上下文猜；
+`{"branch_name": "main"}` 不用猜。
+
+改这些字段属于**响应形态变化**：必须 `ContractVersion` +1 并同步
+`frontend/src/types/api.ts`。
+
 ## 6. 注释
 
 - **讲为什么，不讲是什么**。`// 一个工作目录一个进程：cwd 是进程级属性` 有信息量；

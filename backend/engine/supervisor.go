@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -487,7 +486,10 @@ func (e *Engine) Prompt(ctx context.Context, message string) (string, error) {
 	}
 	e.mu.Lock()
 	e.runSeq++
-	runID := fmt.Sprintf("run-%d-%d", time.Now().UnixMilli(), e.runSeq)
+	// runID 是「这一轮」的身份：前端按它认领事件，别的一轮的事件直接丢。
+	// 用单调 ULID 而不是时间戳+序号：同一毫秒内连开两轮时序号也会撞，
+	// 而撞了的结果是两轮的流式内容混在一起。
+	runID := pkg.NewULIDMonotonic(pkg.PrefixRun)
 	e.runID = runID
 	dir := e.WorkDir
 	sessionID := e.session

@@ -31,8 +31,8 @@ const (
 
 // GitFileVO 一个被改动的文件。
 type GitFileVO struct {
-	// Path 相对工作目录的路径，分隔符统一为斜杠
-	Path string `json:"path"`
+	// FilePath 相对工作目录的路径，分隔符统一为斜杠
+	FilePath string `json:"file_path"`
 	// Status 取 GitChange*：M 改过 / A 新增 / D 删除 / R 改名 / C 复制 / T 类型变化 / ? 未跟踪 / U 冲突
 	Status string `json:"status"`
 	// Staged 区分「已放进待提交区」与「只改了工作区」，两者在界面上是两种处置动作
@@ -46,10 +46,10 @@ type GitFileVO struct {
 
 // GitRemoteVO 一个远端及其地址。
 type GitRemoteVO struct {
-	// Name 远端名（origin / upstream 等）
-	Name string `json:"name"`
-	// URL 推送地址
-	URL string `json:"url"`
+	// RemoteName 远端名（origin / upstream 等）
+	RemoteName string `json:"remote_name"`
+	// RemoteURL 推送地址
+	RemoteURL string `json:"remote_url"`
 }
 
 // GitStatusVO 工作区的版本状态。不可用时 Available=false 且 Reason 说清怎么办——
@@ -115,8 +115,8 @@ type GitDiffLineVO struct {
 // GitDiffVO 一份差异。Truncated 为真时 Dropped 是被丢掉的行数——
 // 模型与用户都得知道「后面还有」，否则截断会被当成文件就这么长。
 type GitDiffVO struct {
-	// Path 相对工作目录的路径；空表示整个工作区
-	Path string `json:"path"`
+	// FilePath 相对工作目录的路径；空表示整个工作区
+	FilePath string `json:"file_path"`
 	// Truncated 是否被截断
 	Truncated bool `json:"truncated"`
 	// Dropped 被丢掉的行数

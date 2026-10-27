@@ -54,7 +54,7 @@ async function loadProviders() {
   try {
     const view = await api.providers(kind.value)
     providers.value = view.providers ?? []
-    configPath.value = view.path
+    configPath.value = view.config_path
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
@@ -96,9 +96,9 @@ function openCreate() {
 }
 
 function openEdit(view: ProviderView) {
-  editing.value = view.name
+  editing.value = view.provider_name
   form.value = {
-    name: view.name,
+    name: view.provider_name,
     base_url: view.base_url,
     api: view.api || 'openai-completions',
     // 打码后的密钥不回填：用户没改就提交空串，后端会保留原值
@@ -109,7 +109,7 @@ function openEdit(view: ProviderView) {
 }
 
 function addModel() {
-  form.value.models = [...form.value.models, { id: '', name: '', context_window: 128000, max_tokens: 8192 }]
+  form.value.models = [...form.value.models, { model_id: '', model_name: '', context_window: 128000, max_tokens: 8192 }]
 }
 
 function removeModel(index: number) {
@@ -125,11 +125,11 @@ async function save() {
       base_url: form.value.base_url.trim(),
       api: form.value.api,
       api_key: form.value.api_key.trim(),
-      models: form.value.models.filter((m) => m.id.trim()),
+      models: form.value.models.filter((m) => m.model_id.trim()),
     }
     const view = await api.upsertProvider(name, payload, kind.value)
     providers.value = view.providers ?? []
-    configPath.value = view.path
+    configPath.value = view.config_path
     dialogOpen.value = false
     toasts.push('ok', t('common.saved'))
     await loadModels()
@@ -142,7 +142,7 @@ async function save() {
 
 async function remove(view: ProviderView) {
   try {
-    await ElMessageBox.confirm(t('models.deleteConfirm', { name: view.name }), t('models.deleteTitle'), {
+    await ElMessageBox.confirm(t('models.deleteConfirm', { name: view.provider_name }), t('models.deleteTitle'), {
       confirmButtonText: t('common.delete'),
       cancelButtonText: t('common.cancel'),
       type: 'warning',
@@ -151,7 +151,7 @@ async function remove(view: ProviderView) {
     return
   }
   try {
-    const next = await api.deleteProvider(view.name, kind.value)
+    const next = await api.deleteProvider(view.provider_name, kind.value)
     providers.value = next.providers ?? []
     toasts.push('ok', t('common.saved'))
   } catch (err) {
@@ -222,9 +222,9 @@ onMounted(() => {
           <p class="empty-hint">{{ t('models.emptyHint') }}</p>
         </div>
         <div v-else class="grid">
-          <article v-for="view in providers" :key="view.name" class="provider-card card-pad">
+          <article v-for="view in providers" :key="view.provider_name" class="provider-card card-pad">
             <div class="provider-head">
-              <span class="provider-name">{{ view.name }}</span>
+              <span class="provider-name">{{ view.provider_name }}</span>
               <span class="tag" :class="view.has_key ? 'ok' : 'warn'">
                 {{ view.has_key ? t('models.keyHidden') : t('models.apiKey') }}
               </span>
@@ -244,7 +244,7 @@ onMounted(() => {
               </div>
             </div>
             <div class="model-chips">
-              <span v-for="model in view.models" :key="model.id" class="tag">{{ model.id }}</span>
+              <span v-for="model in view.models" :key="model.model_id" class="tag">{{ model.model_id }}</span>
               <span v-if="!view.models?.length" class="tag warn">{{ t('models.addModel') }}</span>
             </div>
             <div class="provider-actions">
@@ -354,8 +354,8 @@ onMounted(() => {
           <button class="omp-btn text sm" @click="addModel">{{ t('models.addModel') }}</button>
         </div>
         <div v-for="(model, index) in form.models" :key="index" class="model-row">
-          <input v-model="model.id" class="omp-input" :placeholder="t('models.modelId')" />
-          <input v-model="model.name" class="omp-input" :placeholder="t('common.name')" />
+          <input v-model="model.model_id" class="omp-input" :placeholder="t('models.modelId')" />
+          <input v-model="model.model_name" class="omp-input" :placeholder="t('common.name')" />
           <input v-model.number="model.context_window" class="omp-input num-input" type="number" :placeholder="t('models.contextWindow')" />
           <input v-model.number="model.max_tokens" class="omp-input num-input" type="number" :placeholder="t('models.maxTokens')" />
           <button class="omp-btn icon ghost danger" :title="t('common.delete')" @click="removeModel(index)">

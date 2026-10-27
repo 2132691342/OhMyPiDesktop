@@ -54,7 +54,8 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | GET | `/bootstrap` | 首屏聚合：版本、引擎清单与能力、当前引擎、工作目录、设置、各引擎落盘布局、最近工作区、技能数、会话数、安装命令原文 |
 | GET | `/settings` | 界面设置 KV |
 | POST | `/settings/save` | 批量保存设置 `{key: value}` |
-| POST | `/settings/workspace` | 切工作目录 `{path}` |
+| POST | `/settings/workspace` | 切工作目录 `{path}`；成功后该目录进「最近」并置顶 |
+| POST | `/settings/workspace/forget` | 从「最近」里去掉 `{path}` → `{workspaces}`（只动记忆，不动目录） |
 | POST | `/settings/engine` | 切当前引擎 `{engine}` |
 | GET | `/logs` | 最近 500 行日志 |
 | POST | `/system/reveal` | 在资源管理器里定位 `{path}` |
@@ -281,5 +282,5 @@ GET /events?since=41
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`4`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+当前：`5`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
 只增可选字段不需要。

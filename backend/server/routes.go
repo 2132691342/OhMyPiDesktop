@@ -22,6 +22,7 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.GET("/settings", func(c *gin.Context) { s.run(c, func(*gin.Context) (any, error) { return s.svc.Settings() }) })
 	api.POST("/settings/save", s.saveSettings)
 	api.POST("/settings/workspace", s.setWorkspace)
+	api.POST("/settings/workspace/forget", s.forgetWorkspace)
 	api.POST("/settings/engine", s.setEngine)
 	api.GET("/logs", func(c *gin.Context) { ok(c, gin.H{"lines": pkg.Ring()}) })
 
@@ -157,6 +158,22 @@ func (s *Server) setWorkspace(c *gin.Context) {
 			return nil, err
 		}
 		return gin.H{"workspace": s.svc.Workspace()}, nil
+	})
+}
+
+func (s *Server) forgetWorkspace(c *gin.Context) {
+	var body struct {
+		Path string `json:"path"`
+	}
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(*gin.Context) (any, error) {
+		rows, err := s.svc.ForgetWorkspace(body.Path)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"workspaces": rows}, nil
 	})
 }
 

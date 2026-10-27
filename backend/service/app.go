@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -316,7 +317,7 @@ func (a *App) Bootstrap(ctx context.Context) (*Bootstrap, error) {
 			b.Skills[string(kind)] = len(skills)
 		}
 	}
-	b.Workspaces = a.workspacesFrom(allSessions)
+	b.Workspaces, _ = a.RecentWorkspaces(allSessions)
 	return b, nil
 }
 
@@ -337,7 +338,7 @@ func (a *App) workspacesFrom(sessions []session.Session) []domain.WorkspaceRow {
 			continue
 		}
 		_, statErr := os.Stat(dir)
-		row := domain.WorkspaceRow{Path: dir, Exists: statErr == nil}
+		row := domain.WorkspaceRow{WorkspacePath: dir, Exists: statErr == nil}
 		if !s.UpdatedAt.IsZero() {
 			row.UpdatedAt = s.UpdatedAt.Format(time.RFC3339)
 		}
@@ -411,7 +412,118 @@ func (a *App) SetWorkspace(dir string) error {
 	a.mu.Lock()
 	a.workspace = abs
 	a.mu.Unlock()
+	// 切过的目录要记住：下次打开时能一键回去，不必重新找路径。
+	// 记录失败不拦切换——「没记住」比「切不过去」轻得多。
+	if err := a.rememberWorkspace(abs); err != nil {
+		pkg.Warnf("app: 记不住这个工作目录：%v", err)
+	}
 	return nil
+}
+
+// RememberWorkspace 把一个目录提到「最近」的最前面。
+func (a *App) rememberWorkspace(abs string) error {
+	rows, err := a.recentWorkspaces()
+	if err != nil {
+		rows = nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	out := make([]domain.WorkspaceRow, 0, len(rows)+1)
+	out = append(out, domain.WorkspaceRow{WorkspacePath: abs, Exists: true, UpdatedAt: now})
+	for _, r := range rows {
+		if strings.EqualFold(r.WorkspacePath, abs) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return a.saveRecentWorkspaces(out)
+}
+
+// recentWorkspaces 读最近列表，丢掉已经不存在的目录。
+//
+// 不存在的目录直接丢而不是标灰：拔掉的 U 盘、删掉的项目不该永久占着列表，
+// 而用户想回去时会发现它「还在但点不动」——那更糟。
+func (a *App) recentWorkspaces() ([]domain.WorkspaceRow, error) {
+	raw := a.Store.Get(domain.KeyRecentWorkspaces)
+	if raw == "" {
+		return nil, nil
+	}
+	var rows []domain.WorkspaceRow
+	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+		// 这个键坏了不影响别的功能：当作没有历史，让写的时候覆盖掉。
+		pkg.Warnf("app: 最近工作目录无法解析，按空处理：%v", err)
+		return nil, nil
+	}
+	out := make([]domain.WorkspaceRow, 0, len(rows))
+	for _, r := range rows {
+		if r.WorkspacePath == "" {
+			continue
+		}
+		if st, err := os.Stat(r.WorkspacePath); err != nil || !st.IsDir() {
+			continue
+		}
+		r.Exists = true
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (a *App) saveRecentWorkspaces(rows []domain.WorkspaceRow) error {
+	if len(rows) > domain.RecentWorkspaceMax {
+		rows = rows[:domain.RecentWorkspaceMax]
+	}
+	raw, err := json.Marshal(rows)
+	if err != nil {
+		return pkg.Wrap(pkg.CodeInternal, "最近工作目录无法序列化", err)
+	}
+	if err := a.Store.Set(domain.KeyRecentWorkspaces, string(raw)); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ForgetWorkspace 从「最近」里去掉一个目录。
+func (a *App) ForgetWorkspace(dir string) ([]domain.WorkspaceRow, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return nil, pkg.New(pkg.CodeBadRequest, "工作目录不能为空", "")
+	}
+	rows, _ := a.recentWorkspaces()
+	out := make([]domain.WorkspaceRow, 0, len(rows))
+	for _, r := range rows {
+		if strings.EqualFold(r.WorkspacePath, dir) {
+			continue
+		}
+		out = append(out, r)
+	}
+	if err := a.saveRecentWorkspaces(out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RecentWorkspaces 是「最近 + 当前会话推出来的目录」的并集。
+//
+// 两份来源都要：记住的列表能立刻显示（不用扫盘），
+// 而从会话推出来的能捞到「在别的机器上聊过、这里还没切过」的目录。
+func (a *App) RecentWorkspaces(allSessions []session.Session) ([]domain.WorkspaceRow, error) {
+	rows, _ := a.recentWorkspaces()
+	seen := map[string]bool{}
+	for _, r := range rows {
+		seen[strings.ToLower(r.WorkspacePath)] = true
+	}
+	for _, r := range a.workspacesFrom(allSessions) {
+		if seen[strings.ToLower(r.WorkspacePath)] {
+			continue
+		}
+		rows = append(rows, r)
+	}
+	if len(rows) > domain.RecentWorkspaceMax {
+		rows = rows[:domain.RecentWorkspaceMax]
+	}
+	if rows == nil {
+		rows = []domain.WorkspaceRow{}
+	}
+	return rows, nil
 }
 
 // ---------------- 技能 ----------------

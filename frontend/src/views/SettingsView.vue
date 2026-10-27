@@ -22,6 +22,10 @@ const profileDraft = ref(app.profile)
 const pathDrafts = ref<Record<string, string>>({})
 const pathSaving = ref('')
 
+// 最近工作目录：后端合并了「记住的」与「会话里推出来的」，这里只负责点选与移除。
+const recentRows = computed(() => app.workspaces.filter((r) => r.exists))
+const forgetting = ref('')
+
 // 每个引擎一张卡：探测结果、版本、显式路径、落盘位置、重启。
 // 安装命令只展示、不执行——装上装不上是用户自己的事。
 const installed = computed(() => app.engines?.engines ?? [])
@@ -126,6 +130,26 @@ async function revealPath(path: string) {
     await api.reveal(path)
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
+  }
+}
+
+async function useWorkspace(path: string) {
+  if (path === app.workspace) return
+  await app.setWorkspace(path)
+  toasts.push('ok', t('settings.workspaceSwitched'))
+}
+
+// 移除只影响「最近」这份记忆，不动目录本身。
+async function forgetWorkspace(path: string) {
+  forgetting.value = path
+  try {
+    const res = await api.forgetWorkspace(path)
+    app.workspaces = res.workspaces ?? []
+    toasts.push('ok', t('settings.workspaceForgotten'))
+  } catch (err) {
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  } finally {
+    forgetting.value = ''
   }
 }
 
@@ -301,6 +325,33 @@ function layoutOf(kind: string) {
             {{ t('chat.pickWorkspace') }}
           </button>
         </div>
+
+        <!-- 最近用过的目录：一行一个，点行即切，× 只从记忆里去掉 -->
+        <div v-if="recentRows.length" class="recent-block">
+          <div class="set-label">{{ t('settings.recentWorkspaces') }}</div>
+          <ul class="recent-list">
+            <li v-for="row in recentRows" :key="row.workspace_path" class="recent-row">
+              <button
+                class="recent-open omp-row-click"
+                :class="{ 'is-current': row.workspace_path === app.workspace }"
+                :disabled="row.workspace_path === app.workspace"
+                @click="useWorkspace(row.workspace_path)"
+              >
+                <AppIcon name="folder" :size="13" />
+                <span class="mono recent-path">{{ row.workspace_path }}</span>
+              </button>
+              <button
+                class="omp-btn text sm recent-forget"
+                :class="{ 'is-loading': forgetting === row.workspace_path }"
+                :title="t('settings.forgetWorkspace')"
+                @click="forgetWorkspace(row.workspace_path)"
+              >
+                <AppIcon name="close" :size="13" />
+              </button>
+            </li>
+          </ul>
+        </div>
+        <div v-else class="set-hint">{{ t('settings.recentWorkspacesEmpty') }}</div>
       </section>
 
       <!-- 关于 -->
@@ -576,5 +627,78 @@ function layoutOf(kind: string) {
   font-size: var(--omp-fs-3xs);
   color: var(--omp-ink);
   overflow-wrap: anywhere;
+}
+
+/* 最近工作目录：整行元素按规范不放大（行宽 100%，放大会溢出被裁），
+   按下缩到 0.985；五态的缩放节奏不在这里重定义，只接 .omp-pressable。 */
+.recent-block {
+  margin-top: var(--omp-sp-4);
+}
+
+.recent-list {
+  list-style: none;
+  margin: var(--omp-sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+}
+
+.recent-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  height: var(--omp-ctl);
+  padding: 0 var(--omp-sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--omp-r-sm);
+  background: transparent;
+  color: var(--omp-ink);
+  font-size: var(--omp-fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--omp-dur-fast) ease, color var(--omp-dur-fast) ease,
+    transform var(--omp-dur-fast) ease;
+}
+
+.recent-open:hover:not(:disabled) {
+  background: var(--omp-hover);
+}
+
+.recent-open:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.recent-open:disabled {
+  opacity: 1;
+  cursor: default;
+  color: var(--omp-brand);
+  background: var(--omp-selected);
+}
+
+.recent-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-forget {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--omp-dur-fast) ease;
+}
+
+/* 只在本行悬停时显形：十二行常驻的 × 会把「切目录」读成「删记录」。 */
+.recent-row:hover .recent-forget,
+.recent-forget:focus-visible {
+  opacity: 1;
 }
 </style>

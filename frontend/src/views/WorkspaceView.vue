@@ -84,8 +84,8 @@ async function refresh() {
 }
 
 function pick(file: GitFile) {
-  selected.value = file.path
-  void loadDiff(file.path)
+  selected.value = file.file_path
+  void loadDiff(file.file_path)
 }
 
 // 写动作统一走这里：挂 loading、成功刷新状态、失败给原文。
@@ -104,20 +104,20 @@ async function act(name: string, fn: () => Promise<GitStatus | void>) {
 }
 
 async function stageAll() {
-  await act('stage', () => api.gitStage(unstaged.value.map((f) => f.path)))
+  await act('stage', () => api.gitStage(unstaged.value.map((f) => f.file_path)))
 }
 
 async function stage(file: GitFile) {
-  await act(`stage:${file.path}`, () => api.gitStage([file.path]))
+  await act(`stage:${file.file_path}`, () => api.gitStage([file.file_path]))
 }
 
 async function unstage(file: GitFile) {
-  await act(`unstage:${file.path}`, () => api.gitUnstage([file.path]))
+  await act(`unstage:${file.file_path}`, () => api.gitUnstage([file.file_path]))
 }
 
 async function discard(file: GitFile) {
   try {
-    await ElMessageBox.confirm(t('workspace.discardConfirm', { path: file.path }), t('workspace.discardTitle'), {
+    await ElMessageBox.confirm(t('workspace.discardConfirm', { path: file.file_path }), t('workspace.discardTitle'), {
       confirmButtonText: t('workspace.discard'),
       cancelButtonText: t('common.cancel'),
       type: 'warning',
@@ -125,7 +125,7 @@ async function discard(file: GitFile) {
   } catch {
     return
   }
-  await act(`discard:${file.path}`, () => api.gitDiscard([file.path]))
+  await act(`discard:${file.file_path}`, () => api.gitDiscard([file.file_path]))
 }
 
 async function commit() {
@@ -145,7 +145,7 @@ async function commit() {
 }
 
 async function resolveConflicts() {
-  await act('resolve', () => api.gitResolve(conflicts.value.map((f) => f.path)))
+  await act('resolve', () => api.gitResolve(conflicts.value.map((f) => f.file_path)))
 }
 
 async function stateAction(action: 'continue' | 'abort') {
@@ -270,13 +270,13 @@ onMounted(refresh)
                 </div>
                 <div
                   v-for="file in staged"
-                  :key="`s:${file.path}`"
+                  :key="`s:${file.file_path}`"
                   class="file-line omp-row-click"
-                  :class="{ active: selected === file.path }"
+                  :class="{ active: selected === file.file_path }"
                   @click="pick(file)"
                 >
                   <span class="chg" :class="`chg-${changeTag(file)}`">{{ changeTag(file) }}</span>
-                  <span class="path">{{ file.path }}</span>
+                  <span class="path">{{ file.file_path }}</span>
                   <span class="num"><b class="add">+{{ file.additions }}</b><b class="del">−{{ file.deletions }}</b></span>
                   <button class="omp-btn text sm" :disabled="Boolean(pending)" @click.stop="unstage(file)">
                     {{ t('workspace.unstage') }}
@@ -294,13 +294,13 @@ onMounted(refresh)
                 </div>
                 <div
                   v-for="file in unstaged"
-                  :key="`u:${file.path}`"
+                  :key="`u:${file.file_path}`"
                   class="file-line omp-row-click"
-                  :class="{ active: selected === file.path }"
+                  :class="{ active: selected === file.file_path }"
                   @click="pick(file)"
                 >
                   <span class="chg" :class="`chg-${changeTag(file)}`">{{ changeTag(file) }}</span>
-                  <span class="path">{{ file.path }}</span>
+                  <span class="path">{{ file.file_path }}</span>
                   <span class="num"><b class="add">+{{ file.additions }}</b><b class="del">−{{ file.deletions }}</b></span>
                   <button class="omp-btn text sm" :disabled="Boolean(pending)" @click.stop="stage(file)">
                     {{ t('workspace.stage') }}
@@ -338,14 +338,14 @@ onMounted(refresh)
             <div class="branch-list">
               <button
                 v-for="branch in branches"
-                :key="`${branch.remote}:${branch.name}`"
+                :key="`${branch.remote_name}:${branch.branch_name}`"
                 class="branch-line omp-row-click"
                 :class="{ active: branch.current }"
                 :disabled="branch.current || Boolean(pending)"
-                @click="switchBranch(branch.name)"
+                @click="switchBranch(branch.branch_name)"
               >
-                <span>{{ branch.name }}</span>
-                <span v-if="branch.remote" class="tag">{{ branch.remote }}</span>
+                <span>{{ branch.branch_name }}</span>
+                <span v-if="branch.remote_name" class="tag">{{ branch.remote_name }}</span>
                 <span v-if="branch.ahead || branch.behind" class="readout">↑{{ branch.ahead }} ↓{{ branch.behind }}</span>
               </button>
             </div>

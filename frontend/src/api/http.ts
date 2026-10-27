@@ -28,6 +28,7 @@ import type {
   SkillRow,
   TranscriptPage,
   UIResponse,
+  WorkspaceRow,
 } from '@/types/api'
 
 export class ApiError extends Error {
@@ -97,6 +98,8 @@ export const api = {
   settings: () => get<Record<string, string>>('/settings'),
   saveSettings: (kv: Record<string, string>) => post<Record<string, string>>('/settings/save', kv),
   setWorkspace: (path: string) => post<{ workspace: string }>('/settings/workspace', { path }),
+  forgetWorkspace: (path: string) =>
+    post<{ workspaces: WorkspaceRow[] }>('/settings/workspace/forget', { path }),
   setEngine: (engine: EngineKind) => post<{ engine: EngineKind }>('/settings/engine', { engine }),
   logs: () => get<{ lines: string[] }>('/logs'),
 

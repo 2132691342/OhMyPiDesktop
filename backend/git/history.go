@@ -63,7 +63,7 @@ func CommitDetail(dir, hash string) (*domain.GitCommitDetailVO, error) {
 	// 差异复用既有解析：一条链路两处配色规则，改格式只改一处。
 	// show 输出的路径是仓库根相对；历史抽屉展示的也是它，无需折回工作区。
 	lines, dropped := parseDiff(res.stdout, nil)
-	vo.Diff = &domain.GitDiffVO{Path: "", Lines: lines, Dropped: dropped, Truncated: dropped > 0}
+	vo.Diff = &domain.GitDiffVO{FilePath: "", Lines: lines, Dropped: dropped, Truncated: dropped > 0}
 	return vo, nil
 }
 
@@ -193,7 +193,7 @@ func parseShow(sc *scope, out string) (*domain.GitCommitDetailVO, error) {
 		if path == "" {
 			continue
 		}
-		fv := domain.GitFileVO{Path: path, Status: domain.GitChangeModified}
+		fv := domain.GitFileVO{FilePath: path, Status: domain.GitChangeModified}
 		if a, err := strconv.Atoi(strings.TrimSpace(cols[0])); err == nil {
 			fv.Additions = a
 		}
@@ -226,7 +226,7 @@ func parseBranches(out string) []domain.GitBranchVO {
 		if name == "" || strings.HasPrefix(name, "(") {
 			continue
 		}
-		vo := domain.GitBranchVO{Name: name, Current: cur}
+		vo := domain.GitBranchVO{BranchName: name, IsCurrent: cur}
 		// 方括号里是 `[上游] 领先/落后`；取不到就都是 0（没有上游的分支）。
 		if i := strings.Index(tail, "["); i >= 0 {
 			if j := strings.Index(tail[i:], "]"); j > 0 {
@@ -250,7 +250,7 @@ func parseRemoteBranches(out string) []domain.GitBranchVO {
 		if !ok {
 			continue
 		}
-		list = append(list, domain.GitBranchVO{Name: name, Remote: remote})
+		list = append(list, domain.GitBranchVO{BranchName: name, RemoteName: remote})
 	}
 	return list
 }

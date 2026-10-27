@@ -28,11 +28,15 @@ type GitCommitDetailVO struct {
 
 // GitBranchVO 一个分支及其相对上游的领先 / 落后数。
 type GitBranchVO struct {
-	Name    string `json:"name"`
-	Current bool   `json:"current"`
-	// Remote 分支所属远端名；本地分支为空
-	Remote string `json:"remote"`
-	// Remote 分支名用 Remote=true 区分：同名本地分支与远端分支是两条记录
+	// BranchName 分支名
+	BranchName string `json:"branch_name"`
+	// IsCurrent 是不是当前分支
+	IsCurrent bool `json:"current"`
+	// RemoteName 所属远端名；本地分支为空
+	RemoteName string `json:"remote_name"`
+	// IsRemote 区分同名本地分支与远端分支：它们是两条记录
+	IsRemote bool `json:"remote"`
+	// Ahead / Behind 相对上游的领先 / 落后提交数
 	Ahead  int `json:"ahead"`
 	Behind int `json:"behind"`
 }
@@ -67,9 +71,10 @@ type GitCommitREQ struct {
 
 // GitBranchREQ 新建 / 切换 / 合并 / 变基分支入参。
 type GitBranchREQ struct {
-	Name string `json:"name"`
-	// Remote 一并取远端分支（切分支 / 合并时才有意义）
-	Remote bool `json:"remote"`
+	// BranchName 分支名
+	BranchName string `json:"branch_name"`
+	// IsRemote 一并取远端分支（切分支 / 合并时才有意义）
+	IsRemote bool `json:"remote"`
 	// Rebase 合并时用变基而不是生成合并提交
 	Rebase bool `json:"rebase"`
 }
@@ -116,10 +121,10 @@ type GitInitREQ struct {
 
 // GitRemoteREQ 添加远端入参。
 type GitRemoteREQ struct {
-	// Name 远端名，只允许字母数字与 . _ -
-	Name string `json:"name"`
-	// URL 远端地址，必须是 git 认得的形态（https / ssh / 本地路径）
-	URL string `json:"url"`
+	// RemoteName 远端名，只允许字母数字与 . _ -
+	RemoteName string `json:"remote_name"`
+	// RemoteURL 远端地址，必须是 git 认得的形态（https / ssh / 本地路径）
+	RemoteURL string `json:"remote_url"`
 }
 
 // GitStateREQ 继续 / 中止一个未完成的合并或变基。

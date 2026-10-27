@@ -92,7 +92,7 @@ export interface EngineStatus {
 }
 
 export interface WorkspaceRow {
-  path: string
+  workspace_path: string
   exists: boolean
   updated_at?: string
 }
@@ -298,8 +298,8 @@ export interface ModelRow {
 }
 
 export interface ModelEntry {
-  id: string
-  name?: string
+  model_id: string
+  model_name?: string
   api?: string
   reasoning?: boolean
   input?: string[]
@@ -308,7 +308,7 @@ export interface ModelEntry {
 }
 
 export interface ProviderView {
-  name: string
+  provider_name: string
   base_url: string
   api: string
   auth: string
@@ -319,7 +319,7 @@ export interface ProviderView {
 
 export interface ProvidersView {
   providers: ProviderView[]
-  path: string
+  config_path: string
 }
 
 export interface LoginProvider {
@@ -356,19 +356,19 @@ export interface PluginRow {
 // ---------------- 工作区 ----------------
 
 export interface FileEntry {
-  name: string
+  entry_name: string
   dir: boolean
   size?: number
 }
 
 export interface FileList {
-  path: string
+  dir_path: string
   entries: FileEntry[]
   truncated: boolean
 }
 
 export interface FileRead {
-  path: string
+  file_path: string
   content: string
   size: number
   binary: boolean
@@ -378,7 +378,7 @@ export interface FileRead {
 export type GitChange = 'M' | 'A' | 'D' | 'R' | 'C' | 'T' | '?' | 'U'
 
 export interface GitFile {
-  path: string
+  file_path: string
   status: string
   staged: boolean
   conflict: boolean
@@ -387,8 +387,8 @@ export interface GitFile {
 }
 
 export interface GitRemote {
-  name: string
-  url: string
+  remote_name: string
+  remote_url: string
 }
 
 export interface GitStatus {
@@ -417,7 +417,7 @@ export interface GitDiffLine {
 }
 
 export interface GitDiff {
-  path: string
+  file_path: string
   truncated: boolean
   dropped: number
   lines: GitDiffLine[]
@@ -448,9 +448,9 @@ export interface GitCommitDetail {
 }
 
 export interface GitBranch {
-  name: string
+  branch_name: string
   current: boolean
-  remote: string
+  remote_name: string
   ahead: number
   behind: number
 }

@@ -50,9 +50,9 @@ func (a *App) Files(rel string) (*domain.FileListVO, error) {
 			continue
 		}
 		info, _ := e.Info()
-		item := domain.FileEntryVO{Name: e.Name(), Dir: e.IsDir()}
+		item := domain.FileEntryVO{EntryName: e.Name(), IsDir: e.IsDir()}
 		if info != nil && !e.IsDir() {
-			item.Size = info.Size()
+			item.SizeBytes = info.Size()
 		}
 		out = append(out, item)
 		if len(out) >= maxFileEntries {
@@ -60,13 +60,13 @@ func (a *App) Files(rel string) (*domain.FileListVO, error) {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Dir != out[j].Dir {
-			return out[i].Dir
+		if out[i].IsDir != out[j].IsDir {
+			return out[i].IsDir
 		}
-		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+		return strings.ToLower(out[i].EntryName) < strings.ToLower(out[j].EntryName)
 	})
 	return &domain.FileListVO{
-		Path:      pkg.RelPath(root, full),
+		DirPath:   pkg.RelPath(root, full),
 		Entries:   out,
 		Truncated: len(out) >= maxFileEntries,
 	}, nil
@@ -91,7 +91,7 @@ func (a *App) ReadFile(rel string) (*domain.FileReadVO, error) {
 	n, _ := f.Read(head)
 	_ = f.Close()
 	if isBinary(head[:n]) {
-		return &domain.FileReadVO{Path: rel, Size: st.Size(), Binary: true}, nil
+		return &domain.FileReadVO{FilePath: rel, SizeBytes: st.Size(), IsBinary: true}, nil
 	}
 	limit := int64(maxPreviewBytes)
 	readLen := st.Size()
@@ -106,9 +106,9 @@ func (a *App) ReadFile(rel string) (*domain.FileReadVO, error) {
 	n2, _ := f2.Read(buf)
 	_ = f2.Close()
 	return &domain.FileReadVO{
-		Path:      rel,
+		FilePath:  rel,
 		Content:   string(buf[:n2]),
-		Size:      st.Size(),
+		SizeBytes: st.Size(),
 		Truncated: st.Size() > limit,
 	}, nil
 }

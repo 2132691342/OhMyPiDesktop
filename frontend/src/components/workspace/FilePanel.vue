@@ -57,10 +57,10 @@ async function load(path = current.value) {
 
 async function enter(entry: FileEntry) {
   if (entry.dir) {
-    await load(join(entry.name))
+    await load(join(entry.entry_name))
     return
   }
-  await openFile(join(entry.name))
+  await openFile(join(entry.entry_name))
 }
 
 async function up() {
@@ -123,19 +123,19 @@ defineExpose({ load, openFile })
       <div v-if="!entries.length && !loading" class="files-empty">{{ t('files.empty') }}</div>
       <button
         v-for="entry in entries"
-        :key="entry.name"
+        :key="entry.entry_name"
         class="file-row omp-row-click"
         @click="enter(entry)"
       >
         <AppIcon :name="entry.dir ? 'folder' : 'file'" :size="13" />
-        <span class="file-name">{{ entry.name }}</span>
+        <span class="file-name">{{ entry.entry_name }}</span>
         <span v-if="entry.dir" class="file-size">›</span>
         <span v-else class="file-size">{{ formatSize(entry.size ?? 0) }}</span>
       </button>
       <p v-if="truncated" class="files-note">{{ t('files.truncated') }}</p>
     </div>
 
-    <el-drawer v-model="previewOpen" :title="preview?.path ?? ''" size="560px" direction="rtl">
+    <el-drawer v-model="previewOpen" :title="preview?.file_path ?? ''" size="560px" direction="rtl">
       <div v-if="previewLoading" class="preview-state">
         <span class="dot busy" /> {{ t('common.loading') }}
       </div>

@@ -122,7 +122,7 @@ func Discard(dir string, paths []string) (*domain.GitStatusVO, error) {
 		want[rel] = true
 	}
 	for _, f := range st.Files {
-		rootRel := sc.relFromRoot(f.Path)
+		rootRel := sc.relFromRoot(f.FilePath)
 		if !want[rootRel] {
 			continue
 		}
