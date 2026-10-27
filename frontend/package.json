@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@vueuse/core": "10.9.0",
+    "@wailsio/runtime": "3.0.0",
     "axios": "1.6.8",
     "echarts": "5.5.0",
     "element-plus": "2.9.0",

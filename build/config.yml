@@ -1,0 +1,44 @@
+# Wails v3 构建配置。只面向 Windows，所以只保留 windows 一个平台目录。
+# 改 info 后跑 `wails3 update build-assets` 同步生成物（会覆盖 build/windows 下的派生文件）。
+version: '3'
+
+info:
+  companyName: "OhMyPiDesktop"
+  productName: "OhMyPiDesktop"
+  productIdentifier: "com.ohmypi.desktop"
+  description: "omp 与 pi 的桌面工作台"
+  copyright: "Copyright © 2026"
+  comments: "把 omp 与 pi 变成能看、能点、能管的工作台"
+  version: "1.0.0"
+
+# 开发模式：只监听 Go 与前端源码，node_modules 与 frontend 整目录排除
+# （前端自己有 Vite 的 HMR，再让 wails 监听一次只会重复触发）。
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+    file:
+      - .DS_Store
+      - .gitignore
+      - .gitkeep
+      - "*_test.go"
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: wails3 build DEV=true
+      type: blocking
+    - cmd: wails3 task common:dev:frontend
+      type: background
+    - cmd: wails3 task run
+      type: primary
+      exit_policy: shutdown
+
+# 没有文件关联：本应用不接管任何扩展名，避免把「打开文件」变成一条隐蔽的写入口。
+fileAssociations: []

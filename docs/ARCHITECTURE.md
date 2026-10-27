@@ -86,21 +86,24 @@ omp 是 pi 的 fork，两者协议家族相同（同一套 JSONL 信封、同一
 
 ## 启动时序
 
-```
-wails.Run
-  └─ OnStartup        → 读数据目录 / 打开设置 / 装 hub / 建 service / 建 server
+application.New（第二次启动在这里就转交并退出，走不到建窗）
+  └─ Window.NewWithOptions  → 窗口以 Hidden 建好，装配完成前不显示
+  └─ SystemTray.New         → 托盘与菜单
+  └─ ServiceStartup         → 读数据目录 / 打开设置 / 装 hub / 建 service / 建 server
      （失败写 startErr，但一定关闭 startDone，让后面有确定的等待点）
      **不探测引擎**：探测要起子进程（pi 要起 Node），装配阶段不该等它
-  └─ OnDomReady       → 等 startDone（上限 30s）→ server.Start()（回环随机端口）
-                        → 发 app:ready{port, token, version, contract} → 显示窗口
-     前端 mount       → app.load() → getEndpoint()（Wails 绑定）→ GET /bootstrap
-                        → 打开 EventSource → 拉会话与引擎状态
-  └─ OnBeforeClose    → 有对话在跑时先 abort 并等 agent_end（有上限），再退
-  └─ OnShutdown       → 停引擎（进程树）→ 停 HTTP → 关数据库
+  └─ app.Run()              → 事件循环
+     前端 mount  → getEndpoint()（生成绑定）→ 触发 server.Start() → GET /bootstrap
+                  → 打开 EventSource → 拉会话与引擎状态
+  └─ OnShutdown  → 停引擎（进程树）→ 停 HTTP → 关设置存储
 ```
 
-`app:ready` 是 Wails 事件总线上的一帧，只用来兜「首屏早于服务就绪」的情况；
-前端真正拿端口还是调 `Endpoint()` 绑定方法——两条路都通，先到先用。
+端口不再靠事件推：v3 没有 `OnDomReady`，装配成功之后由第一次 `getEndpoint()`
+顺手把服务起起来，`Start()` 直接返回端口。前端仍要等 `startDone`，
+因为 `ServiceStartup` 与前端 mount 之间没有顺序保证。
+
+关窗不等于退出：`WindowClosing` 钩子里 `e.Cancel()` 把窗口收进托盘，
+真正退出只有托盘菜单的「退出」一条路。
 
 ## 引擎探测（不做安装）
 

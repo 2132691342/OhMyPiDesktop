@@ -1,85 +1,67 @@
-// Wails 绑定层：只用来拿本地服务地址与令牌，以及窗口控制。
+// Wails 绑定层：拿本地服务地址与令牌、系统对话框、窗口控制。
+//
+// v3 的绑定由 `wails3 generate bindings` 静态生成（见 frontend/bindings/），
+// 这里只做两件事：把生成的调用包成 Promise，以及保留「纯浏览器调后端」的兜底。
 // 业务一律走 HTTP，所以这个文件保持很小。
-import type { Bootstrap } from '@/types/api'
+import * as App from '@wails/OhMyPiDesktop/app'
+import { Events } from '@wailsio/runtime'
+import type { Endpoint } from '@wails/OhMyPiDesktop/models'
 
-interface Endpoint {
-  port: number
-  token: string
-  version: string
-  contract: number
-  base_url: string
-}
+export type { Endpoint }
 
-interface WailsBindings {
-  Endpoint(): Promise<Endpoint>
-  PickFolder(defaultDir: string): Promise<string>
-  OpenExternal(url: string): Promise<void>
-  WindowMinimize(): Promise<void>
-  WindowToggleMaximize(): Promise<void>
-  WindowClose(): Promise<void>
-  Settings(): Promise<Record<string, string>>
-}
+// 纯浏览器调试时检测不到绑定：wails3 dev 之外（比如只用 vite）走这条。
+// 生成代码在 WebView 里总是存在，所以「有没有绑定」= 能不能调到 Endpoint。
+let devFallback = false
 
-declare global {
-  interface Window {
-    go?: {
-      main?: {
-        App?: WailsBindings
-      }
-    }
-    runtime?: {
-      EventsOn(name: string, cb: (data: unknown) => void): void
-      EventsOff(name: string): void
-    }
+async function call<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch {
+    devFallback = true
+    throw new Error('没有拿到 Wails 绑定。请在桌面应用中运行，或先设置 localStorage 的 omp.dev.port / omp.dev.token。')
   }
-}
-
-function bindings(): WailsBindings | undefined {
-  return window.go?.main?.App
-}
-
-export function hasBindings(): boolean {
-  return Boolean(bindings())
 }
 
 export async function getEndpoint(): Promise<Endpoint> {
-  const api = bindings()
-  if (!api) {
-    // 纯浏览器调试：允许手填端口，方便只用 vite 调后端
-    const port = Number(localStorage.getItem('omp.dev.port') ?? 0)
-    const token = localStorage.getItem('omp.dev.token') ?? ''
-    if (!port) throw new Error('没有拿到 Wails 绑定。请在桌面应用中运行，或先设置 localStorage 的 omp.dev.port / omp.dev.token。')
-    return { port, token, version: 'dev', contract: 0, base_url: `http://127.0.0.1:${port}/api/v1` }
+  if (devFallback) return devEndpoint()
+  try {
+    return await App.Endpoint()
+  } catch {
+    devFallback = true
+    return devEndpoint()
   }
-  return api.Endpoint()
+}
+
+// 只调后端时不必开 Wails：go run ./tools/devserver -token dev 会打印这一行里的端口与令牌。
+function devEndpoint(): Endpoint {
+  const port = Number(localStorage.getItem('omp.dev.port') ?? 0)
+  const token = localStorage.getItem('omp.dev.token') ?? ''
+  if (!port) throw new Error('没有拿到 Wails 绑定，也没有设置 omp.dev.port / omp.dev.token。')
+  return { port, token, version: 'dev', contract: 0, base_url: `http://127.0.0.1:${port}/api/v1` }
 }
 
 export async function pickFolder(defaultDir: string): Promise<string> {
-  const api = bindings()
-  if (!api) return ''
-  return api.PickFolder(defaultDir)
+  return call(() => App.PickFolder(defaultDir))
 }
 
 export async function openExternal(url: string): Promise<void> {
-  const api = bindings()
-  if (api) {
-    await api.OpenExternal(url)
-    return
+  try {
+    await App.OpenExternal(url)
+  } catch {
+    window.open(url, '_blank')
   }
-  window.open(url, '_blank')
 }
 
 export const windowCtl = {
-  minimize: () => bindings()?.WindowMinimize(),
-  toggleMaximize: () => bindings()?.WindowToggleMaximize(),
-  close: () => bindings()?.WindowClose(),
+  minimize: () => void App.WindowMinimize(),
+  toggleMaximize: () => void App.WindowToggleMaximize(),
+  close: () => void App.WindowClose(),
 }
 
+// 启动失败由后端经事件推来：装配没完成时窗口已经起来了，前端要能显示原因。
 export function onStartupError(cb: (message: string) => void): void {
-  window.runtime?.EventsOn('app:startup-error', (data) => {
+  void Events.On('app:startup-error', (data: unknown) => {
     const payload = data as { message?: string }
     cb(payload?.message ?? '后端没有启动起来')
   })
 }
-
-export type { Endpoint, Bootstrap }

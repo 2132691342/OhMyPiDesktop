@@ -1,4 +1,8 @@
-// 应用入口：Wails 壳 + 本地 HTTP 服务 + 单实例 + 托盘。
+// 应用入口：Wails v3 壳 + 本地 HTTP 服务 + 单实例 + 托盘。
+//
+// 业务一律走内嵌的 gin（回环 + 随机端口 + 启动令牌），这里只暴露系统能力：
+// 端口、目录选择框、窗口控制、托盘。改这里时记住 backend/ 不 import wails，
+// 所以业务层不受桌面框架版本影响。
 package main
 
 import (
@@ -12,59 +16,98 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
+
 	"OhMyPiDesktop/backend/hub"
 	"OhMyPiDesktop/backend/pkg"
 	"OhMyPiDesktop/backend/repo"
 	"OhMyPiDesktop/backend/runtime"
 	"OhMyPiDesktop/backend/server"
 	"OhMyPiDesktop/backend/service"
-
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// 用户手册随二进制一起发行，断网也能看。声明在 assets.go。
+
 // version 由构建时注入；默认 dev 便于本地区分。
 var version = "0.1.0"
+
+// singleInstanceID 判「两次启动是不是同一个应用」的唯一标识。
+const singleInstanceID = "com.ohmypi.desktop"
 
 func main() {
 	app := &App{version: version, startDone: make(chan struct{})}
 
-	err := wails.Run(&options.App{
-		Title:            "OhMyPiDesktop",
-		Width:            1360,
-		Height:           900,
-		MinWidth:         1040,
-		MinHeight:        680,
-		Frameless:        true,
-		BackgroundColour: &options.RGBA{R: 248, G: 250, B: 252, A: 255},
-		AssetServer:      &assetserver.Options{Assets: assets},
-		OnStartup:        app.startup,
-		OnDomReady:       app.domReady,
-		OnBeforeClose:    app.beforeClose,
-		OnShutdown:       app.shutdown,
-		Bind:             []any{app},
-		Windows: &windows.Options{
-			WebviewIsTransparent: false,
-			WindowIsTranslucent:  false,
-			DisableWindowIcon:    false,
-			WebviewUserDataPath:  "",
+	a := application.New(application.Options{
+		Name:        "OhMyPiDesktop",
+		Description: "omp 与 pi 的桌面工作台",
+		Services: []application.Service{
+			application.NewService(app),
+		},
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+		},
+		// 第二次启动在 New 内部就完成「通知首个实例 → 退出」，走不到下面建窗。
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: singleInstanceID,
+			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+				app.onSecondInstance(data)
+			},
+		},
+		OnShutdown: func() {
+			app.shutdown()
 		},
 	})
-	if err != nil {
+
+	win := a.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:   "main",
+		Title:  "OhMyPiDesktop",
+		Width:  1360,
+		Height: 900,
+		// 无边框：标题栏由前端自绘，窗口位置与尺寸才与界面一致。
+		Frameless: true,
+		MinWidth:  1040,
+		MinHeight: 680,
+		BackgroundColour: application.NewRGB(248, 250, 252),
+		URL:              "/",
+		// 装配完成前不显示窗口，避免用户看见一帧白屏。
+		Hidden: true,
+		Windows: application.WindowsWindow{
+			NonClientRegionSupport: true,
+		},
+	})
+	app.win = win
+	app.app = a
+
+	// 关窗不退出：收托盘。真正退出走托盘菜单的「退出」。
+	// e.Cancel() 是 v3 的拦截方式——返回 false 不是拦截（v2 才是）。
+	win.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if app.quitting.Load() {
+			return
+		}
+		e.Cancel()
+		app.toTray()
+	})
+
+	// 托盘：菜单项由后端定，文案不进前端，避免语言切换时后端菜单不同步。
+	app.tray = a.SystemTray.New()
+	app.buildTrayMenu(a, win)
+
+	// 业务装配在 ServiceStartup 里做，失败也一定关闭 startDone：
+	// 前端拿端口时有一个确定的等待点，不会把「还没装好」当成永久失败。
+	if err := a.Run(); err != nil {
 		pkg.Errorf("app: 窗口启动失败: %v", err)
 		os.Exit(1)
 	}
 }
 
-// App 是 Wails 绑定面：只暴露系统能力（端口、标题栏、对话框、退出），业务全走本地 HTTP。
+// App 是 Wails 绑定面：只暴露系统能力，业务全走本地 HTTP。
 //
-// 为什么不把 handler 嵌进来：嵌入会把它的导出方法一起绑成前端永远调不通的 JS 方法。
+// 为什么不把 gin 的 handler 嵌进来：嵌入会把它们的导出方法一起绑成
+// 前端永远调不通的 JS 方法（签名带 *gin.Context）。
 type App struct {
 	version string
 
@@ -74,19 +117,26 @@ type App struct {
 	hub   *hub.Hub
 	token string
 
+	win  *application.WebviewWindow
+	tray *application.SystemTray
+	app  *application.App
+
 	startDone chan struct{}
 	startOK   atomic.Bool
 	startErr  string
 	errMu     sync.Mutex
 
-	quitting  atomic.Bool
-	startWait time.Duration
+	quitting atomic.Bool
 }
 
-// startup 装配业务。结束前一定关闭 startDone，让 domReady 有确定的等待点。
+// ServiceStartup 是 v3 的服务生命周期钩子，等价于 v2 的 OnStartup。
+func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
+	a.startup(ctx)
+	return nil
+}
+
 func (a *App) startup(ctx context.Context) {
 	defer close(a.startDone)
-	appCtx.Store(ctx)
 
 	if err := a.assemble(); err != nil {
 		ae := pkg.As(err)
@@ -95,7 +145,7 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.startOK.Store(true)
-	pkg.Infof("app: 装配完成 path=%s", a.svc.Workspace())
+	pkg.Infof("app: 装配完成 workspace=%s", a.svc.Workspace())
 }
 
 func (a *App) assemble() error {
@@ -130,59 +180,63 @@ func (a *App) assemble() error {
 	return nil
 }
 
-// domReady 起内嵌 HTTP 并把端口交给前端。
-func (a *App) domReady(ctx context.Context) {
-	select {
-	case <-a.startDone:
-	case <-time.After(30 * time.Second):
-		a.setStartErr("后端装配超时")
-	}
-	if !a.startOK.Load() {
-		pkg.Errorf("app: 装配未完成，界面将显示启动失败")
-		wruntime.EventsEmit(ctx, "app:startup-error", map[string]string{"message": a.startMessage()})
-		wruntime.WindowShow(ctx)
+// onSecondInstance 处理第二次启动：把已有窗口叫到前台。
+func (a *App) onSecondInstance(data application.SecondInstanceData) {
+	pkg.Infof("app: 检测到第二个实例 args=%d dir=%s", len(data.Args), data.WorkingDir)
+	if a.win == nil {
 		return
 	}
-	port, err := a.srv.Start()
-	if err != nil {
-		a.setStartErr(pkg.As(err).Message)
-		wruntime.EventsEmit(ctx, "app:startup-error", map[string]string{"message": a.startMessage()})
-		wruntime.WindowShow(ctx)
-		return
-	}
-	wruntime.EventsEmit(ctx, "app:ready", map[string]any{
-		"port":     port,
-		"token":    a.token,
-		"version":  a.version,
-		"contract": server.ContractVersion,
+	a.win.Show()
+	a.win.Restore()
+	a.win.Focus()
+}
+
+// buildTrayMenu 组装托盘菜单。
+func (a *App) buildTrayMenu(app *application.App, win *application.WebviewWindow) {
+	menu := app.NewMenu()
+	menu.Add("显示窗口").OnClick(func(*application.Context) {
+		win.Show()
+		win.Restore()
+		win.Focus()
 	})
-	wruntime.WindowShow(ctx)
-}
-
-// beforeClose 关窗时先停下引擎：不给子进程留孤儿。
-func (a *App) beforeClose(ctx context.Context) bool {
-	if a.quitting.Load() {
-		return false
-	}
-	if a.svc != nil && a.svc.Engine.AnyRunning() {
+	menu.AddSeparator()
+	menu.Add("退出").OnClick(func(*application.Context) {
 		a.quitting.Store(true)
-		go func() {
-			time.Sleep(50 * time.Millisecond)
-			wruntime.Quit(ctx)
-		}()
-		return true
-	}
-	a.quitting.Store(true)
-	return false
+		app.Quit()
+	})
+	a.tray.SetMenu(menu)
+	a.tray.SetTooltip("OhMyPiDesktop")
+	// 单击图标 = 显示/隐藏切换；菜单用右键。
+	a.tray.OnClick(func() {
+		a.toggleWindow()
+	})
 }
 
-// shutdown 释放资源。
-func (a *App) shutdown(ctx context.Context) {
+// toggleWindow 在显示与隐藏之间切换。
+//
+// 唤起必须同时处理「隐藏」与「最小化」两种状态：只做一半唤不回窗口。
+func (a *App) toggleWindow() {
+	if a.win == nil {
+		return
+	}
+	a.win.Show()
+	a.win.Restore()
+	a.win.Focus()
+}
+
+// toTray 收托盘前先停引擎，不给子进程留孤儿。
+func (a *App) toTray() {
+	if a.win != nil {
+		a.win.Hide()
+	}
+}
+
+func (a *App) shutdown() {
 	if a.svc != nil {
 		a.svc.Engine.StopAll()
 	}
 	if a.srv != nil {
-		a.srv.Stop(ctx)
+		a.srv.Stop(context.Background())
 	}
 	if a.store != nil {
 		_ = a.store.Close()
@@ -192,8 +246,8 @@ func (a *App) shutdown(ctx context.Context) {
 
 func (a *App) setStartErr(msg string) {
 	a.errMu.Lock()
+	defer a.errMu.Unlock()
 	a.startErr = msg
-	a.errMu.Unlock()
 }
 
 func (a *App) startMessage() string {
@@ -243,9 +297,8 @@ type Endpoint struct {
 // Endpoint 返回本地服务地址。
 //
 // 它会**等到服务真的在监听**再返回。前端在 WebView 加载完就调这个方法，
-// 而服务器是在 OnDomReady 里异步起的——不在这里等，前端必然拿到一个
-// 「端口还是 0」的瞬间，然后把「后端没有启动起来」当成永久失败。
-// 阻塞在这里，前端就只需要处理一种结果。
+// 而服务器是异步起的——不在这里等，前端必然拿到一个「端口还是 0」的瞬间，
+// 然后把「后端没有启动起来」当成永久失败。
 func (a *App) Endpoint() (Endpoint, error) {
 	select {
 	case <-a.startDone:
@@ -256,13 +309,14 @@ func (a *App) Endpoint() (Endpoint, error) {
 	if !a.startOK.Load() {
 		return Endpoint{}, fmt.Errorf("%s", a.startMessage())
 	}
-	// 装配完成到开始监听之间还有一个很短的窗口（起 listener）。
-	deadline := time.Now().Add(20 * time.Second)
-	for a.srv == nil || a.srv.Port() == 0 {
-		if time.Now().After(deadline) {
-			return Endpoint{}, fmt.Errorf("本地服务没有起来，请看设置页的日志")
+	// v3 没有 OnDomReady：装配成功就立刻起监听，前端拿端口时已经是确定值。
+	// Start 返回 (int, error)，端口不会再变，不需要轮询等。
+	if a.srv.Port() == 0 {
+		if _, err := a.srv.Start(); err != nil {
+			ae := pkg.As(err)
+			a.setStartErr(ae.Message)
+			return Endpoint{}, fmt.Errorf("%s", ae.Message)
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 	port := a.srv.Port()
 	return Endpoint{
@@ -275,70 +329,69 @@ func (a *App) Endpoint() (Endpoint, error) {
 }
 
 // PickFolder 打开系统目录选择框。
+//
+// v3 的对话框是「配置 → 弹一次」：结果从 PromptForSingleSelection 拿，
+// 取消时返回空串而不是错误（空串就是用户没选，不是失败）。
 func (a *App) PickFolder(defaultDir string) (string, error) {
-	ctx := a.ctx()
-	if ctx == nil {
+	if a.app == nil {
 		return "", fmt.Errorf("窗口还没就绪")
 	}
-	return wruntime.OpenDirectoryDialog(ctx, wruntime.OpenDialogOptions{
-		Title:                "选择工作目录",
-		DefaultDirectory:     defaultDir,
-		CanCreateDirectories: true,
-	})
+	return a.app.Dialog.OpenFile().
+		SetTitle("选择工作目录").
+		SetDirectory(defaultDir).
+		CanChooseDirectories(true).
+		CanChooseFiles(false).
+		CanCreateDirectories(true).
+		PromptForSingleSelection()
 }
 
 // RevealInExplorer 在资源管理器里定位一个文件。
 func (a *App) RevealInExplorer(path string) error {
-	ctx := a.ctx()
-	if ctx == nil {
+	if a.app == nil {
 		return fmt.Errorf("窗口还没就绪")
 	}
-	wruntime.BrowserOpenURL(ctx, "file:///"+path)
+	a.app.Browser.OpenURL("file:///" + path)
 	return nil
 }
 
 // OpenExternal 用系统默认浏览器打开链接。
 func (a *App) OpenExternal(url string) error {
-	ctx := a.ctx()
-	if ctx == nil {
+	if a.app == nil {
 		return fmt.Errorf("窗口还没就绪")
 	}
-	wruntime.BrowserOpenURL(ctx, url)
+	a.app.Browser.OpenURL(url)
 	return nil
 }
 
 // WindowMinimize 最小化。
 func (a *App) WindowMinimize() {
-	if ctx := a.ctx(); ctx != nil {
-		wruntime.WindowMinimise(ctx)
+	if a.win != nil {
+		a.win.Minimise()
 	}
 }
 
 // WindowToggleMaximize 最大化 / 还原。
 func (a *App) WindowToggleMaximize() {
-	ctx := a.ctx()
-	if ctx == nil {
+	if a.win == nil {
 		return
 	}
-	if wruntime.WindowIsMaximised(ctx) {
-		wruntime.WindowUnmaximise(ctx)
+	if a.win.IsMaximised() {
+		a.win.Restore()
 		return
 	}
-	wruntime.WindowMaximise(ctx)
+	a.win.Maximise()
 }
 
-// WindowClose 关窗。
+// WindowClose 关窗（收托盘，不退出）。
 func (a *App) WindowClose() {
-	if ctx := a.ctx(); ctx != nil {
-		wruntime.Quit(ctx)
-	}
+	a.toTray()
 }
 
 // Quit 退出应用。
 func (a *App) Quit() {
-	if ctx := a.ctx(); ctx != nil {
-		a.quitting.Store(true)
-		wruntime.Quit(ctx)
+	a.quitting.Store(true)
+	if a.app != nil {
+		a.app.Quit()
 	}
 }
 
@@ -352,16 +405,4 @@ func (a *App) Settings() map[string]string {
 		return map[string]string{}
 	}
 	return out
-}
-
-// appCtx 在 startup 里写入：Wails 的 Runtime API 全都需要它。
-var appCtx atomic.Value
-
-func (a *App) ctx() context.Context {
-	if v := appCtx.Load(); v != nil {
-		if c, ok := v.(context.Context); ok {
-			return c
-		}
-	}
-	return nil
 }

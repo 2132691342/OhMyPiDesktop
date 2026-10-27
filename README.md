@@ -60,8 +60,8 @@
 
 | 层 | 选型 |
 |---|---|
-| 语言 | Go 1.24（单 module，无 CGO） |
-| 桌面壳 | Wails v2（无边框，前端自绘标题栏） |
+| 语言 | Go 1.26（单 module，无 CGO） |
+| 桌面壳 | Wails v3（无边框，前端自绘标题栏；内置单实例与托盘） |
 | 业务 API | gin（回环 + 随机端口 + 启动令牌，只允许 GET / POST） |
 | 实时通信 | SSE（`/api/v1/events`，带序号与环形重放） |
 | 存储 | 一个 JSON 文件：只存界面设置 |
@@ -116,11 +116,11 @@ npm i -g @earendil-works/pi-coding-agent
 ## 开发
 
 ```bash
-wails dev                        # 热重载
-go test ./backend/... -count=1   # 后端测试
-go build ./backend/...           # 只验后端
-cd frontend && npm run build     # 前端类型检查 + 打包
-wails build                      # 产物 build/bin/OhMyPiDesktop.exe
+wails3 task dev                 # 热重载
+go test ./backend/... -count=1  # 后端测试
+go build ./backend/...          # 只验后端
+cd frontend && npm run build    # 前端类型检查 + 打包
+wails3 build                    # 产物 bin/OhMyPiDesktop.exe
 ```
 
 只调后端时不必开 Wails：
@@ -138,7 +138,7 @@ go run ./tools/smoke -engine omp -msg "Reply with exactly: OK"
 go run ./tools/smoke -engine pi  -msg "Reply with exactly: OK"
 ```
 
-构建需要 Go 1.24+、Node 18+、Wails CLI。
+构建需要 Go 1.26+、Node 18+、Wails v3 CLI（`wails3`）。
 
 ## 文档
 

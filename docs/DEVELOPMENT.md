@@ -4,9 +4,9 @@
 
 | 项 | 版本 | 说明 |
 |---|---|---|
-| Go | 1.24+ | 单 module，无 CGO |
+| Go | 1.26+ | 单 module，无 CGO（v3 的 `go.mod` 要求 1.26.0） |
 | Node | 18+ | 只用于构建前端 |
-| Wails CLI | v2.12+ | `wails dev` / `wails build` |
+| Wails CLI | v3.0+ | `wails3 task dev` / `wails3 build`；与 v2 的 `wails` 是两个命令，可共存 |
 | WebView2 | 系统自带 | Win10 1803+ 一般已有 |
 | 引擎 | **用户自己装** | `omp` 或 `pi`，在 PATH 上或被显式指定 |
 
@@ -16,12 +16,13 @@
 ## 常用命令
 
 ```bash
-wails dev                          # 热重载（前端 + 后端）
-go build ./backend/...             # 只验后端能编译
-go test  ./backend/... -count=1    # 后端测试
-go vet   ./backend/...             # 静态检查
-cd frontend && npm run build       # vue-tsc --noEmit + vite build
-wails build                        # 产物 build/bin/OhMyPiDesktop.exe
+wails3 task dev                   # 热重载（前端 + 后端）
+go build ./backend/...            # 只验后端能编译
+go test  ./backend/... -count=1   # 后端测试
+go vet   ./backend/...            # 静态检查
+cd frontend && npm run build      # vue-tsc --noEmit + vite build
+wails3 build                      # 产物 bin/OhMyPiDesktop.exe
+wails3 generate bindings -ts -i   # 改了绑定方法后重新生成 frontend/bindings
 ```
 
 提交前的三道门（缺一不可）：
@@ -34,7 +35,8 @@ cd frontend && npm run build
 
 **关于 `gofmt -l` 的误报**：仓库里多数 `.go` 文件是 CRLF 行尾，本地 `gofmt -l`
 会把它们全列出来——那是行尾问题，不是格式问题。**只关心内容格式**时，
-先归一化行尾再判（注意别用 `tr -d ''`，它会破坏 UTF-8 中文字节）：
+先归一化行尾再判（注意别用 `tr -d '
+'`，它会破坏 UTF-8 中文字节）：
 
 ```bash
 # 只看真实问题：把 CRLF 换成 LF，别的字节不动
@@ -43,7 +45,8 @@ import subprocess, os, tempfile
 files = [os.path.join(dp, f) for dp, _, fn in os.walk('backend') for f in fn if f.endswith('.go')]
 files += ['main.go', 'assets.go']
 for f in files:
-    norm = open(f, 'rb').read().replace(b'
+    norm = open(f, 'rb').read().replace(b'
+
 ', b'
 ')
     with tempfile.NamedTemporaryFile('wb', suffix='.go', delete=False) as t:
