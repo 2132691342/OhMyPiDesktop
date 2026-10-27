@@ -1,0 +1,183 @@
+/* 设计令牌：全项目唯一色值与尺寸定义处。
+   配色来自指定的五档靛蓝 / 石板：
+     1 #6366f1 动作   2 #818cf8 活动   3 #e0e7ff 淡强调   4 #f8fafc 页底   5 #1e293b 正文
+   纪律：组件里只写 var(--omp-*)，色值只出现在这里。 */
+
+:root {
+  /* --- 五档基色（界面设置的「强调色」只改这三档，其余派生） --- */
+  --saas_dashboard-color-1: #6366f1;
+  --saas_dashboard-color-2: #818cf8;
+  --saas_dashboard-color-3: #e0e7ff;
+  --saas_dashboard-color-4: #f8fafc;
+  --saas_dashboard-color-5: #1e293b;
+
+  /* --- 字体三族 --- */
+  --omp-font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, 'Microsoft YaHei UI',
+    'Microsoft YaHei', 'PingFang SC', sans-serif;
+  --omp-font-display: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', system-ui,
+    'Microsoft YaHei UI', sans-serif;
+  --omp-font-mono: 'Cascadia Mono', 'Consolas', 'JetBrains Mono', monospace;
+
+  /* --- 字号：8 级，全部乘用户缩放 --- */
+  --omp-fs-scale: 1;
+  --omp-fs-3xs: calc(10px * var(--omp-fs-scale));
+  --omp-fs-2xs: calc(11px * var(--omp-fs-scale));
+  --omp-fs-xs: calc(12px * var(--omp-fs-scale));
+  --omp-fs-sm: calc(13px * var(--omp-fs-scale));
+  --omp-fs-base: calc(14px * var(--omp-fs-scale));
+  --omp-fs-lg: calc(16px * var(--omp-fs-scale));
+  --omp-fs-xl: calc(21px * var(--omp-fs-scale));
+  --omp-fs-2xl: calc(28px * var(--omp-fs-scale));
+
+  /* --- 间距 --- */
+  --omp-sp-1: 4px;
+  --omp-sp-2: 8px;
+  --omp-sp-3: 12px;
+  --omp-sp-4: 16px;
+  --omp-sp-5: 20px;
+  --omp-sp-6: 24px;
+  --omp-sp-8: 32px;
+  --omp-sp-10: 40px;
+  --omp-sp-12: 48px;
+  --omp-sp-16: 64px;
+
+  /* --- 圆角 --- */
+  --omp-r-xs: 4px;
+  --omp-r-sm: 6px;
+  --omp-r: 8px;
+  --omp-r-lg: 12px;
+  --omp-r-xl: 14px;
+  --omp-r-full: 999px;
+
+  /* --- 控件高度 --- */
+  --omp-ctl-sm: 26px;
+  --omp-ctl: 34px;
+  --omp-ctl-lg: 38px;
+  --omp-ctl-xl: 42px;
+  --omp-ctl-icon: 30px;
+
+  /* --- 动效：三档，只解释状态变化 --- */
+  --omp-dur-fast: 110ms;
+  --omp-dur: 165ms;
+  --omp-dur-slow: 240ms;
+  --omp-ease: cubic-bezier(0.2, 0.6, 0.3, 1);
+  --omp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* --- 布局 --- */
+  --omp-topbar: 44px;
+  --omp-rail: 60px;
+  --omp-side: 244px;
+  --omp-col: 880px;
+  --omp-icon-stroke: 1.7;
+
+  --omp-z-pop: 60;
+  --omp-z-modal: 80;
+  --omp-z-toast: 100;
+}
+
+/* ============================================================
+   浅色（默认）：六级表面阶梯，相邻只差 2%~5% 亮度
+   ============================================================ */
+:root,
+:root[data-theme='light'] {
+  --omp-brand: var(--saas_dashboard-color-1);
+  --omp-brand-2: var(--saas_dashboard-color-2);
+  --omp-brand-3: var(--saas_dashboard-color-3);
+  --omp-brand-soft: rgba(99, 102, 241, 0.1);
+  --omp-brand-ring: rgba(99, 102, 241, 0.32);
+
+  --omp-window: var(--saas_dashboard-color-4);
+  --omp-work: #ffffff;
+  --omp-surface: #ffffff;
+  --omp-raised: #ffffff;
+  --omp-hover: rgba(30, 41, 59, 0.045);
+  --omp-selected: var(--saas_dashboard-color-3);
+  --omp-sunken: #eef2f7;
+
+  --omp-ink: var(--saas_dashboard-color-5);
+  --omp-ink-5: #475569;
+  --omp-mute: #64748b;
+  --omp-faint: #94a3b8;
+
+  --omp-line: #e2e8f0;
+  --omp-line-strong: #cbd5e1;
+  --omp-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --omp-shadow-lift: 0 4px 14px rgba(15, 23, 42, 0.09);
+
+  --omp-ok: #059669;
+  --omp-warn: #b45309;
+  --omp-bad: #dc2626;
+  --omp-ok-soft: rgba(5, 150, 105, 0.1);
+  --omp-warn-soft: rgba(180, 83, 9, 0.1);
+  --omp-bad-soft: rgba(220, 38, 38, 0.08);
+
+  --omp-code-bg: #f1f5f9;
+
+  /* 图表四序列：同一靛蓝色相的五档，深的给主序列 */
+  --omp-ch-1: #6366f1;
+  --omp-ch-2: #818cf8;
+  --omp-ch-3: #a5b4fc;
+  --omp-ch-4: #1e293b;
+  --omp-ch-5: #cbd5e1;
+
+  color-scheme: light;
+}
+
+/* ============================================================
+   深色：石板对位，强调提亮
+   ============================================================ */
+:root[data-theme='dark'] {
+  --omp-brand: #818cf8;
+  --omp-brand-2: #a5b4fc;
+  --omp-brand-3: #3730a3;
+  --omp-brand-soft: rgba(129, 140, 248, 0.14);
+  --omp-brand-ring: rgba(129, 140, 248, 0.4);
+
+  --omp-window: #0b1220;
+  --omp-work: #0f172a;
+  --omp-surface: #131c31;
+  --omp-raised: #1b2540;
+  --omp-hover: rgba(226, 232, 240, 0.06);
+  --omp-selected: #23305a;
+  --omp-sunken: #0b1220;
+
+  --omp-ink: #e2e8f0;
+  --omp-ink-5: #cbd5e1;
+  --omp-mute: #94a3b8;
+  --omp-faint: #64748b;
+
+  --omp-line: #26324a;
+  --omp-line-strong: #33415c;
+  --omp-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --omp-shadow-lift: 0 6px 18px rgba(0, 0, 0, 0.45);
+
+  --omp-ok: #34d399;
+  --omp-warn: #fbbf24;
+  --omp-bad: #f87171;
+  --omp-ok-soft: rgba(52, 211, 153, 0.12);
+  --omp-warn-soft: rgba(251, 191, 36, 0.12);
+  --omp-bad-soft: rgba(248, 113, 113, 0.12);
+
+  --omp-code-bg: #0b1220;
+
+  --omp-ch-1: #818cf8;
+  --omp-ch-2: #a5b4fc;
+  --omp-ch-3: #c7d2fe;
+  --omp-ch-4: #e2e8f0;
+  --omp-ch-5: #475569;
+
+  color-scheme: dark;
+}
+
+/* 用户选择「减少动效」时不解释过渡，直接到位 */
+:root[data-motion='reduced'] * {
+  animation-duration: 1ms !important;
+  transition-duration: 1ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

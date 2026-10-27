@@ -1,0 +1,659 @@
+/* 基元：按钮 / 输入 / 行 / 开关的五态规格，以及 Element Plus 的令牌接管。
+   五态是硬要求：默认、悬停、按下、禁用、加载，每一态都要有可辨的视觉差异。 */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--omp-font-sans);
+  font-size: var(--omp-fs-base);
+  line-height: 1.6;
+  color: var(--omp-ink);
+  background: var(--omp-window);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  /* 桌面应用不该有文本选择的「网页感」，只有内容区放开 */
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable='true'],
+.selectable {
+  user-select: text;
+}
+
+::selection {
+  background: var(--omp-brand-soft);
+  color: var(--omp-ink);
+}
+
+/* 滚动条：细、低对比、悬停才明显——它不该抢内容的注意力 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--omp-line-strong);
+  border-radius: var(--omp-r-full);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--omp-mute);
+  background-clip: content-box;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+/* ============================================================
+   按钮：五态。悬停放大、按下缩小，这是「点得动」的唯一证据。
+   ============================================================ */
+.omp-btn {
+  --btn-bg: var(--omp-surface);
+  --btn-fg: var(--omp-ink);
+  --btn-line: var(--omp-line-strong);
+  --btn-bg-hover: var(--omp-hover);
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--omp-sp-2);
+  height: var(--omp-ctl);
+  padding: 0 var(--omp-sp-4);
+  border: 1px solid var(--btn-line);
+  border-radius: var(--omp-r);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-size: var(--omp-fs-sm);
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    transform var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    border-color var(--omp-dur-fast) var(--omp-ease),
+    color var(--omp-dur-fast) var(--omp-ease),
+    box-shadow var(--omp-dur-fast) var(--omp-ease),
+    opacity var(--omp-dur-fast) var(--omp-ease);
+}
+
+.omp-btn:hover:not(:disabled):not(.is-loading) {
+  transform: scale(1.04);
+  background: var(--btn-bg-hover);
+  border-color: var(--omp-brand-2);
+  color: var(--omp-brand);
+  box-shadow: var(--omp-shadow);
+}
+
+.omp-btn:active:not(:disabled):not(.is-loading) {
+  transform: scale(0.95);
+  background: var(--omp-brand-soft);
+  border-color: var(--omp-brand);
+  transition-duration: 60ms;
+}
+
+.omp-btn:focus-visible {
+  outline: 2px solid var(--omp-brand-ring);
+  outline-offset: 2px;
+}
+
+.omp-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 加载态：转圈 + 文字保留 + 尺寸锁定。锁尺寸是关键：
+   否则转圈一出现按钮变宽，整排控件跟着跳。 */
+.omp-btn.is-loading {
+  cursor: progress;
+  transform: none;
+  opacity: 0.85;
+  padding-left: var(--omp-sp-8);
+}
+
+.omp-btn.is-loading::before {
+  content: '';
+  position: absolute;
+  left: var(--omp-sp-3);
+  width: 12px;
+  height: 12px;
+  border: 1.6px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: omp-spin 640ms linear infinite;
+}
+
+@keyframes omp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 主按钮：全站唯一的大面积强调色，实底 + 白字 */
+.omp-btn.primary {
+  --btn-bg: var(--omp-brand);
+  --btn-fg: #fff;
+  --btn-line: var(--omp-brand);
+  --btn-bg-hover: #4f46e5;
+}
+.omp-btn.primary:hover:not(:disabled):not(.is-loading) {
+  color: #fff;
+  border-color: #4f46e5;
+  box-shadow: 0 4px 14px var(--omp-brand-ring);
+}
+
+/* 幽灵按钮：无描边，只在悬停时给底 */
+.omp-btn.ghost {
+  --btn-bg: transparent;
+  --btn-line: transparent;
+}
+.omp-btn.ghost:hover:not(:disabled):not(.is-loading) {
+  border-color: var(--omp-line);
+  color: var(--omp-ink);
+}
+
+/* 危险：中性描边 + 危险色文字。彩色描边违反分层纪律 */
+.omp-btn.danger {
+  color: var(--omp-bad);
+  --btn-line: var(--omp-line-strong);
+}
+.omp-btn.danger:hover:not(:disabled):not(.is-loading) {
+  background: var(--omp-bad-soft);
+  border-color: var(--omp-bad);
+  color: var(--omp-bad);
+}
+
+/* 文字按钮不缩放：缩放会带动整行文字抖动 */
+.omp-btn.text {
+  height: auto;
+  padding: 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--omp-mute);
+  font-weight: 500;
+}
+.omp-btn.text:hover:not(:disabled):not(.is-loading) {
+  transform: none;
+  color: var(--omp-brand);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.omp-btn.text:active:not(:disabled):not(.is-loading) {
+  transform: none;
+  color: var(--omp-brand);
+}
+
+/* 尺寸档 */
+.omp-btn.sm {
+  height: var(--omp-ctl-sm);
+  padding: 0 var(--omp-sp-3);
+  font-size: var(--omp-fs-xs);
+  border-radius: var(--omp-r-sm);
+}
+.omp-btn.lg {
+  height: var(--omp-ctl-lg);
+  padding: 0 var(--omp-sp-5);
+  font-size: var(--omp-fs-base);
+}
+.omp-btn.icon {
+  width: var(--omp-ctl-icon);
+  height: var(--omp-ctl-icon);
+  padding: 0;
+  border-radius: var(--omp-r-sm);
+}
+
+/* ============================================================
+   输入控件：与按钮同一刻度，浮凸感靠描边 + 内阴影
+   ============================================================ */
+.omp-input {
+  width: 100%;
+  height: var(--omp-ctl);
+  padding: 0 var(--omp-sp-3);
+  border: 1px solid var(--omp-line-strong);
+  border-radius: var(--omp-r);
+  background: var(--omp-surface);
+  color: var(--omp-ink);
+  font-family: inherit;
+  font-size: var(--omp-fs-sm);
+  transition:
+    border-color var(--omp-dur-fast) var(--omp-ease),
+    box-shadow var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease);
+}
+.omp-input:hover:not(:disabled) {
+  border-color: var(--omp-brand-2);
+}
+.omp-input:focus {
+  outline: none;
+  border-color: var(--omp-brand);
+  box-shadow: 0 0 0 3px var(--omp-brand-soft);
+}
+.omp-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--omp-sunken);
+}
+.omp-input::placeholder {
+  color: var(--omp-faint);
+}
+
+textarea.omp-input {
+  height: auto;
+  padding: var(--omp-sp-2) var(--omp-sp-3);
+  line-height: 1.65;
+  resize: vertical;
+}
+
+/* ============================================================
+   元素：分节标题、状态点、标签
+   ============================================================ */
+.omp-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  font-size: var(--omp-fs-2xs);
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--omp-faint);
+  margin-bottom: var(--omp-sp-3);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--omp-mute);
+  flex: none;
+}
+.dot.ok {
+  background: var(--omp-ok);
+}
+.dot.warn {
+  background: var(--omp-warn);
+}
+.dot.bad {
+  background: var(--omp-bad);
+}
+.dot.busy {
+  background: var(--omp-brand-2);
+  animation: omp-breathe 1.4s var(--omp-ease) infinite;
+}
+
+@keyframes omp-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+/* 状态标签：低饱和底 + 同色文字，不抢主次 */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--omp-r-sm);
+  background: var(--omp-hover);
+  color: var(--omp-mute);
+  font-size: var(--omp-fs-3xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.tag.brand {
+  background: var(--omp-brand-soft);
+  color: var(--omp-brand);
+}
+.tag.ok {
+  background: var(--omp-ok-soft);
+  color: var(--omp-ok);
+}
+.tag.warn {
+  background: var(--omp-warn-soft);
+  color: var(--omp-warn);
+}
+.tag.bad {
+  background: var(--omp-bad-soft);
+  color: var(--omp-bad);
+}
+
+/* 可点的整行：不放大（会溢出侧栏被裁），只缩小 */
+.omp-row-click {
+  border-radius: var(--omp-r);
+  transition:
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    transform var(--omp-dur-fast) var(--omp-ease);
+}
+.omp-row-click:hover {
+  background: var(--omp-hover);
+}
+.omp-row-click:active {
+  transform: scale(0.985);
+  background: var(--omp-brand-soft);
+}
+.omp-row-click.is-active {
+  background: var(--omp-selected);
+  box-shadow: inset 2px 0 0 var(--omp-brand);
+}
+
+/* 视图切换动效：淡入 + 6px 位移 */
+.omp-fade-enter-active,
+.omp-fade-leave-active {
+  transition:
+    opacity var(--omp-dur) var(--omp-ease),
+    transform var(--omp-dur) var(--omp-ease);
+}
+.omp-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.omp-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.omp-list-enter-active,
+.omp-list-leave-active {
+  transition:
+    opacity var(--omp-dur) var(--omp-ease),
+    transform var(--omp-dur) var(--omp-ease);
+}
+.omp-list-enter-from {
+  opacity: 0;
+  transform: scale(0.96);
+}
+.omp-list-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+/* ============================================================
+   Element Plus 令牌接管：组件里禁止另写色值
+   ============================================================ */
+:root {
+  --el-color-primary: var(--omp-brand);
+  --el-color-primary-light-3: var(--omp-brand-2);
+  --el-color-primary-light-5: var(--omp-brand-3);
+  --el-color-primary-light-7: var(--omp-brand-soft);
+  --el-color-primary-light-8: var(--omp-brand-soft);
+  --el-color-primary-light-9: var(--omp-brand-soft);
+  --el-color-success: var(--omp-ok);
+  --el-color-warning: var(--omp-warn);
+  --el-color-danger: var(--omp-bad);
+  --el-color-error: var(--omp-bad);
+  --el-color-info: var(--omp-mute);
+
+  --el-bg-color: var(--omp-surface);
+  --el-bg-color-page: var(--omp-window);
+  --el-bg-color-overlay: var(--omp-raised);
+  --el-fill-color-blank: var(--omp-surface);
+  --el-fill-color: var(--omp-hover);
+  --el-fill-color-light: var(--omp-hover);
+  --el-fill-color-lighter: var(--omp-sunken);
+  --el-fill-color-dark: var(--omp-selected);
+
+  --el-text-color-primary: var(--omp-ink);
+  --el-text-color-regular: var(--omp-ink-5);
+  --el-text-color-secondary: var(--omp-mute);
+  --el-text-color-placeholder: var(--omp-faint);
+  --el-text-color-disabled: var(--omp-faint);
+
+  --el-border-color: var(--omp-line-strong);
+  --el-border-color-light: var(--omp-line);
+  --el-border-color-lighter: var(--omp-line);
+  --el-border-color-extra-light: var(--omp-line);
+  --el-border-radius-base: var(--omp-r);
+  --el-border-radius-small: var(--omp-r-sm);
+
+  --el-font-family: var(--omp-font-sans);
+  --el-font-size-base: var(--omp-fs-sm);
+  --el-box-shadow-light: var(--omp-shadow);
+  --el-box-shadow: var(--omp-shadow-lift);
+  --el-mask-color: rgba(15, 23, 42, 0.42);
+  --el-transition-duration: var(--omp-dur);
+}
+
+/* EP 的按钮也要吃五态：同一个操作条里 EP 与自绘并排时手感必须一致 */
+.el-button {
+  transition:
+    transform var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    border-color var(--omp-dur-fast) var(--omp-ease) !important;
+}
+.el-button:not(.is-disabled):not(.is-loading):hover {
+  transform: scale(1.04);
+}
+.el-button:not(.is-disabled):not(.is-loading):active {
+  transform: scale(0.95);
+}
+.el-button.is-disabled,
+.el-button.is-loading {
+  transform: none !important;
+}
+
+.el-dialog {
+  border-radius: var(--omp-r-xl);
+  border: 1px solid var(--omp-line);
+  box-shadow: var(--omp-shadow-lift);
+}
+.el-popper.is-light {
+  border: 1px solid var(--omp-line);
+  box-shadow: var(--omp-shadow-lift);
+}
+.el-switch.is-checked .el-switch__core {
+  background: var(--omp-brand);
+  border-color: var(--omp-brand);
+}
+
+/* 极简：去掉 EP 的重阴影与渐变 */
+.el-overlay {
+  backdrop-filter: blur(1.5px);
+}
+
+/* ============================================================
+   共享可按压基类
+   「悬停放大 / 按下缩小」只在这里定义一次。组件复用它，不复制粘贴——
+   复制十几份的结果是有人改了十一处、漏了一处，那一处就成了「点了没反应」。
+   行宽 100% 的元素（会话行、技能行、rail 项）不放大：放大会溢出被裁。
+   ============================================================ */
+.omp-pressable {
+  transition:
+    transform var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    border-color var(--omp-dur-fast) var(--omp-ease),
+    color var(--omp-dur-fast) var(--omp-ease),
+    box-shadow var(--omp-dur-fast) var(--omp-ease);
+}
+.omp-pressable:hover:not(:disabled):not(.is-loading):not(.is-static) {
+  transform: scale(1.04);
+}
+.omp-pressable:active:not(:disabled):not(.is-loading):not(.is-static) {
+  transform: scale(0.95);
+  transition-duration: 60ms;
+}
+.omp-pressable:disabled,
+.omp-pressable.is-static {
+  transform: none;
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 整行元素：只缩不放 */
+.omp-pressable-row {
+  transition:
+    transform var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease);
+}
+.omp-pressable-row:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+/* 文字按钮：不缩放（会带动整行文字抖动），只换色 */
+.omp-pressable-text {
+  transition: color var(--omp-dur-fast) var(--omp-ease);
+}
+
+/* ============================================================
+   Element Plus 桥：EP 的变量全部接到 --omp-*，五态与缩放刻度与自绘按钮一致
+   ============================================================ */
+:root {
+  --el-color-primary: var(--omp-brand);
+  --el-color-primary-light-3: var(--omp-brand-2);
+  --el-color-primary-light-5: var(--omp-brand-3);
+  --el-color-primary-light-7: var(--omp-brand-3);
+  --el-color-primary-light-8: var(--omp-brand-3);
+  --el-color-primary-light-9: var(--omp-brand-soft);
+  --el-color-primary-dark-2: var(--omp-brand);
+
+  --el-color-success: var(--omp-ok);
+  --el-color-warning: var(--omp-warn);
+  --el-color-danger: var(--omp-bad);
+  --el-color-error: var(--omp-bad);
+  --el-color-info: var(--omp-mute);
+
+  --el-bg-color: var(--omp-surface);
+  --el-bg-color-page: var(--omp-window);
+  --el-bg-color-overlay: var(--omp-raised);
+  --el-text-color-primary: var(--omp-ink);
+  --el-text-color-regular: var(--omp-ink-5);
+  --el-text-color-secondary: var(--omp-mute);
+  --el-text-color-placeholder: var(--omp-faint);
+  --el-border-color: var(--omp-line);
+  --el-border-color-light: var(--omp-line);
+  --el-border-color-lighter: var(--omp-line);
+  --el-border-color-extra-light: var(--omp-line);
+  --el-border-color-dark: var(--omp-line-strong);
+  --el-border-color-darker: var(--omp-line-strong);
+  --el-fill-color: var(--omp-hover);
+  --el-fill-color-light: var(--omp-hover);
+  --el-fill-color-lighter: var(--omp-hover);
+  --el-fill-color-blank: var(--omp-surface);
+  --el-mask-color: rgba(15, 23, 42, 0.4);
+  --el-box-shadow-light: var(--omp-shadow);
+  --el-box-shadow: var(--omp-shadow-lift);
+
+  --el-border-radius-base: var(--omp-r);
+  --el-border-radius-small: var(--omp-r-sm);
+  --el-border-radius-round: var(--omp-r-full);
+
+  --el-font-size-base: var(--omp-fs-base);
+  --el-font-size-small: var(--omp-fs-xs);
+  --el-font-size-extra-small: var(--omp-fs-2xs);
+  --el-font-family: var(--omp-font-sans);
+
+  --el-component-size: var(--omp-ctl);
+  --el-component-size-small: var(--omp-ctl-sm);
+  --el-component-size-large: var(--omp-ctl-lg);
+  --el-transition-duration: var(--omp-dur);
+  --el-transition-duration-fast: var(--omp-dur-fast);
+}
+
+/* EP 按钮：与 .omp-btn 同一套五态刻度 */
+.el-button:not(.is-disabled):not(.is-text):not(.is-link):not(.is-loading):hover {
+  transform: scale(1.04);
+}
+.el-button:not(.is-disabled):not(.is-text):not(.is-link):not(.is-loading):active {
+  transform: scale(0.95);
+  transition-duration: 60ms;
+}
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-button.is-disabled:active {
+  transform: none;
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* 加载态锁尺寸：否则转圈一出现按钮变宽，整排控件跟着跳 */
+.el-button.is-loading,
+.el-button.is-loading:hover,
+.el-button.is-loading:active {
+  transform: none;
+}
+.el-button.is-loading {
+  opacity: 0.85;
+  cursor: progress;
+}
+.el-button.is-loading::before {
+  background: transparent;
+}
+.el-button {
+  transition:
+    transform var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    border-color var(--omp-dur-fast) var(--omp-ease),
+    color var(--omp-dur-fast) var(--omp-ease);
+}
+
+/* ============================================================
+   分段控件（seg-btn）
+   以前三个页面各抄一份，都缺「按下」与「禁用」两态。这里收成唯一一处。
+   ============================================================ */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--omp-r);
+  background: var(--omp-hover);
+}
+.seg-btn {
+  height: var(--omp-ctl-sm);
+  padding: 0 var(--omp-sp-3);
+  border: none;
+  border-radius: var(--omp-r-sm);
+  background: transparent;
+  color: var(--omp-mute);
+  font-family: inherit;
+  font-size: var(--omp-fs-2xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    color var(--omp-dur-fast) var(--omp-ease);
+}
+.seg-btn:hover:not(:disabled):not(.active) {
+  color: var(--omp-ink);
+  background: var(--omp-surface);
+}
+.seg-btn:active:not(:disabled) {
+  transform: scale(0.95);
+  transition-duration: 60ms;
+}
+.seg-btn.active {
+  background: var(--omp-surface);
+  color: var(--omp-brand);
+  box-shadow: var(--omp-shadow);
+}
+.seg-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
