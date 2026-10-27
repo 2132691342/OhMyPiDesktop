@@ -1,0 +1,70 @@
+# 质量门禁：push main 与 PR 上跑完整验证链。
+# 只验证、从不发版：发版只由 release.yml 在 tag 上触发。
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags-ignore: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build frontend
+        # main 包 //go:embed frontend/dist：不先建前端，go build 直接失败。
+        # vue-tsc --noEmit 是硬门禁，类型错误在这里就拦住。
+        run: npm run build
+        working-directory: frontend
+
+      - name: gofmt
+        shell: pwsh
+        # runner checkout 是 LF，所以 gofmt -l 直接可用。
+        # （本地仓库里多数文件是 CRLF，本地 gofmt -l 会误报，见 DEVELOPMENT.md）
+        run: |
+          $bad = gofmt -l backend main.go assets.go tools
+          if ($bad) { Write-Host "未格式化（gofmt -w 后重提）："; Write-Host $bad; exit 1 }
+
+      - name: vet
+        run: go vet ./backend/... ./tools/...
+
+      - name: test
+        # 全量：只测会悄无声息出错的地方（协议翻译顺序、块下标、工具结果回填、
+        # 分片重组、环形重放对账、会话文件适配）。
+        run: go test ./backend/... -count=1
+
+      - name: build
+        run: go build ./backend/... ./tools/...

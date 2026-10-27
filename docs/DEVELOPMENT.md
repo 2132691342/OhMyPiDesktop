@@ -32,6 +32,31 @@ go test  ./backend/... -count=1
 cd frontend && npm run build
 ```
 
+**关于 `gofmt -l` 的误报**：仓库里多数 `.go` 文件是 CRLF 行尾，本地 `gofmt -l`
+会把它们全列出来——那是行尾问题，不是格式问题。**只关心内容格式**时，
+先归一化行尾再判（注意别用 `tr -d ''`，它会破坏 UTF-8 中文字节）：
+
+```bash
+# 只看真实问题：把 CRLF 换成 LF，别的字节不动
+python - <<'EOF'
+import subprocess, os, tempfile
+files = [os.path.join(dp, f) for dp, _, fn in os.walk('backend') for f in fn if f.endswith('.go')]
+files += ['main.go', 'assets.go']
+for f in files:
+    norm = open(f, 'rb').read().replace(b'
+', b'
+')
+    with tempfile.NamedTemporaryFile('wb', suffix='.go', delete=False) as t:
+        t.write(norm); tmp = t.name
+    r = subprocess.run(['gofmt', '-l', tmp], capture_output=True, text=True)
+    os.unlink(tmp)
+    if r.stdout.strip():
+        print(f)
+EOF
+```
+
+CI 上跑的是朴素的 `gofmt -l`（runner checkout 是 LF，不会误报）。
+
 ## 验证真实引擎
 
 改了协议翻译或会话投影后，必须真起一个引擎跑一轮——单元测试测不到

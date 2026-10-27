@@ -47,24 +47,24 @@ type Session struct {
 // Detail 是会话详情：元信息 + 投影消息。
 type Detail struct {
 	Session
-	Thinking string    `json:"thinking"`
-	Items    []Item    `json:"items"`
+	Thinking string `json:"thinking"`
+	Items    []Item `json:"items"`
 }
 
 // Item 是一条可渲染条目。
 type Item struct {
-	Kind      string          `json:"kind"` // user / assistant / tool / system
-	Role      string          `json:"role"`
-	Text      string          `json:"text,omitempty"`
-	Thinking  string          `json:"thinking,omitempty"`
+	Kind      string            `json:"kind"` // user / assistant / tool / system
+	Role      string            `json:"role"`
+	Text      string            `json:"text,omitempty"`
+	Thinking  string            `json:"thinking,omitempty"`
 	Blocks    []json.RawMessage `json:"blocks,omitempty"`
-	Model     string          `json:"model,omitempty"`
-	ToolName  string          `json:"tool_name,omitempty"`
-	ToolCall  string          `json:"tool_call_id,omitempty"`
-	IsError   bool            `json:"is_error,omitempty"`
-	Timestamp int64           `json:"timestamp,omitempty"`
-	Cost      float64         `json:"cost,omitempty"`
-	Tokens    int             `json:"tokens,omitempty"`
+	Model     string            `json:"model,omitempty"`
+	ToolName  string            `json:"tool_name,omitempty"`
+	ToolCall  string            `json:"tool_call_id,omitempty"`
+	IsError   bool              `json:"is_error,omitempty"`
+	Timestamp int64             `json:"timestamp,omitempty"`
+	Cost      float64           `json:"cost,omitempty"`
+	Tokens    int               `json:"tokens,omitempty"`
 }
 
 // Index 是会话文件的读取器，带一层 (size+mtime) 缓存。
@@ -169,10 +169,10 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 					} `json:"cost"`
 				} `json:"usage"`
 			} `json:"message"`
-			Model     string  `json:"model"`
-			Provider  string  `json:"provider"`
-			ModelID   string  `json:"modelId"`
-			Name      *string `json:"name"`
+			Model    string  `json:"model"`
+			Provider string  `json:"provider"`
+			ModelID  string  `json:"modelId"`
+			Name     *string `json:"name"`
 		}
 		if json.Unmarshal(line, &head) != nil {
 			continue
@@ -257,16 +257,16 @@ func (ix *Index) Detail(path string) (*Detail, error) {
 			continue
 		}
 		var entry struct {
-			Type string `json:"type"`
+			Type    string `json:"type"`
 			Message *struct {
-				Role      string          `json:"role"`
-				Content   json.RawMessage `json:"content"`
-				Model     string          `json:"model"`
-				Timestamp int64           `json:"timestamp"`
-				ToolName  string          `json:"toolName"`
-				ToolCallID string         `json:"toolCallId"`
-				IsError   bool            `json:"isError"`
-				Usage     *struct {
+				Role       string          `json:"role"`
+				Content    json.RawMessage `json:"content"`
+				Model      string          `json:"model"`
+				Timestamp  int64           `json:"timestamp"`
+				ToolName   string          `json:"toolName"`
+				ToolCallID string          `json:"toolCallId"`
+				IsError    bool            `json:"isError"`
+				Usage      *struct {
 					TotalTokens int `json:"totalTokens"`
 					Cost        struct {
 						Total float64 `json:"total"`

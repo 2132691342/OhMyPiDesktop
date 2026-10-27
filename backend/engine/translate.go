@@ -51,9 +51,9 @@ type Turn struct {
 // 两种形态：delta（只是某块尾部增长，前端追加即可）与 block（结构变了，
 // 前端按 index 替换/插入那一块）。全量重发 blocks 会让一轮长回答的流量是 O(字数²)。
 type Update struct {
-	Mode   string  // delta / block / blocks
+	Mode   string // delta / block / blocks
 	Index  int
-	Kind   string  // text / thinking / tool
+	Kind   string // text / thinking / tool
 	Delta  string
 	Block  *Block
 	Blocks []Block // Mode == blocks 时整表（换回合 / 回填工具结果）

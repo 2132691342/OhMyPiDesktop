@@ -10,15 +10,15 @@ import "encoding/json"
 
 // Model 是引擎报上来的模型描述（只取界面要显示的字段）。
 type Model struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	API           string   `json:"api"`
-	Provider      string   `json:"provider"`
-	BaseURL       string   `json:"baseUrl,omitempty"`
-	Reasoning     bool     `json:"reasoning"`
-	Input         []string `json:"input,omitempty"`
-	ContextWindow int      `json:"contextWindow"`
-	MaxTokens     int      `json:"maxTokens"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	API           string     `json:"api"`
+	Provider      string     `json:"provider"`
+	BaseURL       string     `json:"baseUrl,omitempty"`
+	Reasoning     bool       `json:"reasoning"`
+	Input         []string   `json:"input,omitempty"`
+	ContextWindow int        `json:"contextWindow"`
+	MaxTokens     int        `json:"maxTokens"`
 	Cost          *ModelCost `json:"cost,omitempty"`
 	Thinking      *struct {
 		Mode    string   `json:"mode"`
@@ -38,8 +38,8 @@ type ModelCost struct {
 // ContextUsage 是上下文水位。两个引擎都提供，来源不同：
 // omp 在 get_state.contextUsage，pi 在 get_session_stats.contextUsage。
 type ContextUsage struct {
-	Tokens        *int    `json:"tokens"`
-	ContextWindow int     `json:"contextWindow"`
+	Tokens        *int     `json:"tokens"`
+	ContextWindow int      `json:"contextWindow"`
 	Percent       *float64 `json:"percent"`
 }
 
@@ -48,23 +48,23 @@ type ContextUsage struct {
 // 两家共有的键都收在这里；omp 独有的键（tokensPerSecond / queuedMessages /
 // contextUsage / todoPhases）由 omp 侧用私有结构再取一次。
 type SessionState struct {
-	Model              *Model  `json:"model"`
-	ThinkingLevel      string  `json:"thinkingLevel"`
-	IsStreaming        bool    `json:"isStreaming"`
-	IsCompacting       bool    `json:"isCompacting"`
-	IsSettled          bool    `json:"isSettled"`
-	SessionID          string  `json:"sessionId"`
-	SessionFile        string  `json:"sessionFile"`
-	SessionName        string  `json:"sessionName"`
-	MessageCount       int     `json:"messageCount"`
-	PendingCount       int     `json:"pendingMessageCount"`
-	AutoCompaction     bool    `json:"autoCompactionEnabled"`
-	SteeringMode       string  `json:"steeringMode"`
-	FollowUpMode       string  `json:"followUpMode"`
-	ContextUsage       *ContextUsage `json:"contextUsage"`
-	TokensPerSecond    *float64      `json:"tokensPerSecond"`
-	Queued             *QueuedMessages `json:"queuedMessages"`
-	TodoPhases         []json.RawMessage `json:"todoPhases"`
+	Model           *Model            `json:"model"`
+	ThinkingLevel   string            `json:"thinkingLevel"`
+	IsStreaming     bool              `json:"isStreaming"`
+	IsCompacting    bool              `json:"isCompacting"`
+	IsSettled       bool              `json:"isSettled"`
+	SessionID       string            `json:"sessionId"`
+	SessionFile     string            `json:"sessionFile"`
+	SessionName     string            `json:"sessionName"`
+	MessageCount    int               `json:"messageCount"`
+	PendingCount    int               `json:"pendingMessageCount"`
+	AutoCompaction  bool              `json:"autoCompactionEnabled"`
+	SteeringMode    string            `json:"steeringMode"`
+	FollowUpMode    string            `json:"followUpMode"`
+	ContextUsage    *ContextUsage     `json:"contextUsage"`
+	TokensPerSecond *float64          `json:"tokensPerSecond"`
+	Queued          *QueuedMessages   `json:"queuedMessages"`
+	TodoPhases      []json.RawMessage `json:"todoPhases"`
 }
 
 // QueuedMessages 是排队消息快照。
@@ -77,15 +77,15 @@ type QueuedMessages struct {
 // SessionStats 是会话累计用量。两引擎字段一致，
 // 唯一差别是 omp 多 reasoning 与 premiumRequests。
 type SessionStats struct {
-	SessionID         string       `json:"sessionId"`
-	UserMessages      int          `json:"userMessages"`
-	AssistantMessages int          `json:"assistantMessages"`
-	ToolCalls         int          `json:"toolCalls"`
-	ToolResults       int          `json:"toolResults"`
-	TotalMessages     int          `json:"totalMessages"`
-	Tokens            TokenCounts  `json:"tokens"`
-	Cost              float64      `json:"cost"`
-	PremiumRequests   int          `json:"premiumRequests"`
+	SessionID         string        `json:"sessionId"`
+	UserMessages      int           `json:"userMessages"`
+	AssistantMessages int           `json:"assistantMessages"`
+	ToolCalls         int           `json:"toolCalls"`
+	ToolResults       int           `json:"toolResults"`
+	TotalMessages     int           `json:"totalMessages"`
+	Tokens            TokenCounts   `json:"tokens"`
+	Cost              float64       `json:"cost"`
+	PremiumRequests   int           `json:"premiumRequests"`
 	ContextUsage      *ContextUsage `json:"contextUsage"`
 }
 
@@ -155,9 +155,9 @@ type Message struct {
 // omp 的 source 是 builtin/extension/skill，pi 是 extension/prompt/skill，
 // 且 pi 的技能命令带 `skill:` 前缀——两者都原样透出，界面按前缀染色。
 type SlashCommand struct {
-	Name        string `json:"name"`
-	Source      string `json:"source"`
-	Description string `json:"description,omitempty"`
+	Name        string   `json:"name"`
+	Source      string   `json:"source"`
+	Description string   `json:"description,omitempty"`
 	Aliases     []string `json:"aliases,omitempty"`
 	Input       *struct {
 		Hint string `json:"hint,omitempty"`
@@ -183,8 +183,8 @@ type UIRequest struct {
 	OptionDetails []struct {
 		Description string `json:"description,omitempty"`
 	} `json:"optionDetails,omitempty"`
-	Timeout  int    `json:"timeout,omitempty"`
-	TargetID string `json:"targetId,omitempty"`
+	Timeout   int    `json:"timeout,omitempty"`
+	TargetID  string `json:"targetId,omitempty"`
 	Questions []struct {
 		ID          string `json:"id"`
 		Question    string `json:"question"`

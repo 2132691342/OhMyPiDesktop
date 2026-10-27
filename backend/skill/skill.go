@@ -21,7 +21,7 @@ import (
 type Skill struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
-	Path        string   `json:"path"`      // SKILL.md 绝对路径
+	Path        string   `json:"path"` // SKILL.md 绝对路径
 	Dir         string   `json:"dir"`
 	Source      string   `json:"source"` // user / project / plugin
 	Globs       []string `json:"globs,omitempty"`

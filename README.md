@@ -160,4 +160,19 @@ go run ./tools/smoke -engine pi  -msg "Reply with exactly: OK"
 | [docs/modules/subagents.md](docs/modules/subagents.md) | 子代理观测台：双源数据、字节游标、干预 |
 | [docs/modules/git.md](docs/modules/git.md) | 工作区：版本状态、白名单写入、文件面板 |
 
-未正式发行。
+## 协议
+
+[MIT](LICENSE)。你可以在保持协议声明的前提下自由使用、修改与分发。
+
+## 发布
+
+版本号跟随 tag（`v<major>.<minor>.<patch>`）。在 tag 上推送会触发发版流水线，
+产出 Windows 便携版可执行文件并挂到 GitHub Release：
+
+```bash
+git tag -a v1.0.0 -m "v1.0.0"
+git push origin main
+git push origin v1.0.0
+```
+
+`main` 上的每次推送都会跑质量门禁（gofmt / vet / 全量测试 / 前端类型检查）。

@@ -25,8 +25,8 @@ import (
 
 // App 是用例入口。
 type App struct {
-	Store *repo.Store
-	Hub   *hub.Hub
+	Store  *repo.Store
+	Hub    *hub.Hub
 	Engine *engine.Supervisor
 
 	mu         sync.RWMutex
@@ -92,7 +92,7 @@ func (a *App) resolveEngine(kind engine.Kind) (string, []string, []string) {
 	a.mu.RLock()
 	envForKind := a.envForLocked(kind)
 	a.mu.RUnlock()
-	id, err := env.Detect(a.Store.Get(domain.KeyEngineExePrefix + string(kind)), kind)
+	id, err := env.Detect(a.Store.Get(domain.KeyEngineExePrefix+string(kind)), kind)
 	if err != nil || id.Exe == "" {
 		return "", nil, envForKind
 	}
@@ -261,18 +261,18 @@ func (a *App) Identity(kind engine.Kind) engine.Identity {
 
 // Bootstrap 是首屏一次拉齐的全部内容。
 type Bootstrap struct {
-	Version    string                       `json:"version"`
-	Engines    []engine.Identity            `json:"engines"`
-	Caps       map[string]engine.Caps        `json:"caps"`
-	Active     engine.Kind                  `json:"active"`
-	Workspace  string                       `json:"workspace"`
-	Profile    string                       `json:"profile"`
-	Settings   map[string]string            `json:"settings"`
-	Layouts    map[string]env.Layout         `json:"layouts"`
-	Workspaces []domain.WorkspaceRow        `json:"workspaces"`
-	Skills     map[string]int               `json:"skills"`
-	Sessions   map[string]int               `json:"sessions"`
-	Install    map[string]string            `json:"install"`
+	Version    string                 `json:"version"`
+	Engines    []engine.Identity      `json:"engines"`
+	Caps       map[string]engine.Caps `json:"caps"`
+	Active     engine.Kind            `json:"active"`
+	Workspace  string                 `json:"workspace"`
+	Profile    string                 `json:"profile"`
+	Settings   map[string]string      `json:"settings"`
+	Layouts    map[string]env.Layout  `json:"layouts"`
+	Workspaces []domain.WorkspaceRow  `json:"workspaces"`
+	Skills     map[string]int         `json:"skills"`
+	Sessions   map[string]int         `json:"sessions"`
+	Install    map[string]string      `json:"install"`
 }
 
 // Bootstrap 组装首屏数据。
@@ -283,17 +283,17 @@ func (a *App) Bootstrap(ctx context.Context) (*Bootstrap, error) {
 	}
 	a.detectAll(ctx, false)
 	b := &Bootstrap{
-		Version:   a.Version,
-		Active:    a.ActiveKind(),
-		Workspace: a.Workspace(),
-		Profile:   a.Profile(),
-		Settings:  settings,
-		Engines:   []engine.Identity{},
-		Caps:      map[string]engine.Caps{},
-		Layouts:   map[string]env.Layout{},
-		Skills:    map[string]int{},
-		Sessions:  map[string]int{},
-		Install:   map[string]string{},
+		Version:    a.Version,
+		Active:     a.ActiveKind(),
+		Workspace:  a.Workspace(),
+		Profile:    a.Profile(),
+		Settings:   settings,
+		Engines:    []engine.Identity{},
+		Caps:       map[string]engine.Caps{},
+		Layouts:    map[string]env.Layout{},
+		Skills:     map[string]int{},
+		Sessions:   map[string]int{},
+		Install:    map[string]string{},
 		Workspaces: []domain.WorkspaceRow{},
 	}
 	if b.Settings == nil {

@@ -18,9 +18,9 @@ type FileListVO struct {
 
 // FileReadVO 单文件预览。
 type FileReadVO struct {
-	Path     string `json:"path"`
-	Content  string `json:"content"`
-	Size     int64  `json:"size"`
-	Binary   bool   `json:"binary"`
-	Truncated bool  `json:"truncated"`
+	Path      string `json:"path"`
+	Content   string `json:"content"`
+	Size      int64  `json:"size"`
+	Binary    bool   `json:"binary"`
+	Truncated bool   `json:"truncated"`
 }

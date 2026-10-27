@@ -19,17 +19,17 @@ import (
 // models.yml vs models.json），所以这里是**按引擎分支的唯一地方**，
 // 上层只拿这份结构，不再拼路径。
 type Layout struct {
-	Kind      engine.Kind `json:"kind"`
-	Root      string      `json:"root"`       // ~/.omp 或 ~/.pi
-	Agent     string      `json:"agent"`      // 当前 profile 的 agent 目录
-	Sessions  string      `json:"sessions"`   // 会话目录
-	Skills    string      `json:"skills"`     // 用户级技能目录
-	Managed   string      `json:"managed"`    // 托管技能目录（仅 omp 有）
-	Plugins   string      `json:"plugins"`    // 插件/包根目录
-	Models    string      `json:"models"`     // models.yml / models.json
-	Settings  string      `json:"settings"`   // config.yml / settings.json
-	AuthFile  string      `json:"auth_file"`  // auth.json（仅 pi）
-	ProjectDir string     `json:"project_dir"` // 工作区里的项目级目录名（.omp/.pi）
+	Kind       engine.Kind `json:"kind"`
+	Root       string      `json:"root"`        // ~/.omp 或 ~/.pi
+	Agent      string      `json:"agent"`       // 当前 profile 的 agent 目录
+	Sessions   string      `json:"sessions"`    // 会话目录
+	Skills     string      `json:"skills"`      // 用户级技能目录
+	Managed    string      `json:"managed"`     // 托管技能目录（仅 omp 有）
+	Plugins    string      `json:"plugins"`     // 插件/包根目录
+	Models     string      `json:"models"`      // models.yml / models.json
+	Settings   string      `json:"settings"`    // config.yml / settings.json
+	AuthFile   string      `json:"auth_file"`   // auth.json（仅 pi）
+	ProjectDir string      `json:"project_dir"` // 工作区里的项目级目录名（.omp/.pi）
 }
 
 // ResolveLayout 按引擎与 profile 解析布局。

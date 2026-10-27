@@ -48,7 +48,7 @@ func As(err error) *AppError {
 // 5xxx 技能/插件/能力不支持，6xxx 会话，7xxx 入参/鉴权，8xxx 文件/路径/网络。
 // 全表与「前端该怎么反应」见 docs/ERROR-CODES.md——两边必须同步。
 const (
-	CodeInternal       = "1001"
+	CodeInternal = "1001"
 
 	CodeStartup = "2001"
 	CodeDataDir = "2002"

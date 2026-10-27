@@ -42,16 +42,16 @@ type Provider struct {
 
 // Model 是一个模型条目。
 type Model struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name,omitempty"`
-	API           string          `json:"api,omitempty"`
-	BaseURL       string          `json:"baseUrl,omitempty"`
-	Reasoning     bool            `json:"reasoning,omitempty"`
-	Input         []string        `json:"input,omitempty"`
-	InputLimits   json.RawMessage `json:"inputLimits,omitempty"`
-	ContextWindow int             `json:"contextWindow,omitempty"`
-	MaxTokens     int             `json:"maxTokens,omitempty"`
-	Cost          *Cost           `json:"cost,omitempty"`
+	ID               string          `json:"id"`
+	Name             string          `json:"name,omitempty"`
+	API              string          `json:"api,omitempty"`
+	BaseURL          string          `json:"baseUrl,omitempty"`
+	Reasoning        bool            `json:"reasoning,omitempty"`
+	Input            []string        `json:"input,omitempty"`
+	InputLimits      json.RawMessage `json:"inputLimits,omitempty"`
+	ContextWindow    int             `json:"contextWindow,omitempty"`
+	MaxTokens        int             `json:"maxTokens,omitempty"`
+	Cost             *Cost           `json:"cost,omitempty"`
 	ThinkingLevelMap json.RawMessage `json:"thinkingLevelMap,omitempty"`
 }
 

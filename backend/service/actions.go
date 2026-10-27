@@ -121,25 +121,25 @@ func (a *App) RenameSession(ctx context.Context, kind engine.Kind, path, name st
 
 // ChatState 是对话页的一次快照。
 type ChatState struct {
-	Kind            engine.Kind          `json:"kind"`
-	Session         string               `json:"session"`
-	SessionFile     string               `json:"session_file"`
-	WorkDir         string               `json:"work_dir"`
-	EngineRunning   bool                 `json:"engine_running"`
-	Streaming       bool                 `json:"streaming"`
-	Model           *engine.Model        `json:"model"`
-	ThinkingLevel   string               `json:"thinking_level"`
-	Levels          []string             `json:"levels"`
-	Context         *engine.ContextUsage `json:"context"`
-	TokensPerSecond *float64             `json:"tokens_per_second"`
-	AutoCompaction  bool                 `json:"auto_compaction"`
+	Kind            engine.Kind            `json:"kind"`
+	Session         string                 `json:"session"`
+	SessionFile     string                 `json:"session_file"`
+	WorkDir         string                 `json:"work_dir"`
+	EngineRunning   bool                   `json:"engine_running"`
+	Streaming       bool                   `json:"streaming"`
+	Model           *engine.Model          `json:"model"`
+	ThinkingLevel   string                 `json:"thinking_level"`
+	Levels          []string               `json:"levels"`
+	Context         *engine.ContextUsage   `json:"context"`
+	TokensPerSecond *float64               `json:"tokens_per_second"`
+	AutoCompaction  bool                   `json:"auto_compaction"`
 	Queued          *engine.QueuedMessages `json:"queued"`
-	Stats           *engine.SessionStats `json:"stats"`
-	Messages        []json.RawMessage    `json:"messages"`
-	History         []HistoryTurn        `json:"history"`
-	Commands        []engine.SlashCommand `json:"commands"`
-	Profile         string               `json:"profile"`
-	Caps            engine.Caps          `json:"caps"`
+	Stats           *engine.SessionStats   `json:"stats"`
+	Messages        []json.RawMessage      `json:"messages"`
+	History         []HistoryTurn          `json:"history"`
+	Commands        []engine.SlashCommand  `json:"commands"`
+	Profile         string                 `json:"profile"`
+	Caps            engine.Caps            `json:"caps"`
 }
 
 // ChatState 拉对话页快照。会话文件为空时用当前工作目录的引擎状态。
@@ -770,8 +770,8 @@ func (a *App) UninstallPlugin(ctx context.Context, kind engine.Kind, source stri
 
 // EngineStatus 是「设置 · 引擎」页需要的全部事实。
 type EngineStatus struct {
-	Engines []EngineInfo   `json:"engines"`
-	Running []engine.RunRow `json:"running"`
+	Engines []EngineInfo      `json:"engines"`
+	Running []engine.RunRow   `json:"running"`
 	Install map[string]string `json:"install"`
 }
 

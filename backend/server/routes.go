@@ -378,9 +378,9 @@ func (s *Server) compact(c *gin.Context) {
 
 func (s *Server) answer(c *gin.Context) {
 	var body struct {
-		Engine  string             `json:"engine"`
-		Session string             `json:"session"`
-		Request engine.UIResponse  `json:"request"`
+		Engine  string            `json:"engine"`
+		Session string            `json:"session"`
+		Request engine.UIResponse `json:"request"`
 	}
 	if !bind(c, &body) {
 		return

@@ -12,9 +12,9 @@ import (
 // 为什么在后端做：投影规则（块顺序、工具结果按 toolCallId 配对）只该有一份实现。
 // 前端再写一遍就一定会跟后端漂移，而漂移的表现是「刷新之后消息顺序变了」。
 type HistoryTurn struct {
-	Role   string      `json:"role"`
+	Role   string         `json:"role"`
 	Blocks []engine.Block `json:"blocks"`
-	Model  string      `json:"model,omitempty"`
+	Model  string         `json:"model,omitempty"`
 }
 
 // ProjectHistory 把消息列表投影成轮次。

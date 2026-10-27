@@ -37,7 +37,7 @@ type subscriber struct {
 	done chan struct{}
 	dead atomic.Bool
 
-	gapMu  sync.Mutex
+	gapMu   sync.Mutex
 	gapFrom int64 // 已丢弃的最小 seq
 	gapTo   int64 // 已丢弃的最大 seq
 }
@@ -47,10 +47,10 @@ type subscriber struct {
 // 为什么要重放：窗口失焦 / WebView 休眠会断流，重连后前端不该丢掉断流期间
 // 的正文增量。环形只保留最近 N 帧——会话历史走文件快照，不走重放。
 type Hub struct {
-	mu   sync.RWMutex
-	subs map[*subscriber]struct{}
-	ring []frame
-	seq  int64
+	mu    sync.RWMutex
+	subs  map[*subscriber]struct{}
+	ring  []frame
+	seq   int64
 	ringN int
 }
 
@@ -199,7 +199,8 @@ func (s *subscriber) noteGap(from, to int64) {
 }
 
 // takeGap 取出并清空累积的缺口。读协程写出一帧之前先调它。
-func (s *subscriber) takeGap() (int64, int64, bool) {	s.gapMu.Lock()
+func (s *subscriber) takeGap() (int64, int64, bool) {
+	s.gapMu.Lock()
 	defer s.gapMu.Unlock()
 	from, to := s.gapFrom, s.gapTo
 	if from == 0 {
