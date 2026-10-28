@@ -98,6 +98,45 @@ func FileHistory(dir, rel string, limit int) ([]domain.GitCommitVO, error) {
 	return parseLog(res.stdout), nil
 }
 
+// FileDiffInCommit 取一次提交里某个文件的逐行差异。
+//
+// 界面在提交详情里点一个文件时用它：整份提交的差异可能几千行，
+// 而用户通常只想看当前选中的那个文件。
+func FileDiffInCommit(dir, hash, rel string) (*domain.GitDiffVO, error) {
+	sc, err := requireScope(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !validRef(hash) {
+		return nil, pkg.New("1005", "提交号不合法", hash)
+	}
+	rel = strings.TrimSpace(rel)
+	if rel == "" {
+		return nil, pkg.New("1005", "说清是哪个文件", "")
+	}
+	full, err := pkg.SafeJoin(dir, rel)
+	if err != nil {
+		return nil, err
+	}
+	wsRel, err := relTo(dir, full)
+	if err != nil {
+		return nil, pkg.New("1004", "路径越出工作目录", rel)
+	}
+	// --format= 关掉提交信息，--no-ext-diff 关掉外部差异工具：只要 diff 正文。
+	res, err := run(sc.root, statusTimeout, "show", hash, "--no-color", "--no-ext-diff",
+		"--format=", "--", sc.relFromRoot(wsRel))
+	if err != nil {
+		return nil, err
+	}
+	lines, dropped := parseDiff(res.stdout, nil)
+	return &domain.GitDiffVO{
+		FilePath:  rel,
+		DiffLines: lines,
+		Dropped:   dropped,
+		Truncated: dropped > 0,
+	}, nil
+}
+
 // Branches 列出本地与远端分支，标注当前所在与各自相对上游的领先 / 落后数。
 func Branches(dir string) ([]domain.GitBranchVO, error) {
 	sc, err := requireScope(dir)

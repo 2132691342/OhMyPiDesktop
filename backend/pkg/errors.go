@@ -50,14 +50,16 @@ func As(err error) *AppError {
 const (
 	CodeInternal = "1001"
 
-	CodeStartup = "2001"
-	CodeDataDir = "2002"
+	CodeStartup       = "2001"
+	CodeDataDir       = "2002"
+	CodeSettingsWrite = "2003"
 
 	CodeEngineDown        = "3001"
 	CodeEngineBusy        = "3002"
 	CodeEngineTimeout     = "3003"
 	CodeProtocol          = "3004"
 	CodeEngineUnsupported = "3006"
+	CodeEngineNoSession   = "3007"
 
 	CodeModelInvalid   = "4001"
 	CodeProviderExists = "4002"
@@ -66,6 +68,8 @@ const (
 	CodeSkillInvalid  = "5002"
 	CodeSkillReadOnly = "5003"
 	CodePluginFailed  = "5004"
+	CodeConfigRead    = "5005"
+	CodeConfigParse   = "5006"
 
 	CodeSessionInvalid = "6001"
 	CodeSessionBusy    = "6002"

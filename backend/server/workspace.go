@@ -42,6 +42,26 @@ func (s *Server) gitCommitDetail(c *gin.Context) {
 	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitCommitDetail(hash) })
 }
 
+// gitFileHistory 列出一个文件的提交历史（工作区页的「这个文件改过几次」）。
+func (s *Server) gitFileHistory(c *gin.Context) {
+	rel := c.Query("path")
+	limit, _ := strconvAtoi(c.Query("limit"))
+	s.run(c, func(*gin.Context) (any, error) {
+		list, err := s.svc.GitFileHistory(rel, limit)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"commits": list}, nil
+	})
+}
+
+// gitFileDiff 取一次提交里某个文件的逐行差异。
+func (s *Server) gitFileDiff(c *gin.Context) {
+	hash := c.Query("hash")
+	rel := c.Query("path")
+	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitFileDiffInCommit(hash, rel) })
+}
+
 func (s *Server) gitBranches(c *gin.Context) {
 	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitBranches() })
 }

@@ -26,6 +26,9 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.POST("/settings/engine", s.setEngine)
 	api.GET("/logs", func(c *gin.Context) { ok(c, gin.H{"lines": pkg.Ring()}) })
 
+	// 应用偏好：开机自启、恢复上次会话、数据目录
+	s.prefsRoutes(api)
+
 	// 引擎（探测，不安装）
 	api.GET("/engines", s.engines)
 	api.POST("/engines/detect", s.detectEngines)
@@ -74,6 +77,7 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.POST("/skills/toggle", s.toggleSkill)
 	api.POST("/skills/create", s.createSkill)
 	api.POST("/skills/delete", s.deleteSkill)
+	api.POST("/skills/save", s.saveSkillContent)
 
 	// 插件 / 扩展
 	api.GET("/plugins", s.plugins)
@@ -87,6 +91,8 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.GET("/git/diff", s.gitDiff)
 	api.GET("/git/history", s.gitHistory)
 	api.GET("/git/commit", s.gitCommitDetail)
+	api.GET("/git/file-history", s.gitFileHistory)
+	api.GET("/git/file-diff", s.gitFileDiff)
 	api.GET("/git/branches", s.gitBranches)
 	api.POST("/git/stage", s.gitStage)
 	api.POST("/git/unstage", s.gitUnstage)
@@ -635,6 +641,22 @@ func (s *Server) skillContent(c *gin.Context) {
 			return nil, err
 		}
 		return gin.H{"content": body}, nil
+	})
+}
+
+// saveSkillContent 覆写技能正文。写后把最新原文回给前端，
+// 避免界面自己再拉一次（两次请求之间用户可能已经手改过了）。
+func (s *Server) saveSkillContent(c *gin.Context) {
+	var body domain.SkillSaveREQ
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(*gin.Context) (any, error) {
+		text, err := s.svc.SaveSkillContent(engine.Kind(body.EngineKind), body.FilePath, body.Text)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"content": text}, nil
 	})
 }
 

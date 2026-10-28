@@ -7,6 +7,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
+import CodeEditor from '@/components/common/CodeEditor.vue'
 import { api } from '@/api/http'
 import { useToasts } from '@/composables/useToasts'
 import { useAppStore } from '@/stores/app'
@@ -33,7 +34,12 @@ const deleting = ref('')
 const contentOpen = ref(false)
 const contentRow = ref<SkillRow | null>(null)
 const content = ref('')
+// 编辑态只对用户目录（可写）的技能开放：工作区与插件来的那一份属于别人，
+// 改了就变成「本地漂移」，下次拉代码或装包时静默被覆盖。
+const editing = ref(false)
+const draftContent = ref('')
 const contentLoading = ref(false)
+const saving = ref(false)
 
 const createOpen = ref(false)
 const creating = ref(false)
@@ -86,16 +92,49 @@ async function toggle(row: SkillRow, enabled: boolean) {
 async function openContent(row: SkillRow) {
   contentRow.value = row
   content.value = ''
+  draftContent.value = ''
+  editing.value = false
   contentOpen.value = true
   contentLoading.value = true
   try {
     const data = await api.skillContent(row.path)
     content.value = data.content ?? ''
+    draftContent.value = content.value
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
     contentOpen.value = false
   } finally {
     contentLoading.value = false
+  }
+}
+
+// 抽屉关掉时丢弃未保存的修改：留着它们会让「下次打开看到的是旧内容还是新草稿」
+// 变成一件需要想的事，而抽屉本来只是「看一眼、改一下」。
+watch(contentOpen, (open) => {
+  if (!open) {
+    editing.value = false
+    draftContent.value = content.value
+  }
+})
+
+const dirty = computed(() => editing.value && draftContent.value !== content.value)
+
+async function saveContent() {
+  const row = contentRow.value
+  if (!row || saving.value) return
+  saving.value = true
+  try {
+    const data = await api.saveSkillContent(kind.value, row.path, draftContent.value)
+    content.value = data.content ?? draftContent.value
+    draftContent.value = content.value
+    editing.value = false
+    toasts.push('ok', t('skills.saved'))
+    // 正文里可能改了 frontmatter（名字 / 描述 / 启用），清单得跟着重读。
+    await load()
+  } catch (err) {
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  } finally {
+    saving.value = false
   }
 }
 
@@ -233,9 +272,35 @@ onMounted(load)
       </template>
     </div>
 
-    <el-drawer v-model="contentOpen" :title="contentRow?.name || t('skills.view')" size="620px">
+    <el-drawer v-model="contentOpen" :title="contentRow?.name || t('skills.view')" size="720px">
       <div v-if="contentLoading" class="drawer-loading">{{ t('common.loading') }}</div>
-      <pre v-else class="content-pre selectable">{{ content }}</pre>
+      <template v-else>
+        <div class="drawer-bar">
+          <span class="drawer-path mono selectable">{{ contentRow?.path }}</span>
+          <span class="push" />
+          <template v-if="contentRow?.editable">
+            <template v-if="editing">
+              <button class="omp-btn sm" :disabled="saving" @click="editing = false; draftContent = content">
+                {{ t('common.cancel') }}
+              </button>
+              <button
+                class="omp-btn primary sm"
+                :class="{ 'is-loading': saving }"
+                :disabled="saving || !dirty"
+                @click="saveContent"
+              >
+                {{ t('common.save') }}
+              </button>
+            </template>
+            <button v-else class="omp-btn sm" @click="editing = true">
+              <AppIcon name="edit" :size="13" />
+              {{ t('common.edit') }}
+            </button>
+          </template>
+          <span v-else class="tag readonly-tag">{{ t('skills.readonly') }}</span>
+        </div>
+        <CodeEditor v-model="draftContent" lang="markdown" :readonly="!editing" min-height="70vh" />
+      </template>
     </el-drawer>
 
     <el-dialog v-model="createOpen" :title="t('skills.createTitle')" width="560px">
@@ -446,17 +511,26 @@ onMounted(load)
   color: var(--omp-mute);
 }
 
-.content-pre {
-  margin: 0;
-  padding: var(--omp-sp-3);
-  border-radius: var(--omp-r);
-  background: var(--omp-code-bg);
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-2xs);
-  line-height: 1.7;
-  color: var(--omp-ink-5);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+/* 抽屉顶部一条工具行：路径 + 右侧动作。路径占剩余宽度，动作不换行。 */
+.drawer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  margin-bottom: var(--omp-sp-3);
+  min-height: var(--omp-ctl-sm);
+}
+
+.drawer-path {
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.push {
+  flex: 1;
 }
 
 .form {

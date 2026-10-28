@@ -97,6 +97,41 @@ export interface WorkspaceRow {
   updated_at?: string
 }
 
+// ---------------- 应用偏好 ----------------
+
+/** 设置页看到的全部开关状态。自动开机自启以注册表为准，不以设置文件为准。 */
+export interface AppPrefs {
+  values: Record<string, string>
+  auto_start: boolean
+  restore_session: boolean
+  last_session_file: string
+  last_session_title?: string
+  last_engine_kind: EngineKind | ''
+  data_dir: string
+  log_dir: string
+}
+
+/** 一个可查看的引擎配置文件。 */
+export interface ConfigFile {
+  file_path: string
+  file_label: string
+  exists: boolean
+  size_bytes: number
+}
+
+export interface ConfigFileList {
+  engine_kind: EngineKind | ''
+  entries: ConfigFile[]
+}
+
+/** 引擎配置原文。found 为假表示「还没生成过」，不是错误。 */
+export interface ConfigText {
+  file_path: string
+  text: string
+  truncated: boolean
+  found: boolean
+}
+
 // ---------------- 会话 ----------------
 
 export interface SessionRow {

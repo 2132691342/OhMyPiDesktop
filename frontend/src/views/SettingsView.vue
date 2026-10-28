@@ -5,12 +5,15 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
+import CodeEditor from '@/components/common/CodeEditor.vue'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
+import { usePrefsStore } from '@/stores/prefs'
 import { useToasts } from '@/composables/useToasts'
 
 const { t } = useI18n()
 const app = useAppStore()
+const prefs = usePrefsStore()
 const toasts = useToasts()
 
 const saving = ref(false)
@@ -21,6 +24,54 @@ const copiedCmd = ref('')
 const profileDraft = ref(app.profile)
 const pathDrafts = ref<Record<string, string>>({})
 const pathSaving = ref('')
+
+// 启动行为：开关状态以注册表为准，所以每次进来都真读一次。
+const autoStartBusy = ref(false)
+const restoreBusy = ref(false)
+// 配置原文只能看不能改：写引擎配置有节点级接口，原文编辑会打乱它的假设。
+const configKind = ref<'omp' | 'pi'>('omp')
+
+async function toggleAutoStart(enabled: boolean) {
+  autoStartBusy.value = true
+  try {
+    await prefs.setAutoStart(enabled)
+    toasts.push('ok', t('common.saved'))
+  } catch (err) {
+    // 失败时开关会自己拨回去：prefs 里的值是后端的权威值。
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  } finally {
+    autoStartBusy.value = false
+  }
+}
+
+async function toggleRestore(enabled: boolean) {
+  restoreBusy.value = true
+  try {
+    await prefs.setRestoreSession(enabled)
+    toasts.push('ok', t('common.saved'))
+  } catch (err) {
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  } finally {
+    restoreBusy.value = false
+  }
+}
+
+async function openDataDir() {
+  try {
+    await api.openDataDir()
+  } catch (err) {
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  }
+}
+
+async function loadConfig(kind: 'omp' | 'pi') {
+  configKind.value = kind
+  try {
+    await prefs.openConfig(kind)
+  } catch (err) {
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  }
+}
 
 // 最近工作目录：后端合并了「记住的」与「会话里推出来的」，这里只负责点选与移除。
 const recentRows = computed(() => app.workspaces.filter((r) => r.exists))
@@ -156,12 +207,24 @@ async function forgetWorkspace(path: string) {
 onMounted(() => {
   void loadLogs()
   void app.refreshEngines()
+  void prefs.load()
+  // 只给已经装了的引擎看配置：都没装时这一整节不该出现。
+  const first = app.installed[0]?.kind
+  if (first) void loadConfig(first)
 })
 
 /** 某引擎的落盘布局（Bootstrap 里给全，缺省时用本机解析结果）。 */
 function layoutOf(kind: string) {
   return app.boot?.layouts?.[kind] ?? null
 }
+
+/** 配置原文的语法高亮按扩展名选：.yml / .yaml 走 yaml，.json 走 json。 */
+const configLang = computed<'json' | 'yaml' | 'text'>(() => {
+  const path = prefs.configText?.file_path ?? ''
+  if (path.endsWith('.json') || path.endsWith('.jsonc')) return 'json'
+  if (path.endsWith('.yml') || path.endsWith('.yaml')) return 'yaml'
+  return 'text'
+})
 </script>
 
 <template>
@@ -209,6 +272,54 @@ function layoutOf(kind: string) {
             :model-value="app.settings['ui.reduce_motion'] === '1'"
             @change="(v: string | number | boolean) => save({ 'ui.reduce_motion': v ? '1' : '0' })"
           />
+        </div>
+      </section>
+
+      <!-- 启动行为 -->
+      <section class="card-pad">
+        <div class="omp-section-title">{{ t('settings.groups.behavior') }}</div>
+        <div class="set-row">
+          <div>
+            <div class="set-label">{{ t('settings.autoStart') }}</div>
+            <div class="set-hint">{{ t('settings.autoStartHint') }}</div>
+          </div>
+          <el-switch
+            :model-value="prefs.prefs?.auto_start ?? false"
+            :loading="autoStartBusy"
+            :disabled="autoStartBusy || !prefs.prefs"
+            @change="(v: string | number | boolean) => toggleAutoStart(Boolean(v))"
+          />
+        </div>
+        <div class="set-row">
+          <div>
+            <div class="set-label">{{ t('settings.restoreSession') }}</div>
+            <div class="set-hint">{{ t('settings.restoreSessionHint') }}</div>
+          </div>
+          <el-switch
+            :model-value="prefs.prefs?.restore_session ?? true"
+            :loading="restoreBusy"
+            :disabled="restoreBusy || !prefs.prefs"
+            @change="(v: string | number | boolean) => toggleRestore(Boolean(v))"
+          />
+        </div>
+        <div class="set-row">
+          <div class="min-w-0">
+            <div class="set-label">{{ t('settings.lastSession') }}</div>
+            <div class="set-hint">
+              {{ prefs.prefs?.last_session_file ? prefs.prefs.last_session_title || prefs.prefs.last_session_file : t('settings.lastSessionNone') }}
+            </div>
+          </div>
+        </div>
+        <div class="set-row">
+          <div>
+            <div class="set-label">{{ t('settings.dataDir') }}</div>
+            <div class="set-hint mono selectable">{{ prefs.prefs?.data_dir || '—' }}</div>
+            <div class="set-hint">{{ t('settings.dataDirHint') }}</div>
+          </div>
+          <button class="omp-btn sm" @click="openDataDir">
+            <AppIcon name="folder" :size="13" />
+            {{ t('settings.openDataDir') }}
+          </button>
         </div>
       </section>
 
@@ -354,6 +465,57 @@ function layoutOf(kind: string) {
         <div v-else class="set-hint">{{ t('settings.recentWorkspacesEmpty') }}</div>
       </section>
 
+      <!-- 引擎配置原文：只看不改。设置页不写引擎配置，那边有节点级接口。 -->
+      <section v-if="app.installed.length" class="card-pad">
+        <div class="omp-section-title">
+          {{ t('settings.configTitle') }}
+          <span class="push" />
+          <div v-if="app.installed.length > 1" class="seg">
+            <button
+              v-for="item in app.installed"
+              :key="item.kind"
+              class="seg-btn"
+              :class="{ active: configKind === item.kind }"
+              @click="loadConfig(item.kind)"
+            >
+              {{ item.kind }}
+            </button>
+          </div>
+        </div>
+        <p class="set-hint">{{ t('settings.configHint') }}</p>
+
+        <div class="config-files">
+          <button
+            v-for="file in prefs.configFiles"
+            :key="file.file_path"
+            class="config-tab"
+            :class="{ active: prefs.configFile === file.file_path, missing: !file.exists }"
+            :title="file.file_path"
+            @click="prefs.pickConfig(file.file_path)"
+          >
+            {{ file.file_label }}
+          </button>
+        </div>
+
+        <div v-if="prefs.loadingText" class="set-hint">{{ t('common.loading') }}</div>
+        <div v-else-if="prefs.configText && !prefs.configText.found" class="set-hint">
+          {{ t('settings.configMissing') }}
+          <span class="mono selectable"> · {{ prefs.configText.file_path }}</span>
+        </div>
+        <template v-else-if="prefs.configText">
+          <div class="set-hint mono selectable config-path">{{ prefs.configText.file_path }}</div>
+          <CodeEditor
+            :model-value="prefs.configText.text"
+            :lang="configLang"
+            readonly
+            min-height="320px"
+          />
+          <div v-if="prefs.configText.truncated" class="set-hint">
+            {{ t('settings.configTruncated') }}
+          </div>
+        </template>
+      </section>
+
       <!-- 关于 -->
       <section class="card-pad">
         <div class="omp-section-title">{{ t('settings.groups.about') }}</div>
@@ -419,6 +581,60 @@ function layoutOf(kind: string) {
   display: flex;
   flex-direction: column;
   gap: var(--omp-sp-4);
+}
+
+.push {
+  flex: 1;
+}
+
+/* 配置查看：文件标签一行，内容一块编辑器 */
+.config-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--omp-sp-1);
+  margin: var(--omp-sp-2) 0 var(--omp-sp-3);
+}
+
+.config-tab {
+  height: var(--omp-ctl-sm);
+  padding: 0 var(--omp-sp-3);
+  border: 1px solid var(--omp-line);
+  border-radius: var(--omp-r-sm);
+  background: var(--omp-window);
+  color: var(--omp-mute);
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-2xs);
+  transition:
+    color var(--omp-dur-fast) var(--omp-ease),
+    background var(--omp-dur-fast) var(--omp-ease),
+    border-color var(--omp-dur-fast) var(--omp-ease),
+    transform var(--omp-dur-fast) var(--omp-ease);
+}
+
+.config-tab:hover:not(.active) {
+  transform: scale(1.04);
+  color: var(--omp-ink);
+  border-color: var(--omp-line-strong);
+}
+
+.config-tab:active {
+  transform: scale(0.95);
+}
+
+.config-tab.active {
+  color: var(--omp-brand);
+  border-color: var(--omp-brand);
+  background: var(--omp-brand-soft);
+}
+
+.config-tab.missing {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.config-path {
+  margin-bottom: var(--omp-sp-2);
+  overflow-wrap: anywhere;
 }
 
 .set-row {

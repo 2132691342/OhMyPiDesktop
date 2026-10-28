@@ -30,6 +30,12 @@ type App struct {
 	Hub    *hub.Hub
 	Engine *engine.Supervisor
 
+	// OnWorkspaceChange 在当前工作目录切换后被调用。
+	//
+	// 托盘菜单里有一支「最近工作目录」，它必须跟着变；但 service 不认识窗口，
+	// 所以只留一个回调——不回调就等于菜单与设置页各说一套话。
+	OnWorkspaceChange func()
+
 	mu         sync.RWMutex
 	profile    string
 	workspace  string
@@ -416,6 +422,9 @@ func (a *App) SetWorkspace(dir string) error {
 	// 记录失败不拦切换——「没记住」比「切不过去」轻得多。
 	if err := a.rememberWorkspace(abs); err != nil {
 		pkg.Warnf("app: 记不住这个工作目录：%v", err)
+	}
+	if a.OnWorkspaceChange != nil {
+		a.OnWorkspaceChange()
 	}
 	return nil
 }

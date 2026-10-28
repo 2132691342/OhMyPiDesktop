@@ -240,7 +240,9 @@ export default {
     "emptyTitle": "No skills yet",
     "emptyHint": "Create one, or install a plugin that ships skills.",
     "count": "{n} skills",
-    "noMatch": "No matching skills"
+    "noMatch": "No matching skills",
+    "saved": "Skill saved",
+    "unsavedHint": "Unsaved changes"
   },
   "plugins": {
     "title": "Plugins",
@@ -281,10 +283,27 @@ export default {
     "subtitle": "Only UI preferences and the engine location live here. Models, skills and plugins belong to omp — edit them on their own pages.",
     "groups": {
       "appearance": "Appearance",
+      "behavior": "Startup",
       "engine": "Environment",
       "workspace": "Workspace",
+      "config": "Engine config",
       "about": "About"
     },
+    "autoStart": "Launch at login",
+    "autoStartHint": "Starts with Windows, tray only, no window",
+    "autoStartFailed": "Could not change startup behaviour",
+    "restoreSession": "Reopen last session on start",
+    "restoreSessionHint": "When off, every start begins a new chat; the working directory is still restored",
+    "lastSession": "Last session",
+    "lastSessionNone": "Nothing recorded (it may have been deleted)",
+    "dataDir": "Data directory",
+    "dataDirHint": "Settings and logs live here; open it when something looks wrong",
+    "openDataDir": "Open folder",
+    "configTitle": "Engine config, as written",
+    "configHint": "Read-only. To add a provider use the Models page — it writes in the engine's own format.",
+    "configMissing": "This file has not been created yet",
+    "configTruncated": "Large file; showing the first 512 KB",
+    "configEngine": "Engine",
     "theme": "Theme",
     "themeLight": "Light",
     "themeDark": "Dark",

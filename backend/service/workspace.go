@@ -150,6 +150,16 @@ func (a *App) GitCommitDetail(hash string) (*domain.GitCommitDetailVO, error) {
 	return git.CommitDetail(a.Workspace(), hash)
 }
 
+// GitFileHistory 列出某个文件的提交历史。
+func (a *App) GitFileHistory(rel string, limit int) ([]domain.GitCommitVO, error) {
+	return git.FileHistory(a.Workspace(), rel, limit)
+}
+
+// GitFileDiffInCommit 取一次提交里某个文件的逐行差异。
+func (a *App) GitFileDiffInCommit(hash, rel string) (*domain.GitDiffVO, error) {
+	return git.FileDiffInCommit(a.Workspace(), hash, rel)
+}
+
 // GitBranches 分支清单。
 func (a *App) GitBranches() ([]domain.GitBranchVO, error) {
 	return git.Branches(a.Workspace())

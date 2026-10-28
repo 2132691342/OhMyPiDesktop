@@ -2,6 +2,7 @@
 // SSE 的连接与事件分流放在这里，因为它是全局的（引擎状态、安装进度都在同一通道）。
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { api, streamURL } from '@/api/http'
 import { getEndpoint, onStartupError, pickFolder } from '@/api/wails'
 import type {
@@ -45,6 +46,7 @@ export const useAppStore = defineStore('app', () => {
   const toasts = useToasts()
   const chat = useChatStore()
   const agents = useAgentsStore()
+  const router = useRouter()
 
   const theme = computed(() => settings.value['ui.theme'] || 'light')
   /** 探测到的引擎清单（按固定顺序 omp → pi）。 */
@@ -90,8 +92,36 @@ export const useAppStore = defineStore('app', () => {
       ready.value = true
       connect()
       await Promise.all([refreshSessions(), refreshEngines()])
+      // 恢复上次会话：只在「用户没指定别的会话」时做，
+      // 否则从会话页跳过来会被这里抢回旧会话。
+      await restoreLastSession()
     } catch (err) {
       fatal.value = err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  /**
+   * 启动时回到上次那个会话。
+   *
+   * 只恢复路径，不恢复消息——历史由后端按引擎的会话文件重新投影，
+   * 界面不存第二份。会话文件被删掉时后端返回空，这里就安静地落在空会话上。
+   */
+  async function restoreLastSession() {
+    const hash = window.location.hash
+    if (hash && hash !== '#/' && !hash.startsWith('#/chat')) return
+    if (new URLSearchParams(hash.split('?')[1] ?? '').get('session')) return
+    try {
+      const prefs = await api.prefs()
+      if (!prefs.restore_session || !prefs.last_session_file) return
+      if (prefs.last_engine_kind) {
+        active.value = prefs.last_engine_kind
+        chat.kind = prefs.last_engine_kind
+        chat.caps = capsOf(prefs.last_engine_kind)
+      }
+      await chat.refresh(prefs.last_session_file)
+      const current = `#/chat?session=${prefs.last_session_file}`
+      if (hash !== current) await router.replace({ name: 'chat', query: { session: prefs.last_session_file } })    } catch {
+      /* 恢复失败不该拦启动：落在空会话上一样能用 */
     }
   }
 
@@ -105,6 +135,20 @@ export const useAppStore = defineStore('app', () => {
   async function refreshSessions() {
     const data = await api.sessions(workspace.value || undefined, chat.kind)
     sessions.value = data.sessions ?? []
+  }
+
+  /**
+   * 记住当前会话（供下次启动恢复）。
+   *
+   * 失败不弹提示：这只是「下次回来时的那一下」，不该打断用户正在做的事。
+   * 后端在 ChatState 里也会记一次，这里是“切走之后”那条路径的补齐。
+   */
+  async function rememberSession(path: string) {
+    try {
+      await api.rememberSession(chat.kind, path)
+    } catch {
+      /* 记不住不影响使用 */
+    }
   }
 
   async function refreshEngines() {
@@ -365,6 +409,7 @@ export const useAppStore = defineStore('app', () => {
     installHint,
     load,
     refreshSessions,
+    rememberSession,
     refreshEngines,
     detectEngines,
     setEngine,

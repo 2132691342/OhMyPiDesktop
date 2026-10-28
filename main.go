@@ -39,7 +39,7 @@ var version = "0.1.0"
 const singleInstanceID = "com.ohmypi.desktop"
 
 func main() {
-	app := &App{version: version, startDone: make(chan struct{})}
+	app := &App{version: version, startDone: make(chan struct{}), startHidden: hasArg("--hidden")}
 
 	a := application.New(application.Options{
 		Name:        "OhMyPiDesktop",
@@ -74,6 +74,7 @@ func main() {
 		BackgroundColour: application.NewRGB(248, 250, 252),
 		URL:              "/",
 		// 装配完成前不显示窗口，避免用户看见一帧白屏。
+		// 开机自启（--hidden）时连装配完成后也不显示：只上托盘。
 		Hidden: true,
 		Windows: application.WindowsWindow{
 			NonClientRegionSupport: true,
@@ -93,6 +94,7 @@ func main() {
 	})
 
 	// 托盘：菜单项由后端定，文案不进前端，避免语言切换时后端菜单不同步。
+	// 托盘在装配前就建好：用户可能一启动就把窗口关到托盘。
 	app.tray = a.SystemTray.New()
 	app.buildTrayMenu(a, win)
 
@@ -126,6 +128,9 @@ type App struct {
 	startErr  string
 	errMu     sync.Mutex
 
+	// startHidden 来自命令行 --hidden：开机自启时只拉起托盘，不弹窗。
+	startHidden bool
+
 	quitting atomic.Bool
 }
 
@@ -142,10 +147,17 @@ func (a *App) startup(ctx context.Context) {
 		ae := pkg.As(err)
 		a.setStartErr(ae.Message)
 		pkg.Errorf("app: 业务装配失败 [%s] %s %s", ae.Code, ae.Message, ae.Detail)
+		// 装配失败必须把窗口调出来：启动失败的信息只能由界面说，
+		// 若此时还藏在托盘后面，用户会以为双击没反应。
+		a.revealWindow()
 		return
 	}
 	a.startOK.Store(true)
 	pkg.Infof("app: 装配完成 workspace=%s", a.svc.Workspace())
+	// 装配成功、且不是开机自启，才把窗口显出来（窗口初始是 Hidden）。
+	if !a.startHidden {
+		a.revealWindow()
+	}
 }
 
 func (a *App) assemble() error {
@@ -177,6 +189,10 @@ func (a *App) assemble() error {
 	}
 	a.svc = svc
 	a.srv = server.New(svc, a.hub, a.token)
+	// 托盘菜单里的「最近工作目录」要跟着当前目录变，所以把重建回调交给 service。
+	svc.OnWorkspaceChange = func() { a.refreshTrayMenu() }
+	// 开机自启的真实状态以注册表为准，装配时对齐一次。
+	svc.SyncAutoStart()
 	return nil
 }
 
@@ -192,25 +208,9 @@ func (a *App) onSecondInstance(data application.SecondInstanceData) {
 }
 
 // buildTrayMenu 组装托盘菜单。
-func (a *App) buildTrayMenu(app *application.App, win *application.WebviewWindow) {
-	menu := app.NewMenu()
-	menu.Add("显示窗口").OnClick(func(*application.Context) {
-		win.Show()
-		win.Restore()
-		win.Focus()
-	})
-	menu.AddSeparator()
-	menu.Add("退出").OnClick(func(*application.Context) {
-		a.quitting.Store(true)
-		app.Quit()
-	})
-	a.tray.SetMenu(menu)
-	a.tray.SetTooltip("OhMyPiDesktop")
-	// 单击图标 = 显示/隐藏切换；菜单用右键。
-	a.tray.OnClick(func() {
-		a.toggleWindow()
-	})
-}
+//
+// 关窗不退出，所以托盘菜单必须能回答「我现在要做什么」：显示窗口 / 回到最近干过活的目录 /
+// 直接打开数据目录 / 退出。菜单项在 tray.go。
 
 // toggleWindow 在显示与隐藏之间切换。
 //
@@ -222,6 +222,29 @@ func (a *App) toggleWindow() {
 	a.win.Show()
 	a.win.Restore()
 	a.win.Focus()
+}
+
+// revealWindow 把隐藏的窗口显示出来并按需重建托盘菜单。
+func (a *App) revealWindow() {
+	if a.win == nil {
+		return
+	}
+	a.win.Show()
+	a.win.Restore()
+	a.win.Focus()
+	// 此时工作目录与最近列表已经就绪，重铺一次菜单。
+	a.refreshTrayMenu()
+}
+
+// hasArg 判断命令行里有没有某个标志。
+// 目前只用于 --hidden：开机自启时只拉起托盘，不往屏幕上弹一个空窗口。
+func hasArg(flag string) bool {
+	for _, arg := range os.Args[1:] {
+		if arg == flag {
+			return true
+		}
+	}
+	return false
 }
 
 // toTray 收托盘前先停引擎，不给子进程留孤儿。

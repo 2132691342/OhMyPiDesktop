@@ -209,6 +209,11 @@ func (a *App) ChatState(ctx context.Context, kind engine.Kind, sessionFile strin
 	if state.SessionFile == "" && sessionFile != "" {
 		state.SessionFile = sessionFile
 	}
+	// 记住当前会话，供下次启动恢复。ChatState 是「会话确实打开了」的唯一定点——
+	// 在 Send 里记得太晚（用户可能看完就关），在前端记得不可靠（刷窗口时可能丢）。
+	if state.SessionFile != "" {
+		a.RememberSession(kind, state.SessionFile)
+	}
 	return state, nil
 }
 
@@ -661,6 +666,25 @@ func (a *App) DeleteSkill(kind engine.Kind, path string) error {
 // SkillContent 读技能原文。
 func (a *App) SkillContent(path string) (string, error) {
 	return skill.Content(path)
+}
+
+// SaveSkillContent 覆写一份技能正文。
+//
+// 只允许改用户目录里的那份：工作区与插件来的技能属于别人（跟着仓库或包版本走），
+// 改了就变成「本地漂移」，下次拉代码或装包时静默被覆盖。
+func (a *App) SaveSkillContent(kind engine.Kind, path, text string) (string, error) {
+	k := a.KindOr(string(kind))
+	layout, err := a.Layout(k)
+	if err != nil {
+		return "", err
+	}
+	if !isUnder(path, layout.Skills) {
+		return "", pkg.New(pkg.CodeSkillReadOnly, "只能改用户目录里的技能", path)
+	}
+	if err := skill.SaveContent(path, text); err != nil {
+		return "", err
+	}
+	return text, nil
 }
 
 // ---------------- 插件 / 扩展 ----------------

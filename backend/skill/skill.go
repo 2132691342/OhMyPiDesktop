@@ -190,6 +190,33 @@ func Content(path string) (string, error) {
 	return string(raw), nil
 }
 
+// contentLimit 是技能正文的上限。
+//
+// 技能是一份写给模型看的提示词，几 KB 到几十 KB；上限主要防「有人把整个仓库
+// 塞进 SKILL.md 然后把界面卡死」。
+const contentLimit = 256 * 1024
+
+// SaveContent 覆写技能正文。
+//
+// 原子写（临时文件 + Rename）：写到一半断电会留下半个 SKILL.md，
+// 而那个文件是引擎启动时一定会读的，坏了就是「应用能起、技能全错」。
+func SaveContent(path, text string) error {
+	path = filepath.Clean(path)
+	if filepath.Base(path) != "SKILL.md" {
+		return pkg.New(pkg.CodeSkillInvalid, "只能改 SKILL.md", path)
+	}
+	if len(text) > contentLimit {
+		return pkg.New(pkg.CodeSkillInvalid, "技能正文超过 256 KB，请拆成多份", path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		return pkg.Wrap(pkg.CodeNotFound, "这个技能文件不在了", err)
+	}
+	if err := pkg.WriteFileAtomic(path, []byte(text), 0o644); err != nil {
+		return pkg.Wrap(pkg.CodeSkillReadOnly, "这个技能目录不可写", err)
+	}
+	return nil
+}
+
 // Toggle 改 frontmatter 的 enabled。只动这一行，其余原文保持不变。
 func Toggle(path string, enabled bool) error {
 	raw, err := os.ReadFile(path)

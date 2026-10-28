@@ -16,10 +16,16 @@ const (
 	// KeyEngineExePrefix 是「某引擎的显式路径」，键 = engine.path.omp / engine.path.pi。
 	// 用前缀而不是两个常量：新增引擎时不必再改这里。
 	KeyEngineExePrefix = "engine.path."
-	KeyAutoStart       = "app.autostart"
-	KeyLastSession     = "app.last_session"
-	KeyFontScale       = "ui.font_scale"
-	KeyReduceMotion    = "ui.reduce_motion"
+	// KeyAutoStart 是开机自启开关的镜像值（1 / 0）。
+	// 真值在注册表里，界面上这个键只用来「显示得出来」——
+	// 每次启动以注册表为准回写它，避免开关状态与系统实际不符。
+	KeyAutoStart = "app.autostart"
+	// KeyRestoreSession 决定启动时是否回到上次那个会话（1 / 0）。
+	// 为 0 时打开的是空会话，但工作目录照旧恢复——两件事不一样。
+	KeyRestoreSession = "app.restore_session"
+	KeyLastSession    = "app.last_session"
+	KeyFontScale      = "ui.font_scale"
+	KeyReduceMotion   = "ui.reduce_motion"
 )
 
 // RecentWorkspaceMax 最近工作目录的保留条数。

@@ -5,9 +5,12 @@ import axios, { type AxiosInstance } from 'axios'
 import { getEndpoint } from './wails'
 import type {
   AgentRow,
+  AppPrefs,
   AskRequest,
   Bootstrap,
   ChatState,
+  ConfigFileList,
+  ConfigText,
   EngineKind,
   EngineStatus,
   FileList,
@@ -103,6 +106,18 @@ export const api = {
   setEngine: (engine: EngineKind) => post<{ engine: EngineKind }>('/settings/engine', { engine }),
   logs: () => get<{ lines: string[] }>('/logs'),
 
+  // 应用偏好：开机自启、恢复上次会话、数据目录
+  prefs: () => get<AppPrefs>('/prefs'),
+  setAutoStart: (enabled: boolean) => post<AppPrefs>('/prefs/autostart', { enabled }),
+  setRestoreSession: (enabled: boolean) => post<AppPrefs>('/prefs/restore', { enabled }),
+  rememberSession: (engine: EngineKind, sessionFile: string) =>
+    post<AppPrefs>('/prefs/session', { engine_kind: engine, session_file: sessionFile }),
+  openDataDir: () => post<null>('/prefs/data-dir'),
+
+  // 引擎配置原文（只读）
+  configFiles: (engine?: EngineKind) => get<ConfigFileList>('/config/files', k(engine)),
+  configText: (file: string, engine?: EngineKind) => get<ConfigText>('/config/text', { file, ...k(engine) }),
+
   engineStatus: () => get<EngineStatus>('/engines'),
   detectEngines: () => post<EngineStatus>('/engines/detect'),
   restartEngines: (engine?: EngineKind) => post<{ ok: boolean }>('/engines/restart', k(engine)),
@@ -164,6 +179,8 @@ export const api = {
 
   skills: (engine?: EngineKind) => get<{ skills: SkillRow[] }>('/skills', k(engine)),
   skillContent: (path: string) => get<{ content: string }>('/skills/content', { path }),
+  saveSkillContent: (engine: EngineKind, path: string, text: string) =>
+    post<{ content: string }>('/skills/save', { engine_kind: engine, file_path: path, text }),
   toggleSkill: (path: string, enabled: boolean, engine?: EngineKind) =>
     post<{ ok: boolean }>('/skills/toggle', { path, enabled, ...k(engine) }),
   createSkill: (name: string, description: string, body: string, engine?: EngineKind) =>
@@ -184,6 +201,10 @@ export const api = {
   gitDiff: (path?: string) => get<GitDiff>('/git/diff', { path }),
   gitHistory: (limit = 50) => get<GitCommit[]>('/git/history', { limit: String(limit) }),
   gitCommitDetail: (hash: string) => get<GitCommitDetail>('/git/commit', { hash }),
+  gitFileHistory: (path: string, limit = 40) =>
+    get<{ commits: GitCommit[] }>('/git/file-history', { path, limit: String(limit) }),
+  gitFileDiff: (hash: string, path: string) =>
+    get<GitDiff>('/git/file-diff', { hash, path }),
   gitBranches: () => get<GitBranch[]>('/git/branches'),
   gitStage: (paths: string[]) => post<GitStatus>('/git/stage', { paths }),
   gitUnstage: (paths: string[]) => post<GitStatus>('/git/unstage', { paths }),
