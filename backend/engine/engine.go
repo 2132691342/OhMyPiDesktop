@@ -58,7 +58,10 @@ type Identity struct {
 	Exe     string `json:"exe"`
 	Version string `json:"version"`
 	Source  string `json:"source"` // path / custom
-	Caps    Caps   `json:"caps"`
+	// Channel 是安装渠道（npm / bun / 官方安装器 / 未知）。
+	// 它只决定「卸载按钮存不存在」，不参与拉起与升级。
+	Channel Channel `json:"channel"`
+	Caps    Caps    `json:"caps"`
 }
 
 // Launch 是拉起一个引擎进程所需的全部输入。

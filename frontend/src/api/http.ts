@@ -6,6 +6,7 @@ import { getEndpoint } from './wails'
 import type {
   AgentRow,
   AppPrefs,
+  AppRow,
   AskRequest,
   Bootstrap,
   ChatState,
@@ -121,6 +122,12 @@ export const api = {
   engineStatus: () => get<EngineStatus>('/engines'),
   detectEngines: () => post<EngineStatus>('/engines/detect'),
   restartEngines: (engine?: EngineKind) => post<{ ok: boolean }>('/engines/restart', k(engine)),
+
+  // 应用：装 / 升级 / 卸载引擎本身（代跑引擎自己的安装器）
+  apps: (refresh = false) => get<{ apps: AppRow[] }>('/apps', refresh ? { refresh: '1' } : undefined),
+  installApp: (engine: EngineKind) => post<{ apps: AppRow[] }>('/apps/install', { engine }),
+  updateApp: (engine: EngineKind) => post<{ apps: AppRow[] }>('/apps/update', { engine }),
+  uninstallApp: (engine: EngineKind) => post<{ apps: AppRow[] }>('/apps/uninstall', { engine }),
 
   sessions: (workspace?: string, engine?: EngineKind) =>
     get<{ sessions: SessionRow[] }>('/sessions', { workspace, ...k(engine) }),

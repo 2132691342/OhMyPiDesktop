@@ -31,6 +31,7 @@ export type IconName =
   | 'branch'
   | 'commit'
   | 'workspace'
+  | 'box'
 
 withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 16 })
 </script>
@@ -158,6 +159,10 @@ withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 16 })
     <template v-else-if="name === 'commit'">
       <circle cx="12" cy="12" r="3.4" />
       <path d="M3 12h5.6M15.4 12H21" />
+    </template>
+    <template v-else-if="name === 'box'">
+      <path d="M12 3.5 20 8v8l-8 4.5L4 16V8z" />
+      <path d="M4 8l8 4.5L20 8M12 12.5V20" />
     </template>
     <template v-else-if="name === 'workspace'">
       <rect x="3.5" y="4.5" width="17" height="15" rx="2" />

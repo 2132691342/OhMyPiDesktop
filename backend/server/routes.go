@@ -31,10 +31,15 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	// 应用偏好：开机自启、恢复上次会话、数据目录
 	s.prefsRoutes(api)
 
-	// 引擎（探测，不安装）
+	// 引擎（探测，不安装）+ 应用（代跑引擎自己的安装器）
 	api.GET("/engines", s.engines)
 	api.POST("/engines/detect", s.detectEngines)
 	api.POST("/engines/restart", s.restartEngines)
+
+	api.GET("/apps", s.apps)
+	api.POST("/apps/install", s.installApp)
+	api.POST("/apps/update", s.updateApp)
+	api.POST("/apps/uninstall", s.uninstallApp)
 
 	// 会话
 	api.GET("/sessions", s.sessions)

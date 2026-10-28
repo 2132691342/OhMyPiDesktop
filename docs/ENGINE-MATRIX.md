@@ -9,8 +9,8 @@
 两者协议家族相同（同一套 JSONL 信封、同源会话文件），能力差得很远。
 本文件只陈述**引擎侧的事实**；我们如何处置这些差异，见 [PROTOCOL.md](PROTOCOL.md)。
 
-> 本应用**不安装**任何引擎。引擎必须由用户自己装好并在 `PATH`（或被显式指定路径）上。
-> 缺少引擎时我们只做两件事：**说明缺什么**、**给出安装命令原文**。
+> 引擎是外部程序：我们**不自建安装器**，只探测它、并代跑它自己的官方安装命令。
+> 没找到时给两条路：去「应用」页装，或复制命令自己跑。详见 [modules/apps.md](modules/apps.md)。
 
 ## 1. 快速对照
 
@@ -113,6 +113,19 @@
 Node（约 3.5 秒）。所以探测结果缓存一分钟，两个引擎并发探测，装配阶段不探、只探测
 第一次要显示时探。强制重探走 `POST /engines/detect`。
 
+## 5b. 装与升级（应用管理）
+
+探测之上还有一层：它装在哪条渠道、能不能代跑升级 / 卸载。
+完整分发事实与代跑流程见 [modules/apps.md](modules/apps.md)，这里只列事实差：
+
+| | omp | pi |
+|---|---|---|
+| npm 包 | `@oh-my-pi/pi-coding-agent`（`engines` 只有 bun） | `@earendil-works/pi-coding-agent` |
+| Windows 装 | 官方 PowerShell 安装器 → `%LOCALAPPDATA%\omp` | npm 全局（`<prefix>\pi.cmd`） |
+| 自升级 | `omp update` | `pi update self` |
+| 非交互卸载 | **无**（安装器没有 uninstall） | `npm uninstall -g <包>` |
+| 最新版来源 | `build.stencil.so` 的 latest 接口 | npm registry 的 `dist-tags.latest` |
+
 ## 6. 技能发现（两套规则）
 
 | | omp | pi |
@@ -167,5 +180,5 @@ Node（约 3.5 秒）。所以探测结果缓存一分钟，两个引擎并发�
 | 不做 | 原因 |
 |---|---|
 | 自造团队编排层 | omp 没有 spawn RPC，pi 连子代理都没有；自造一层会和模型自己的 `task` 调用重复且互相踩 |
-| 帮用户装引擎 / 改 PATH / 写注册表 | 提权把一个只读代理变成系统安装器；装不装、装哪里是用户的事 |
+| 自建安装器（下载 / 校验 / 解压 / 改 PATH / 写注册表） | 提权把一个只读代理变成系统安装器。代跑引擎自己的官方安装命令不在此列，见 [apps.md](modules/apps.md) |
 | 手写引擎的 SQLite / blobs | 多写者库 + 内容寻址存储，一次写坏是静默的 |

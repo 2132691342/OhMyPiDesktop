@@ -32,9 +32,53 @@ export interface EngineIdentity {
   kind: EngineKind
   exe: string
   version: string
-  /** 引擎从哪来：显式路径 / PATH（本应用不装引擎，所以没有第三种来源） */
+  /** 引擎从哪来：显式路径 / PATH */
   source: 'custom' | 'path' | ''
+  /** 安装渠道；只决定「卸载按钮存不存在」，不参与拉起与升级 */
+  channel: AppChannel
   caps: EngineCaps
+}
+
+/** 安装渠道。unknown 表示看得见文件但不知道谁装的。 */
+export type AppChannel = 'npm' | 'pnpm' | 'bun' | 'omp-installer' | 'pi-installer' | 'unknown' | ''
+
+/** 应用页的一行：一个引擎的安装事实与可做的动作。后端已经把「能不能点」算完了。 */
+export interface AppRow {
+  kind: EngineKind
+  app_name: string
+  installed: boolean
+  version: string
+  exe: string
+  source: 'custom' | 'path' | ''
+  channel: AppChannel
+  /** 渠道的人话说明，界面直接显示 */
+  channel_label: string
+  latest_version: string
+  /** 查不到最新版的原因（一句话），空表示查到了 */
+  latest_note?: string
+  outdated: boolean
+  install_command: string
+  /** 空表示这个引擎没有自升级命令 */
+  update_command: string
+  /** 空表示这条渠道没有非交互式卸载 */
+  uninstall_command: string
+  docs_url: string
+  can_install: boolean
+  can_update: boolean
+  can_uninstall: boolean
+  /** 不能操作的原因（一句话），空表示没阻碍 */
+  blocker?: string
+  busy: boolean
+}
+
+/** 安装进度帧（SSE `app:progress`）。逐行推，前端 append 到日志面板。 */
+export interface AppProgress {
+  kind: EngineKind
+  action: 'install' | 'update' | 'uninstall'
+  phase: 'start' | 'line' | 'done' | 'fail'
+  line?: string
+  command?: string
+  message?: string
 }
 
 export interface EngineLayout {

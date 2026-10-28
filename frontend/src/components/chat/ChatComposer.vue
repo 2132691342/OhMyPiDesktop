@@ -260,6 +260,10 @@ defineExpose({ focus })
       <button class="omp-btn text sm" :class="{ 'is-loading': app.detecting }" :disabled="app.detecting" @click="app.detectEngines()">
         {{ t('chat.redetect') }}
       </button>
+      <!-- 命令原文解决「我知道该跑什么」，应用页解决「我不想开终端」——两条路都给 -->
+      <button class="omp-btn text sm" @click="app.openApps()">
+        {{ t('chat.openApps') }}
+      </button>
     </div>
 
     <div v-if="chat.widgets.length || chat.statusText" class="status-strip">

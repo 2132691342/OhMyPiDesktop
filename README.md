@@ -35,7 +35,8 @@
 |---|---|
 | 对话 | 流式正文、思考段、工具卡（参数 / 输出 / 耗时）按引擎吐出的**原始顺序**内联；插话、排队、停止、自动重试提示、提问卡片、上下文水位 |
 | 工作区 | 文件树（只读）、改动清单、逐文件 diff、暂存 / 提交、分支切换、冲突处置、**提交详情与文件时间线** |
-| 引擎 | 自动探测 `omp` / `pi`（版本 + 种类 + 能力表）；一个工作目录一个进程；界面上切引擎；配置原文只读查看 |
+| 引擎 | 自动探测 `omp` / `pi`（版本 + 种类 + 安装渠道 + 能力表）；一个工作目录一个进程；界面上切引擎；配置原文只读查看 |
+| 应用 | 装 / 升级 / 卸载两个引擎：**代跑引擎自己的官方安装器与包管理器命令**，输出逐行推到界面；版本对比与渠道识别；管不了的只给手动路径 |
 | 会话 | 直接读引擎的会话目录：终端里聊过的这里也看得到，点开接着聊；**启动时回到上次那个** |
 | 子代理 | 仅 omp：roster、进度、成本、上下文水位、子代理对话（字节游标增量）、插话、取消 |
 | 模型 | 读写引擎的模型配置：这里加的服务商，终端里立刻也认；OAuth 登录在界面里发起（仅 omp） |
@@ -48,10 +49,12 @@
 
 ## 边界
 
-- **不安装引擎**。不做下载、不改 PATH、不弹 UAC。
-  没找到引擎时只说缺什么、给出可复制的安装命令原文。
-  （唯一会写注册表的地方是「开机自启」，写的是 HKCU 下自己的启动项，
-  与引擎安装无关，不需要管理员权限。）
+- **不自建安装器**。装、升级、卸载都**代跑引擎自己的官方安装器与包管理器命令**，
+  界面上显示的命令与真正执行的是同一串。我们不下载、不解压、不校验、不内置运行时、
+  不改 PATH、不弹 UAC。（唯一会写注册表的地方是「开机自启」，写的是 HKCU 下自己的
+  启动项，与引擎安装无关，不需要管理员权限。）
+  渠道判不出来时不给卸载按钮，只给手动路径——不猜、不删不认识的目录。
+  详见 [docs/modules/apps.md](docs/modules/apps.md)。
 - **不重写 Agent 内核**：工具、压缩、重试、缓存、编辑、MCP、扩展、子代理全由引擎演进。
 - **不造团队编排层**：omp 没有 spawn 的 RPC，pi 连子代理都没有；子代理面板是能力上限。
 - **不改引擎的默认行为**，不另装审批闸门。
@@ -84,15 +87,16 @@ OhMyPiDesktop/
 ├── main.go                 入口：embed + wails.Run + 装配
 ├── backend/
 │   ├── engine/             引擎抽象：Kind / Caps / Proc / Translator / Supervisor / Probe
+│   │   │                   + 分发事实（dist.go / channel.go / latest.go）
 │   │   ├── omp/            omp：ready 握手、v2 分片、子代理、私有帧
 │   │   └── pi/             pi：无握手、能力降级、私有帧
-│   ├── env/                引擎探测（不安装）+ layout（落盘布局）
+│   ├── env/                引擎探测 + layout（落盘布局）
 │   │   ├── ompcfg/         models.yml 的 YAML 节点级读写
 │   │   └── picfg/          models.json 的 JSONC 键级读写
 │   ├── session/            会话文件：一套读取代码 + 三点适配
 │   ├── skill/              技能发现与启停（两套根、两种开关键）
 │   ├── git/                工作区版本状态：status / diff / 历史 / 白名单写入
-│   ├── service/            用例编排（会话 / 对话 / 模型 / 技能 / 插件 / 偏好 / 工作区）
+│   ├── service/            用例编排（会话 / 对话 / 模型 / 技能 / 插件 / 应用 / 偏好 / 工作区）
 │   ├── server/             gin 路由 / SSE / 统一响应
 │   ├── hub/                事件总线（seq + 环形重放）
 │   ├── repo/               设置 KV：一个 JSON 文件
@@ -105,18 +109,21 @@ OhMyPiDesktop/
 └── docs/                   工程文档
 ```
 
-## 装引擎（用户自己做）
+## 装引擎
+
+两种做法都行，效果一样（应用页跑的就是下面这两行）：
 
 ```powershell
-# omp
-irm https://omp.sh/install.ps1 | iex
+# 做法一：在应用里点「应用 → 安装」
 
-# pi
-npm i -g @earendil-works/pi-coding-agent
+# 做法二：自己跑一行
+irm https://omp.sh/install.ps1 | iex            # omp
+npm i -g --ignore-scripts @earendil-works/pi-coding-agent   # pi
 ```
 
-装完重开终端，让 PATH 生效；应用里点「重新检测」。
-**引擎不必预装**——没有引擎应用也能起来，界面会显示「没找到引擎」并给出安装命令。
+自己装完重开终端让 PATH 生效，回来点「重新检测」。
+**引擎不必预装**——没有引擎应用也能起来，界面会显示「没找到」并给两条路：
+去应用页装，或复制命令自己跑。
 
 ## 开发
 
@@ -156,10 +163,11 @@ task smoke -- -engine pi  -msg "Reply with exactly: OK"
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | 与两个引擎的 RPC 契约、握手差异、帧处置、不变量 |
 | [docs/API-CONTRACT.md](docs/API-CONTRACT.md) | HTTP 与 SSE 契约、SSE 服务端实现要点 |
 | [docs/DATA-MODEL.md](docs/DATA-MODEL.md) | 哪些数据属于引擎、哪些属于本应用、写边界 |
-| [docs/PAGE-STRUCTURE.md](docs/PAGE-STRUCTURE.md) | 八个页面的骨架与引擎差异 |
+| [docs/PAGE-STRUCTURE.md](docs/PAGE-STRUCTURE.md) | 九个页面的骨架与引擎差异 |
 | [docs/ERROR-CODES.md](docs/ERROR-CODES.md) | 错误码段位与**前端处置表** |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 环境、命令、调试真实引擎、改代码时改什么 |
 | [docs/modules/env.md](docs/modules/env.md) | 环境层：探测、落盘布局、两套配置读写 |
+| [docs/modules/apps.md](docs/modules/apps.md) | 应用管理：分发事实、渠道判定、代跑安装器、最新版查询 |
 | [docs/modules/session.md](docs/modules/session.md) | 会话层：一套读取代码 + 三点适配 |
 | [docs/modules/skill.md](docs/modules/skill.md) | 技能与插件：发现规则、启停语义、CLI 装卸 |
 | [docs/modules/subagents.md](docs/modules/subagents.md) | 子代理观测台：双源数据、字节游标、干预 |

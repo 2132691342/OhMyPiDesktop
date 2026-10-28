@@ -45,7 +45,8 @@ func As(err error) *AppError {
 }
 
 // 错误码段位：1xxx 内部，2xxx 启动，3xxx 引擎进程/协议，4xxx 模型/凭据，
-// 5xxx 技能/插件/能力不支持，6xxx 会话，7xxx 入参/鉴权，8xxx 文件/路径/网络。
+// 5xxx 技能/插件/能力不支持，6xxx 会话，7xxx 入参/鉴权，8xxx 文件/路径/网络，
+// 9xxx 引擎自身的装 / 升级 / 卸载。
 // 全表与「前端该怎么反应」见 docs/ERROR-CODES.md——两边必须同步。
 const (
 	CodeInternal = "1001"
@@ -81,6 +82,12 @@ const (
 	CodeFileBusy      = "8002"
 	CodeNetwork       = "8003"
 	CodeInstallFailed = "8004"
+
+	// 9xxx 是「应用管理」段：装 / 升级 / 卸载引擎本身。
+	// 它不属于 8xxx（文件与路径），也不是 5xxx（引擎自己的能力）——
+	// 出错的是包管理器与网络，不是引擎拒绝了什么。
+	CodeInstallUnavailable = "9001" // 缺少包管理器 / 命令不存在，命令没发出去
+	CodeAppBusy            = "9002" // 同一个应用已有长任务在跑
 )
 
 // WriteFileAtomic 先写同目录临时文件再改名：中途失败不会留下半截配置。

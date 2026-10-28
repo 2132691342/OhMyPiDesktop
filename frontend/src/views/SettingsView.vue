@@ -78,7 +78,8 @@ const recentRows = computed(() => app.workspaces.filter((r) => r.exists))
 const forgetting = ref('')
 
 // 每个引擎一张卡：探测结果、版本、显式路径、落盘位置、重启。
-// 安装命令只展示、不执行——装上装不上是用户自己的事。
+// 「装」不在这里做——它统一在「应用」页，两处各放一个安装按钮必然会出现
+// 一个说装了、一个说没装。这里只给一句入口与命令原文。
 const installed = computed(() => app.engines?.engines ?? [])
 
 const pathFields = computed(() => [
@@ -348,6 +349,7 @@ const configLang = computed<'json' | 'yaml' | 'text'>(() => {
               {{ item.installed ? item.version : t('settings.engineSource.none') }}
             </span>
             <span v-if="item.installed" class="tag">{{ t(`settings.engineSource.${item.source}`) }}</span>
+            <span v-if="item.installed && item.channel" class="tag">{{ t(`settings.channel.${item.channel}`) }}</span>
             <span class="push" />
             <button
               class="omp-btn sm"
@@ -363,6 +365,9 @@ const configLang = computed<'json' | 'yaml' | 'text'>(() => {
             <code class="cmd-text selectable">{{ app.installHint(item.kind) }}</code>
             <button class="omp-btn sm ghost" @click="copyCommand(app.installHint(item.kind))">
               {{ copiedCmd === app.installHint(item.kind) ? t('settings.copied') : t('settings.copyCommand') }}
+            </button>
+            <button class="omp-btn sm" @click="app.openApps()">
+              {{ t('settings.goApps') }}
             </button>
           </div>
 

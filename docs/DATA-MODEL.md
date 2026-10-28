@@ -28,6 +28,7 @@
 | 会话 | **只删，不改内容** | 成对删 `.jsonl` + 同名 artifacts 目录 |
 | 凭据 | 不读不写 | omp 走 RPC 登录；pi 提示用户跑 `pi auth` |
 | 提示历史 / 会话标题索引 | 不写 | omp 的 `history.db` 只读快路径可选 |
+| 引擎二进制 | **代跑引擎官方安装器 / 包管理器** | 装、升级、卸载的写都发生在引擎自己的目录里；我们不写自己的文件 |
 | 插件 / 扩展 | 走 CLI | omp：`omp plugin install/uninstall`；pi：`pi install/remove` |
 | 技能启停 | **写 frontmatter** | omp 改 `enabled`；pi 改 `disable-model-invocation`（它没有 enabled）。都不移目录 |
 
@@ -214,7 +215,7 @@ sessions/<编码cwd>/<ts>_<id>/          ← artifacts（子代理 transcript、
 | 改技能启停 | `SKILL.md` 的 `enabled` 行 | 目录结构 |
 | 装插件 | 交给引擎自己的 CLI | `node_modules` 里的任何文件 |
 | 删会话 | 那个 `.jsonl` 与同名目录 | 别的会话 |
-| 引擎二进制 | **完全不写** | 不装、不升级、不打补丁 |
+| 引擎二进制 | **只通过引擎自己的安装器写** | 不自己下载、不解压、不打补丁 |
 
 ## 备份与恢复
 

@@ -1,0 +1,147 @@
+# 应用管理：装 / 升级 / 卸载引擎
+
+「应用」页回答一个问题：**这两个引擎装没装、要不要更新、装不了怎么办。**
+
+## 定位：只代跑，不自建
+
+引擎是外部程序，拥有者是用户。我们对它的处置分三档，界线是「谁在实现安装」：
+
+| 档 | 我们做什么 | 我们绝不做什么 |
+|---|---|---|
+| 发现 | 探测可执行文件、版本、种类、安装渠道 | 改 PATH、写注册表启动项以外的键 |
+| 代跑 | **原样转发**引擎官方安装器与包管理器命令，把输出逐行打到界面 | 自己下载、解压、校验、写盘；内置运行时；自建分发源 |
+| 升级 / 卸载 | 只在**能确定命令属于哪条渠道**时才给按钮 | 猜渠道；删一个我们不认识的目录 |
+
+一句话：**我们只代跑别人写好的安装程序，从不自己当安装程序。**
+这条界线让「装」没有第二个真相——引擎官方怎么更新，这里就怎么更新。
+
+对比一下另两种做法，看代价：
+
+| 做法 | 代价 |
+|---|---|
+| 自己下载 + 校验 + 解压到 `%LOCALAPPDATA%\...\engines` | 要维护校验、镜像、断点、回滚；引擎换了产物布局就静默装出半套 |
+| 内置运行时（Node / bun / git） | 二进制约 50 MB 起，还要跟着上游版本矩阵走；用户机器上往往已经有 |
+| **代跑官方安装器**（本项目的做法） | 装不上时只能给命令原文让用户自己跑；升级路径依赖引擎自己的 updater |
+
+## 分发事实
+
+这些是官方文档里原样写着的命令，集中在 `backend/engine/dist.go`。
+
+| | omp | pi |
+|---|---|---|
+| npm 包 | `@oh-my-pi/pi-coding-agent` | `@earendil-works/pi-coding-agent` |
+| Windows 安装 | `irm https://omp.sh/install.ps1 \| iex` | npm 全局（`pi.dev` 的安装器在 Windows 上最终也是 npm 那条路） |
+| 升级 | `omp update` | `pi update self` |
+| 卸载 | 无（安装器没有非交互卸载） | `npm uninstall -g <包>` |
+| 默认落点 | `%LOCALAPPDATA%\omp\omp.exe` | `<npm prefix>\pi.cmd` |
+
+**为什么 omp 不走 npm**：它的 npm 包 `package.json` 里 `engines` 只有 `bun`，
+机器上没有 bun 时装不上。官方推荐 Windows 上就是 PowerShell 安装器——
+那条路会自己找 bun，没有 bun 就取预编译二进制并校验 SHA-256。
+
+**为什么升级走引擎自己的 updater**：`omp update` 认得出 brew / mise / nix / bun /
+npm / 预编译二进制各自的升级方式；重跑安装器只认得它自己那一种。
+
+## 渠道判定
+
+渠道只决定一件事：**卸载按钮存不存在**。装与升级从来不依赖它。
+
+判据只有两类，都只读文件系统，不跑任何命令：
+
+1. **路径里有没有 `node_modules` 段** —— 用 node 跑 `cli.js` 的那种安装。
+   `.bun` / `.pnpm` 段把渠道区分开。
+2. **shim 旁边有没有这个包的目录** —— Windows 的全局安装是
+   `<prefix>\pi.cmd` + `<prefix>\node_modules\@earendil-works\pi-coding-agent`。
+   只看路径段会漏掉这一种，而它恰恰是最常见的一种。
+3. omp 的 `%LOCALAPPDATA%\omp` 与 pi 托管布局里的 `managed-install.json`
+   是两条官方安装器渠道。
+4. 都判不出来 → `unknown`。**这一档必须存在**：有些渠道确实没有非交互卸载，
+   而把「不确定」硬塞进「能卸」的代价是删错东西。
+
+**为什么不跑 `npm prefix -g` 去问**：应用页首屏本来就要并发查两处上游最新版，
+再为每个引擎起一个 node 进程会让首屏多等几秒；而 `npm prefix -g` 会被用户
+改坏的 `.npmrc` 带偏，读出来的还是个不可靠的值。
+
+## 最新版查询
+
+两条来源，都是引擎自己发布的地方：
+
+| 引擎 | 来源 | 取什么 |
+|---|---|---|
+| pi | `registry.npmjs.org/@earendil-works%2fpi-coding-agent/latest` | `version` |
+| omp | `build.stencil.so/api/products/omp/latest/windows-x86_64?channel=stable` | `build.version` |
+
+- 单次上限 4 秒、响应体上限 64 KB、结果缓存 30 分钟（「重新检查」强制刷新）
+- **查不到不是错误**：离线、代理、镜像都属正常。那时界面只显示本地版本 +
+  「最新版未知」，不显示「已是最新」——把网络问题说成引擎有问题是最糟的误报
+- 只读 `dist-tags.latest` 而不读版本清单：清单可能几百 KB，界面只需要一个数
+- 预发布后缀一律当同版本：宁可少提示一次升级，也不要提示一个不存在的版本
+
+## 一次安装的链路
+
+```
+POST /apps/install {engine: "pi"}
+  service.RunAppAction
+    ├─ claim(kind)                  同一个应用同时只允许一条长任务
+    ├─ actionCommand                 → ["npm","i","-g","--ignore-scripts","@…"]
+    ├─ 推 app:progress{phase:"start", command}
+    ├─ runStreaming
+    │    ├─ 两个读协程（stdout / stderr 各一，串行读会互相堵）
+    │    ├─ 按 \n 与 \r 切行（npm 的进度条只回 \r）
+    │    ├─ 每行推 app:progress{phase:"line", line}
+    │    └─ 退出码非零 → AppError（带退出码）+ phase:"fail"
+    ├─ detectAll(force)             重探：装完不能还显示旧版本
+    └─ QueryLatest(force)           重查最新版
+  ← {apps: [...最新清单]}
+```
+
+**为什么同步等它跑完**：一个动作一个结果。多一个「任务状态查询」接口就多一份
+需要和实际进程对齐的状态，而进度已经走事件流了。
+
+**为什么显示的命令与执行的命令是同一串**：界面把 `install_command` 当原文给用户复制。
+两条命令不一致的话，用户照着抄会得到不一样的结果——那是这个功能最坏的一种错。
+`service/apps_test.go` 里有一条测试专门守这个不变量。
+
+**为什么失败也要重探**：装了一半的目录不该继续显示「已安装 1.2.3」。
+装失败与装成功都要让界面回到真实状态。
+
+**为什么用 `context.WithoutCancel` 收尾重探**：请求自己的 ctx 可能因为
+客户端断开而取消，那时元数据没刷新，界面就会停在旧状态。
+
+## 命令不存在就不发出去
+
+`AGENTS.md §3` 的规则在这里的落点：
+
+| 情况 | 返回 | 界面 |
+|---|---|---|
+| 找不到 `powershell` | `9001` | 按钮禁用 + 「缺 PowerShell」+ 命令原文 |
+| 找不到 `npm` | `9001` | 按钮禁用 + 「缺 Node.js」+ 命令原文 |
+| 同一引擎有长任务在跑 | `9002` | 按钮禁用 + 「还有一个任务在跑」 |
+| 渠道没有非交互卸载 | `3006` | **不渲染按钮**，给一句手动路径 |
+| 引擎没有自升级命令 | `3006` | 不渲染升级按钮 |
+
+**没有卸载按钮时必须有一句解释**（`uninstallBlocker`）：一个装着的应用没有卸载
+按钮，用户只会以为漏了。所以那一句话不是可选的。
+
+## 边界上的三个「不做」
+
+| 不做 | 原因 |
+|---|---|
+| 内置 Node / bun / git 运行时 | 体积与版本矩阵的维护成本远高于收益；用户机器上通常已有 |
+| 托管多版本（锁版本 / 回滚） | 引擎的会话与凭据不按版本隔离，回滚一个二进制救不回一次坏升级 |
+| 卸载时连带删会话与凭据 | 那是用户的数据，不是我们的；卸载程序只该删程序 |
+
+## 验收
+
+改了这层必须真跑一遍（单元测试覆盖不到「官方安装器真的能跑」）：
+
+```bash
+task dev:server                 # 只起后端
+# 另一终端
+curl -s -H "X-Desktop-Token: dev" http://127.0.0.1:<port>/api/v1/apps
+curl -s -H "X-Desktop-Token: dev" -H "Content-Type: application/json" \
+     -X POST -d '{"engine":"pi"}' http://127.0.0.1:<port>/api/v1/apps/update
+```
+
+看三处：`channel` 判对了没有、`app:progress` 的 `start` 帧带的是不是那条命令、
+`done` 之后清单里的版本变了没有。

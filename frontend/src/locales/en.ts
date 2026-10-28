@@ -11,7 +11,36 @@ export default {
     "skills": "Skills",
     "plugins": "Plugins",
     "usage": "Usage",
+    "apps": "Apps",
     "settings": "Settings"
+  },
+  "apps": {
+    "title": "Apps",
+    "subtitle": "Install state of the omp and pi engines. Install, update and uninstall run each engine's own installer and package-manager commands — the command shown is the command executed.",
+    "group": {
+      "installed": "Installed",
+      "missing": "Not installed"
+    },
+    "notInstalled": "Not installed",
+    "reinstall": "Reinstall",
+    "updateAvailable": "Update available",
+    "upToDate": "Up to date",
+    "latestUnknown": "Latest unknown",
+    "latestHint": "Could not reach the upstream release feed. Offline or temporarily unavailable — usage is unaffected.",
+    "recheckLatest": "Check latest versions again",
+    "channel": "Channel",
+    "location": "Executable",
+    "docs": "Official docs",
+    "copyFailed": "Copy failed — select the command manually",
+    "phaseRunning": "Running",
+    "phaseDone": "Finished",
+    "phaseFail": "Failed",
+    "done": {
+      "install": "{name} installed",
+      "update": "{name} updated",
+      "uninstall": "{name} uninstalled"
+    },
+    "boundary": "Nothing here implements installation. What runs is the exact command the engine publishes, so this page follows the engine's own release process."
   },  "files": {
     "up": "Up one level",
     "empty": "This folder is empty",
@@ -91,6 +120,7 @@ export default {
     "path": "Path",
     "actions": "Actions",
     "unknown": "Unknown",
+    "update": "Update",
     "yes": "Yes",
     "no": "No",
     "saved": "Saved"
@@ -114,7 +144,7 @@ export default {
     "emptyHint": "Tools, skills and rules for this working directory all apply here.",
     "pickWorkspace": "Choose folder",
     "context": "Context",
-    "noEngine": "No engine installed yet. Install one in Settings → Environment.",
+    "noEngine": "No engine installed yet. Install one on the Apps page, or run the command yourself in a terminal.",
     "engineDown": "Engine is not running",
     "compact": "Compact context",
     "compacting": "Compacting…",
@@ -154,6 +184,7 @@ export default {
     "engineSwitched": "Switched to {engine}. Earlier turns belong to the other engine; continuing opens a new session.",
     "switchingEngine": "Switching engine…",
     "redetect": "Detect again",
+    "openApps": "Install from the Apps page",
     "queuedCount": "{n} queued",
     "clearQueue": "Clear queue",
     "queueCleared": "Queue cleared",
@@ -327,7 +358,8 @@ export default {
     "engineExe": "Engine path",
     "engineExeHint": "Leave empty to auto-detect: prefers the binary on PATH",
     "missingTitle": "No engine found",
-    "missingHint": "This app does not install engines. Install one in a terminal, then come back and press Detect again.",
+    "missingHint": "Install one from the Apps page, or install it in a terminal and press Detect again.",
+    "goApps": "Install from the Apps page",
     "missingOmp": "omp install command",
     "missingPi": "pi install command",
     "copyCommand": "Copy command",
@@ -337,6 +369,14 @@ export default {
       "path": "System PATH",
       "custom": "Custom path",
       "none": "Not found"
+    },
+    "channel": {
+      "npm": "npm global",
+      "pnpm": "pnpm global",
+      "bun": "bun global",
+      "omp-installer": "omp official installer",
+      "pi-installer": "pi official installer",
+      "unknown": "Unknown channel"
     },
     "profile": "Profile",
     "profileHint": "Empty means the default profile. Separate profiles keep models, sessions and plugins apart.",

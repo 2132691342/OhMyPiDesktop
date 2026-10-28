@@ -159,3 +159,95 @@ func TestRejectsNonLoopback(t *testing.T) {
 		t.Errorf("应回报来源被拒的错误码: %s", rec.Body.String())
 	}
 }
+
+// /apps 的契约：两个引擎各一行、字段齐全、动作开关与「命令存在」一致。
+//
+// 测的是形态而不是这台机器装了什么：CI 上可能一个引擎都没有，
+// 那时 Installed 为假正好是另一种要覆盖的状态。
+func TestAppsContract(t *testing.T) {
+	_, h := testServer(t)
+	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/apps", nil))
+	req.Header.Set("X-Desktop-Token", "secret-token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态 = %d；body=%s", rec.Code, rec.Body.String())
+	}
+
+	var envelope struct {
+		Code string `json:"code"`
+		Data struct {
+			Apps []struct {
+				Kind             string `json:"kind"`
+				AppName          string `json:"app_name"`
+				Channel          string `json:"channel"`
+				ChannelLabel     string `json:"channel_label"`
+				InstallCommand   string `json:"install_command"`
+				DocsURL          string `json:"docs_url"`
+				UninstallCommand string `json:"uninstall_command"`
+				CanUninstall     bool   `json:"can_uninstall"`
+				CanInstall       bool   `json:"can_install"`
+			} `json:"apps"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Code != "0" {
+		t.Fatalf("code = %q；body=%s", envelope.Code, rec.Body.String())
+	}
+	if len(envelope.Data.Apps) != 2 {
+		t.Fatalf("应该有 2 行（omp 与 pi），得到 %d", len(envelope.Data.Apps))
+	}
+	for _, row := range envelope.Data.Apps {
+		if row.InstallCommand == "" {
+			t.Errorf("%s 没有安装命令：界面会给一个点不动的按钮", row.Kind)
+		}
+		if row.DocsURL == "" {
+			t.Errorf("%s 没有文档地址", row.Kind)
+		}
+		if row.ChannelLabel == "" {
+			t.Errorf("%s 的渠道没有说明文案", row.Kind)
+		}
+		// 「有卸载命令」与「能不能卸」必须一致，否则会出现点了报错的按钮。
+		if (row.UninstallCommand != "") != row.CanUninstall {
+			t.Errorf("%s：uninstall_command=%q 但 can_uninstall=%v", row.Kind, row.UninstallCommand, row.CanUninstall)
+		}
+	}
+}
+
+// 动作入口只接受 GET / POST，且写操作必须带引擎名。
+func TestAppsActionRequiresEngine(t *testing.T) {
+	_, h := testServer(t)
+	req := loopback(httptest.NewRequest(http.MethodPost, "/api/v1/apps/install", strings.NewReader(`{}`)))
+	req.Header.Set("X-Desktop-Token", "secret-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	var envelope struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Code != "7001" {
+		t.Fatalf("缺引擎名应回 7001，得到 %q；body=%s", envelope.Code, rec.Body.String())
+	}
+	if !strings.Contains(envelope.Message, "omp") || !strings.Contains(envelope.Message, "pi") {
+		t.Errorf("提示要告诉用户填什么: %q", envelope.Message)
+	}
+}
+
+// DELETE 一律拒绝：没有 PUT/DELETE 就没有「顺手加一个删除接口」的入口。
+func TestAppsRejectsDelete(t *testing.T) {
+	_, h := testServer(t)
+	req := loopback(httptest.NewRequest(http.MethodDelete, "/api/v1/apps/install", nil))
+	req.Header.Set("X-Desktop-Token", "secret-token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("DELETE 状态 = %d，期望 405", rec.Code)
+	}
+}

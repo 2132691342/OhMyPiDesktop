@@ -8,6 +8,7 @@ const router = createRouter({
     { path: '/chat', name: 'chat', component: () => import('@/views/ChatView.vue'), meta: { title: '对话' } },
     { path: '/workspace', name: 'workspace', component: () => import('@/views/WorkspaceView.vue'), meta: { title: '工作区' } },
     { path: '/sessions', name: 'sessions', component: () => import('@/views/SessionsView.vue'), meta: { title: '会话' } },
+    { path: '/apps', name: 'apps', component: () => import('@/views/AppsView.vue'), meta: { title: '应用' } },
     { path: '/models', name: 'models', component: () => import('@/views/ModelsView.vue'), meta: { title: '模型' } },
     { path: '/skills', name: 'skills', component: () => import('@/views/SkillsView.vue'), meta: { title: '技能' } },
     { path: '/plugins', name: 'plugins', component: () => import('@/views/PluginsView.vue'), meta: { title: '插件' } },

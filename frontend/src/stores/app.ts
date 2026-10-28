@@ -6,6 +6,8 @@ import { useRouter } from 'vue-router'
 import { api, streamURL } from '@/api/http'
 import { getEndpoint, onStartupError, pickFolder } from '@/api/wails'
 import type {
+  AppProgress,
+  AppRow,
   AskRequest,
   Bootstrap,
   ChatBlock,
@@ -33,6 +35,10 @@ export const useAppStore = defineStore('app', () => {
   const workspaces = ref<WorkspaceRow[]>([])
   const sessions = ref<SessionRow[]>([])
   const detecting = ref(false)
+  // 应用页的数据与安装进度。两者都放全局：缺引擎横幅、设置页引擎卡、
+  // 应用页三处都看同一份，各拉一份就会出现「这里说装了、那里说没装」。
+  const apps = ref<AppRow[]>([])
+  const appProgress = ref<Record<string, AppProgressLog>>({})
 
   // 引擎请求浏览器完成的一次授权。它不弹窗、不自动打开，只在对话页顶部
   // 挂一条可复制的地址——默认浏览器可能打不开，用户需要能看到原文。
@@ -155,6 +161,13 @@ export const useAppStore = defineStore('app', () => {
     engines.value = await api.engineStatus()
   }
 
+  // 应用页清单。refresh 为真时忽略后端缓存（重查上游最新版）。
+  async function loadApps(refresh = false) {
+    const data = await api.apps(refresh)
+    apps.value = data.apps ?? []
+    return apps.value
+  }
+
   // 重新探测：设置页的「重新检测」。pi 的探测要起一次 Node，所以要给 loading。
   async function detectEngines() {
     detecting.value = true
@@ -242,6 +255,31 @@ export const useAppStore = defineStore('app', () => {
       case 'engine:commands': {
         const list = readCommands(data.commands)
         if (list.length) chat.commands = list
+        return
+      }
+      case 'app:progress': {
+        const frame = readAppProgress(data)
+        if (!frame) return
+        const prev = appProgress.value[frame.kind]
+        const next: AppProgressLog = {
+          action: frame.action,
+          phase: frame.phase,
+          command: frame.phase === 'start' ? asString(frame.command) : (prev?.command ?? ''),
+          lines: frame.phase === 'start' ? [] : [...(prev?.lines ?? [])],
+          message: asString(frame.message),
+        }
+        if (frame.phase === 'line') {
+          next.lines.push(asString(frame.line))
+          // 面板只留最后 400 行：装一个引擎的日志能到几百行，
+          // 全留会让长任务把内存吃掉，而用户看的是尾部。
+          if (next.lines.length > 400) next.lines = next.lines.slice(-400)
+        }
+        appProgress.value = { ...appProgress.value, [frame.kind]: next }
+        if (frame.phase === 'done' || frame.phase === 'fail') {
+          // 结束后重拉清单与引擎状态：装在后台跑完时界面也要跟上。
+          void loadApps(true).catch(() => undefined)
+          void refreshEngines().catch(() => undefined)
+        }
         return
       }
       case 'engine:extension_error':
@@ -376,6 +414,11 @@ export const useAppStore = defineStore('app', () => {
     window.location.hash = '#/settings'
   }
 
+  // 跳到应用页（装 / 升级引擎）。对话页的缺引擎横幅直接指向这里。
+  function openApps() {
+    window.location.hash = '#/apps'
+  }
+
   function disconnect() {
     source?.close()
     source = null
@@ -401,6 +444,8 @@ export const useAppStore = defineStore('app', () => {
     workspaces,
     sessions,
     pendingLink,
+    apps,
+    appProgress,
     theme,
     installed,
     hasEngine,
@@ -412,11 +457,13 @@ export const useAppStore = defineStore('app', () => {
     rememberSession,
     refreshEngines,
     detectEngines,
+    loadApps,
     setEngine,
     saveSettings,
     chooseWorkspace,
     setWorkspace,
     openSettings,
+    openApps,
     disconnect,
     watchStartupFatal,
   }
@@ -424,6 +471,33 @@ export const useAppStore = defineStore('app', () => {
 
 // ---------------- SSE 载荷的类型边界 ----------------
 // 事件体是 JSON 解析出来的 unknown 树：先校验再取字段，绝不 as 一个形状上去直接读。
+
+/** 一个应用的一次长任务现场：命令、逐行输出、当前阶段。 */
+export interface AppProgressLog {
+  action: string
+  phase: string
+  command: string
+  lines: string[]
+  message: string
+}
+
+/** 窄化一帧安装进度。action 与 phase 都必须是已知值，其余一律丢弃。 */
+function readAppProgress(v: Record<string, unknown>): AppProgress | null {
+  const kind = asString(v.kind)
+  if (kind !== 'omp' && kind !== 'pi') return null
+  const action = asString(v.action)
+  if (action !== 'install' && action !== 'update' && action !== 'uninstall') return null
+  const phase = asString(v.phase)
+  if (phase !== 'start' && phase !== 'line' && phase !== 'done' && phase !== 'fail') return null
+  return {
+    kind,
+    action,
+    phase,
+    line: asString(v.line) || undefined,
+    command: asString(v.command) || undefined,
+    message: asString(v.message) || undefined,
+  }
+}
 
 const asString = (v: unknown, fallback = '') => (typeof v === 'string' ? v : fallback)
 const asNumber = (v: unknown, fallback = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback)

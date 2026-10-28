@@ -203,16 +203,6 @@ func CapsFor(kind Kind) Caps {
 	return Caps{Extensions: true, ExportHTML: true, QueueClear: true}
 }
 
-// InstallHint 返回该引擎的安装命令原文。
-//
-// 我们不代装、不改 PATH、不弹 UAC：只给用户一行能自己粘进终端的命令。
-func InstallHint(kind Kind) string {
-	if kind == KindOMP {
-		return "irm https://omp.sh/install.ps1 | iex"
-	}
-	return "npm i -g @earendil-works/pi-coding-agent"
-}
-
 // sameFile 判断两条路径是否同一文件（Windows 大小写不敏感）。
 func sameFile(a, b string) bool {
 	if a == "" || b == "" {

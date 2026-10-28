@@ -25,7 +25,12 @@ const primary: NavItem[] = [
   { name: 'usage', icon: 'chart', key: 'nav.usage' },
 ]
 
-const bottom: NavItem[] = [{ name: 'settings', icon: 'gear', key: 'nav.settings' }]
+// 「应用」放底部：它是装引擎的地方，装完就不怎么回来，
+// 与设置同类（低频、改了影响全局），不该占着一级导航的黄金位置。
+const bottom: NavItem[] = [
+  { name: 'apps', icon: 'box', key: 'nav.apps' },
+  { name: 'settings', icon: 'gear', key: 'nav.settings' },
+]
 
 function go(name: string) {
   if (route.name !== name) void router.push({ name })

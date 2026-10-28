@@ -68,18 +68,32 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | POST | `/system/reveal` | 在资源管理器里定位 `{path}` |
 | POST | `/system/open` | 用默认程序打开 `{path}` |
 
-### 引擎（探测，不安装）
+### 引擎（探测）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/engines` | 引擎状态：每个引擎的 `kind / exe / version / source / caps / installed / layout`，加上在跑的进程 `running[]` |
+| GET | `/engines` | 引擎状态：每个引擎的 `kind / exe / version / source / channel / caps / installed / layout`，加上在跑的进程 `running[]` |
 | POST | `/engines/detect` | 重新探测（忽略一分钟缓存），返回同 `/engines` |
 | POST | `/engines/restart` | 重启 `{engine?}`；省略则重启全部 |
 
-> **本应用不安装引擎。** 没有 `/engine/install`，也没有 `/engine/rollback`。
-> 缺引擎时界面给的是安装命令原文（`bootstrap.install`）：
-> omp 用 `irm https://omp.sh/install.ps1 | iex`，
-> pi 用 `npm i -g @earendil-works/pi-coding-agent`。
+### 应用（装 / 升级 / 卸载）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/apps` | 两行：`kind / app_name / installed / version / exe / source / channel / channel_label / latest_version / latest_note / outdated / install_command / update_command / uninstall_command / docs_url / can_install / can_update / can_uninstall / blocker / busy`。`refresh=1` 忽略 30 分钟的「最新版」缓存 |
+| POST | `/apps/install` | `{engine}` → 同 `/apps` |
+| POST | `/apps/update` | `{engine}` → 同 `/apps` |
+| POST | `/apps/uninstall` | `{engine}` → 同 `/apps` |
+
+三条动作都**同步等到命令跑完**才回响应，进度通过 SSE 的 `app:progress` 逐行到达。
+返回值是整个清单而不是被改的那一行：装完两个引擎的相对状态可能都变了
+（比如 omp 装上了，界面里「缺引擎」的横幅就该消失）。
+
+> **边界：“能装”不等于“我们自己实现安装”。** 三个动作跑的都是引擎官方发布的
+> 安装器与包管理器命令，且与 `install_command` 里展示的那串**完全是同一行**。
+> 没有 `/apps/rollback`、没有内置运行时、没有自建分发源。
+> 渠道判不出来时 `can_uninstall=false` 且 `blocker` 给一句手动路径——
+> 界面那时**不渲染**卸载按钮。详见 [modules/apps.md](modules/apps.md)。
 
 ### 会话
 
@@ -286,13 +300,14 @@ GET /events?since=41
 | `subagent:progress` | `{id, index, agent, task, progress{…}}`（仅 omp） |
 | `subagent:event` | 子代理原始会话事件（仅 omp，`events` 档） |
 | `agents:cleared` | roster 与游标已清空（会话切换后由后端主动发） |
+| `app:progress` | 装 / 升 / 卸的进度：`{kind, action, phase, line?, command?, message?}`。`phase` = `start｜line｜done｜fail`；`start` 帧带 `command`（要跑的命令原文），`line` 帧带一行输出 |
 
 ## 契约版本
 
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`6`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+当前：`7`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
 只增可选字段不需要。
 
 新增端点本身不需要升版本（前端没调它就不受影响）；

@@ -6,12 +6,26 @@
 
 这是一个**引擎的桌面工作台**，支持 omp（OhMyPi）与 pi（Pi）两个引擎。
 
-- 引擎必须先由用户装好。**我们不下载、不安装、不升级、不改 PATH、不写注册表。**
-  没找到引擎时只做两件事：说明缺什么、给出可复制的安装命令原文。
 - 引擎能做的事我们一件都不重写：工具、压缩、重试、缓存、子代理、MCP、LSP 全归引擎。
 - 我们只做两件事：把引擎吐的事件翻译成可读界面，把它暴露的操作变成可点控件。
 - 引擎之间的能力差异**只在 `engine.Caps` 里表达**；界面按 `Caps` 隐藏入口，
   不做「灰掉的按钮」。
+
+### 引擎从哪来（唯一一处写清「装」的边界）
+
+引擎是**外部程序**，拥有者是用户。我们对它的处置分三档，界线是「谁在实现安装」：
+
+| 档 | 我们做什么 | 我们绝不做什么 |
+|---|---|---|
+| 发现 | 探测可执行文件、版本、种类与安装渠道 | 改 PATH、写注册表启动项以外的键、装到自己的目录 |
+| 代跑 | **原样转发引擎官方安装器与包管理器命令**，把输出流式打到界面 | 自己下载、解压、校验、写盘；内置运行时；自建分发源 |
+| 升级 / 卸载 | 只在**能确定这条命令属于哪条渠道**时才给按钮；确定不了就只给命令原文 | 猜渠道；删一个我们不认识的目录；卸载时连带删会话与凭据 |
+
+一句话：**我们只代跑别人写好的安装程序，从不自己当安装程序。**
+这条界线让「装」这件事没有第二个真相——引擎官方怎么更新，界面就怎么更新。
+
+没找到引擎时仍然只做两件事：说明缺什么、给出可复制的安装命令原文；
+「应用」页在此之上多给一个按钮，按的也是同一条命令。
 
 ## 1. 分层与依赖方向
 
@@ -55,6 +69,10 @@ main.go ──→ service ──→ engine ──→ omp / pi
 | 引擎进程 | `backend/engine` | 在 service 里 `exec.Command`（例外：跑引擎自己的 CLI 取插件列表，收口在 `service/proc.go`） |
 | 「这个引擎能干什么」 | `backend/engine/engine.go` 的 `Caps` | 在 service / 前端里 `if kind ==` |
 | 引擎探测（版本与种类） | `backend/engine/probe.go` | 在 service 里跑 `--version` |
+| 引擎的分发事实（包名 / 安装器 / 升级 / 卸载命令） | `backend/engine/dist.go` | 在 service 或前端里拼引擎命令 |
+| 引擎的安装渠道判定 | `backend/engine/channel.go` | 在 service 里猜渠道 |
+| 上游最新版查询 | `backend/engine/latest.go` | 在 service 里发外网请求 |
+| 装 / 升级 / 卸载的用例与并发保护 | `backend/service/apps.go` + `appexec.go` | 在 handler 里 `exec.Command` |
 | 一个引擎的落盘布局 | `backend/env/layout.go` | 在别处拼 `~/.omp/...` 或 `~/.pi/...` |
 | 引擎配置文件格式 | `backend/env/ompcfg`（YAML）/ `picfg`（JSONC） | 在别处 `yaml.Unmarshal` / `json.Unmarshal` 那些文件 |
 | 会话文件格式 | `backend/session` | 在 service 里解 JSONL |
@@ -194,3 +212,6 @@ json tag 同步用 snake_case（`branch_name`）。
 | `docs/DEVELOPMENT.md` | 环境、命令、调试、常见问题 |
 | `docs/ERROR-CODES.md` | 错误码与前端处置表 |
 | `docs/modules/*.md` | 各模块的实现说明（定位 → 设计 → 契约 → 流程 → 不变量 → 取舍） |
+
+`docs/modules/apps.md` 是「装」的唯一落点：它同时是引擎分发的**事实来源**
+（包名、安装器、升级与卸载命令）。改命令先改那里再改代码，不要在别处另写一份。
