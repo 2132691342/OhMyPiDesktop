@@ -32,7 +32,7 @@ onBeforeUnmount(() => window.clearTimeout(timer))
     <button
       v-for="notice in chat.notices"
       :key="notice.id"
-      class="notice-chip"
+      class="notice-chip omp-pressable"
       :class="notice.level"
       @click="chat.dismissNotice(notice.id)"
     >
@@ -69,18 +69,11 @@ onBeforeUnmount(() => window.clearTimeout(timer))
   font-size: var(--omp-fs-2xs);
   color: var(--omp-ink-5);
   pointer-events: auto;
-  transition:
-    transform var(--omp-dur-fast) var(--omp-ease),
-    border-color var(--omp-dur-fast) var(--omp-ease);
 }
 
+/* 缩放交给 .omp-pressable；这里只管换色 */
 .notice-chip:hover {
-  transform: scale(1.04);
   border-color: var(--omp-brand);
-}
-
-.notice-chip:active {
-  transform: scale(0.95);
 }
 
 .notice-chip.error {

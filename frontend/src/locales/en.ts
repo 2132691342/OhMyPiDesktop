@@ -176,7 +176,7 @@ export default {
   },
   "sessions": {
     "title": "Sessions",
-    "subtitle": "Every omp session on disk, including the ones you started in a terminal.",
+    "subtitle": "Every {engine} session on disk, including the ones you started in a terminal.",
     "filterPlaceholder": "Filter by title, model or folder",
     "thisWorkspace": "This folder",
     "allWorkspace": "All folders",
@@ -196,7 +196,7 @@ export default {
   },
   "models": {
     "title": "Models",
-    "subtitle": "Providers and models come from omp's models.yml. Anything you change here is immediately visible to omp in a terminal.",
+    "subtitle": "Providers and models come from {engine}'s own config. Anything you change here is immediately visible to {engine} in a terminal.",
     "providers": "Providers",
     "addProvider": "Add provider",
     "editProvider": "Edit provider",
@@ -214,6 +214,7 @@ export default {
     "contextWindow": "Context window",
     "maxTokens": "Max output",
     "reasoning": "Reasoning",
+    "input": "Input",
     "login": "Sign in to providers",
     "loginHint": "OAuth providers (Claude / Codex / Copilot …) sign in here; the authorization URL opens automatically.",
     "loggedIn": "Signed in",
@@ -228,7 +229,7 @@ export default {
   },
   "skills": {
     "title": "Skills",
-    "subtitle": "A skill is a short instruction set for how to do something. Toggling edits enabled in SKILL.md.",
+    "subtitle": "A skill is a short instruction set for how to do something. Toggling edits the front matter of SKILL.md.",
     "create": "New skill",
     "createTitle": "New skill",
     "nameLabel": "Name",
@@ -256,7 +257,9 @@ export default {
   },
   "plugins": {
     "title": "Plugins",
-    "subtitle": "A plugin is an npm package or local folder that brings tools, commands and skills. Install and removal go through omp's own plugin command.",
+    "subtitle": "A plugin is an npm package or local folder that brings tools, commands and skills. Install and removal go through {engine}'s own plugin command.",
+    "unsupported": "This engine has no plugins to manage",
+    "unsupportedHint": "{engine} extensions are enabled in its own config files.",
     "installPlaceholder": "Package or local path, e.g. pi-crew or D:\\my-plugin",
     "installTitle": "Install plugin",
     "uninstallTitle": "Uninstall plugin",
@@ -270,7 +273,7 @@ export default {
   },
   "usage": {
     "title": "Usage",
-    "subtitle": "Numbers come from omp's own session files; nothing is stored twice.",
+    "subtitle": "Numbers come from each engine's own session files; nothing is stored twice.",
     "today": "Today",
     "week": "Last 7 days",
     "month": "Last 30 days",
@@ -290,7 +293,7 @@ export default {
   },
   "settings": {
     "title": "Settings",
-    "subtitle": "Only UI preferences and the engine location live here. Models, skills and plugins belong to omp — edit them on their own pages.",
+    "subtitle": "Only UI preferences and the engine location live here. Models, skills and plugins belong to the engine — edit them on their own pages.",
     "groups": {
       "appearance": "Appearance",
       "behavior": "Startup",
@@ -322,12 +325,7 @@ export default {
     "reduceMotion": "Reduce motion",
     "reduceMotionHint": "Turn off transitions and breathing animations",
     "engineExe": "Engine path",
-    "engineExeHint": "Leave empty to auto-detect: managed install folder first, then PATH",
-    "engineLatest": "Latest",
-    "engineInstalled": "Installed",
-    "buildUrl": "Distribution source",
-    "buildUrlHint": "Official by default; change it for a mirror",
-    "checkUpdate": "Detect again",
+    "engineExeHint": "Leave empty to auto-detect: prefers the binary on PATH",
     "missingTitle": "No engine found",
     "missingHint": "This app does not install engines. Install one in a terminal, then come back and press Detect again.",
     "missingOmp": "omp install command",
@@ -337,7 +335,6 @@ export default {
     "restartEngine": "Restart engine",
     "engineSource": {
       "path": "System PATH",
-      "managed": "Installed by this app",
       "custom": "Custom path",
       "none": "Not found"
     },

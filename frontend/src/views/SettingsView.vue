@@ -347,7 +347,7 @@ const configLang = computed<'json' | 'yaml' | 'text'>(() => {
             <span class="tag" :class="item.installed ? 'ok' : 'warn'">
               {{ item.installed ? item.version : t('settings.engineSource.none') }}
             </span>
-            <span v-if="item.installed" class="tag">{{ item.source }}</span>
+            <span v-if="item.installed" class="tag">{{ t(`settings.engineSource.${item.source}`) }}</span>
             <span class="push" />
             <button
               class="omp-btn sm"
@@ -488,7 +488,7 @@ const configLang = computed<'json' | 'yaml' | 'text'>(() => {
           <button
             v-for="file in prefs.configFiles"
             :key="file.file_path"
-            class="config-tab"
+            class="config-tab omp-pressable"
             :class="{ active: prefs.configFile === file.file_path, missing: !file.exists }"
             :title="file.file_path"
             @click="prefs.pickConfig(file.file_path)"
@@ -612,13 +612,8 @@ const configLang = computed<'json' | 'yaml' | 'text'>(() => {
 }
 
 .config-tab:hover:not(.active) {
-  transform: scale(1.04);
   color: var(--omp-ink);
   border-color: var(--omp-line-strong);
-}
-
-.config-tab:active {
-  transform: scale(0.95);
 }
 
 .config-tab.active {
@@ -887,10 +882,6 @@ const configLang = computed<'json' | 'yaml' | 'text'>(() => {
 
 .recent-open:hover:not(:disabled) {
   background: var(--omp-hover);
-}
-
-.recent-open:active:not(:disabled) {
-  transform: scale(0.985);
 }
 
 .recent-open:disabled {

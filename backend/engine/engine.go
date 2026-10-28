@@ -57,7 +57,7 @@ type Identity struct {
 	Kind    Kind   `json:"kind"`
 	Exe     string `json:"exe"`
 	Version string `json:"version"`
-	Source  string `json:"source"` // path / custom / managed
+	Source  string `json:"source"` // path / custom
 	Caps    Caps   `json:"caps"`
 }
 

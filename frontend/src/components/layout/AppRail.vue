@@ -38,7 +38,7 @@ function go(name: string) {
       <button
         v-for="item in primary"
         :key="item.name"
-        class="rail-item"
+        class="rail-item omp-pressable-row"
         :class="{ active: route.name === item.name }"
         :title="t(item.key)"
         @click="go(item.name)"
@@ -51,7 +51,7 @@ function go(name: string) {
       <button
         v-for="item in bottom"
         :key="item.name"
-        class="rail-item"
+        class="rail-item omp-pressable-row"
         :class="{ active: route.name === item.name }"
         :title="t(item.key)"
         @click="go(item.name)"
@@ -94,20 +94,13 @@ function go(name: string) {
   border-radius: var(--omp-r);
   background: transparent;
   color: var(--omp-mute);
-  /* 整行元素：只缩不放。rail 只有 60px 宽，放大 1.06 会溢出被裁。 */
-  transition:
-    transform var(--omp-dur-fast) var(--omp-ease),
-    background-color var(--omp-dur-fast) var(--omp-ease),
-    color var(--omp-dur-fast) var(--omp-ease);
+  /* 整行元素：只缩不放（缩放由 .omp-pressable-row 定义）。
+     rail 只有 60px 宽，放大 1.04 会溢出被裁。 */
 }
 
 .rail-item:hover {
   background: var(--omp-hover);
   color: var(--omp-ink);
-}
-
-.rail-item:active {
-  transform: scale(0.985);
 }
 
 .rail-item.active {

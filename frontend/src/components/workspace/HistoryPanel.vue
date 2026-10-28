@@ -228,17 +228,10 @@ defineExpose({ reload: loadFileHistory })
   padding: var(--omp-sp-2) var(--omp-sp-2);
   border-radius: var(--omp-r-sm);
   text-align: left;
-  transition:
-    background var(--omp-dur-fast) var(--omp-ease),
-    transform var(--omp-dur-fast) var(--omp-ease);
 }
 
 .commit-line:hover {
   background: var(--omp-hover);
-}
-
-.commit-line:active {
-  transform: scale(0.985);
 }
 
 .commit-line.open {

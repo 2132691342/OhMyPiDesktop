@@ -103,7 +103,7 @@ onMounted(load)
     <header class="page-head">
       <div>
         <h1 class="page-title">{{ t('plugins.title') }}</h1>
-        <p class="page-sub">{{ t('plugins.subtitle') }}</p>
+        <p class="page-sub">{{ t('plugins.subtitle', { engine: kind }) }}</p>
       </div>
       <div class="head-actions">
         <button class="omp-btn" :class="{ 'is-loading': restarting }" :disabled="restarting" @click="restart">

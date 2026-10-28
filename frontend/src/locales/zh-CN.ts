@@ -177,7 +177,7 @@ export default {
   },
   sessions: {
     title: '会话',
-    subtitle: '这里列出 omp 在磁盘上的全部会话，包括在终端里聊过的那些。',
+    subtitle: '这里列出 {engine} 在磁盘上的全部会话，包括在终端里聊过的那些。',
     filterPlaceholder: '按标题、模型或目录过滤',
     thisWorkspace: '当前目录',
     allWorkspace: '全部目录',
@@ -197,7 +197,7 @@ export default {
   },
   models: {
     title: '模型',
-    subtitle: '服务商与模型来自 omp 的 models.yml；这里改的每一项，终端里的 omp 立刻也认。',
+    subtitle: '服务商与模型来自 {engine} 自己的配置文件；这里改的每一项，终端里的 {engine} 立刻也认。',
     providers: '服务商',
     addProvider: '新增服务商',
     editProvider: '编辑服务商',
@@ -230,7 +230,7 @@ export default {
   },
   skills: {
     title: '技能',
-    subtitle: '技能就是一段教模型「这件事怎么做」的说明。启停改的是 SKILL.md 里的 enabled。',
+    subtitle: '技能就是一段教模型「这件事怎么做」的说明。启停改的是 SKILL.md 头部那几行声明。',
     create: '新建技能',
     createTitle: '新建技能',
     nameLabel: '技能名',
@@ -258,7 +258,7 @@ export default {
   },
   plugins: {
     title: '插件',
-    subtitle: '插件是 npm 包或本地目录，可以带来工具、命令与技能。装与卸都走引擎自己的命令。',
+    subtitle: '插件是 npm 包或本地目录，可以带来工具、命令与技能。装与卸都走 {engine} 自己的命令。',
     unsupported: '这个引擎没有可管理的插件',
     unsupportedHint: '{engine} 的扩展需要在它自己的配置文件里启停。',
     installPlaceholder: '包名或本地路径，例如 pi-crew 或 D:\\my-plugin',
@@ -274,7 +274,7 @@ export default {
   },
   usage: {
     title: '用量',
-    subtitle: '数字来自 omp 自己统计的会话文件，不另存一份。',
+    subtitle: '数字来自两个引擎各自统计的会话文件，不另存一份。',
     today: '今天',
     week: '近 7 天',
     month: '近 30 天',
@@ -326,13 +326,8 @@ export default {
     reduceMotion: '减少动效',
     reduceMotionHint: '关掉过渡与呼吸动画',
     engineExe: '引擎路径',
-    engineExeHint: '留空则自动找：先看自管安装目录，再看 PATH',
-    engineLatest: '最新版',
-    engineInstalled: '已安装',
-    buildUrl: '分发源',
-    buildUrlHint: '默认官方源；有镜像时可改',
-    checkUpdate: '重新检测',
-    missingTitle: '没找到引擎',
+    engineExeHint: '留空则自动找：只看 PATH 上的那份',
+    missingTitle: '没有找到引擎',
     missingHint: '这个应用不安装引擎。先在终端里装一个，再回来点「重新检测」。',
     missingOmp: 'omp 的安装命令',
     missingPi: 'pi 的安装命令',
@@ -341,7 +336,6 @@ export default {
     restartEngine: '重启引擎',
     engineSource: {
       path: '系统 PATH',
-      managed: '本应用安装',
       custom: '自定义路径',
       none: '未找到',
     },

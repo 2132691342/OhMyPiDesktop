@@ -276,7 +276,7 @@ defineExpose({ focus })
         <button
           v-for="(m, i) in chat.queue.steering"
           :key="'s' + i"
-          class="queue-chip"
+          class="queue-chip omp-pressable"
           :title="t('chat.removeQueued')"
           @click="dropQueued(m, 'steering')"
         >
@@ -285,7 +285,7 @@ defineExpose({ focus })
         <button
           v-for="(m, i) in chat.queue.followUp"
           :key="'f' + i"
-          class="queue-chip"
+          class="queue-chip omp-pressable"
           :title="t('chat.removeQueued')"
           @click="dropQueued(m, 'followUp')"
         >
@@ -529,18 +529,11 @@ defineExpose({ focus })
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  transition: background var(--omp-dur-fast) var(--omp-ease),
-    border-color var(--omp-dur-fast) var(--omp-ease), transform var(--omp-dur-fast) var(--omp-ease);
 }
 
 .queue-chip:hover {
-  transform: scale(1.03);
   background: var(--omp-hover);
   border-color: var(--omp-line-strong);
-}
-
-.queue-chip:active {
-  transform: scale(0.96);
 }
 
 .queue-chip .x {

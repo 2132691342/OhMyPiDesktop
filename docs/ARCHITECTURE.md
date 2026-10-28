@@ -117,7 +117,7 @@ application.New（第二次启动在这里就转交并退出，走不到建窗�
 
 ```
 对每个引擎 kind ∈ {omp, pi}（并发）：
-  候选 = [设置里的 engine.path.<kind>] + [自管目录] + [PATH 上的 <kind>]
+  候选 = [设置里的 engine.path.<kind>] + [PATH 上的 <kind>]
   对每个候选：--version → 正则判种类 → （疑似 pi 时）--help 复核
 ```
 

@@ -32,7 +32,8 @@ export interface EngineIdentity {
   kind: EngineKind
   exe: string
   version: string
-  source: string
+  /** 引擎从哪来：显式路径 / PATH（本应用不装引擎，所以没有第三种来源） */
+  source: 'custom' | 'path' | ''
   caps: EngineCaps
 }
 

@@ -39,20 +39,19 @@ const ProbeTimeout = 5 * time.Second
 // Candidate 是一个待探测的可执行文件。
 type Candidate struct {
 	Exe    string
-	Source string // custom / managed / path
+	Source string // custom / path
 }
 
-// Candidates 按「显式路径 → 自管目录 → PATH」列出所有候选。
-func Candidates(custom string, managed string, bin string) []Candidate {
-	out := make([]Candidate, 0, 3)
+// Candidates 按「显式路径 → PATH」列出所有候选。
+//
+// 只有这两个来源：本应用不装引擎，所以不存在「我们自己放的那一份」。
+func Candidates(custom string, bin string) []Candidate {
+	out := make([]Candidate, 0, 2)
 	if strings.TrimSpace(custom) != "" {
 		out = append(out, Candidate{Exe: strings.TrimSpace(custom), Source: "custom"})
 	}
-	if managed != "" {
-		out = append(out, Candidate{Exe: managed, Source: "managed"})
-	}
 	if found, err := exec.LookPath(bin); err == nil {
-		// 同一个文件可能出现两次（自管目录也在 PATH 上），去重让界面只显示一次。
+		// 显式路径可能就是 PATH 上那一个，去重让界面只显示一次。
 		dup := false
 		for _, c := range out {
 			if sameFile(c.Exe, found) {
@@ -212,15 +211,6 @@ func InstallHint(kind Kind) string {
 		return "irm https://omp.sh/install.ps1 | iex"
 	}
 	return "npm i -g @earendil-works/pi-coding-agent"
-}
-
-// ManagedDir 返回自管安装目录（用户选择「我们把引擎放哪」时用）。
-func ManagedDir(kind Kind) string {
-	if local := os.Getenv("LOCALAPPDATA"); local != "" {
-		return filepath.Join(local, "OhMyPiDesktop", "engines", string(kind))
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".oh-my-pi-desktop", "engines", string(kind))
 }
 
 // sameFile 判断两条路径是否同一文件（Windows 大小写不敏感）。

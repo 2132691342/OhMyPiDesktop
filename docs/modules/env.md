@@ -21,7 +21,7 @@ backend/env/
 ### 探测（不做安装）
 
 ```
-对每个 kind：候选 = [设置里的 engine.path.<kind>] + [自管目录] + [PATH]
+对每个 kind：候选 = [设置里的 engine.path.<kind>] + [PATH 上的 <kind>]
 对每个候选跑 engine.Detect → Identity（判据见 [ENGINE-MATRIX.md](../ENGINE-MATRIX.md)）
 ```
 

@@ -72,7 +72,7 @@ function onChanged() {
     <header class="page-head">
       <div>
         <h1 class="page-title">{{ t('sessions.title') }}</h1>
-        <p class="page-sub">{{ t('sessions.subtitle') }}</p>
+        <p class="page-sub">{{ t('sessions.subtitle', { engine: app.active }) }}</p>
       </div>
       <div class="head-actions">
         <div class="seg">

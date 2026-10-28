@@ -196,7 +196,7 @@ onMounted(() => {
     <header class="page-head">
       <div>
         <h1 class="page-title">{{ t('models.title') }}</h1>
-        <p class="page-sub">{{ t('models.subtitle') }}</p>
+        <p class="page-sub">{{ t('models.subtitle', { engine: kind }) }}</p>
       </div>
       <div class="head-actions">
         <button class="omp-btn icon ghost" :class="{ 'is-loading': loadingProviders }" :title="t('common.refresh')" @click="loadProviders">
