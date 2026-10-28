@@ -137,14 +137,15 @@ curl -H "X-Desktop-Token: <token>" http://127.0.0.1:<port>/api/v1/engines
 
 | 要加的东西 | 放哪 | 检查 |
 |---|---|---|
-| 一个新的引擎命令 | 公共的放 `engine/supervisor.go`，私有的放 `engine/<kind>/dialect.go` | 能力差异先进 `Caps`，再写调用 |
-| 一个新的 UI 事件 | `engine/Translator` | 同步 `docs/API-CONTRACT.md` 事件表 + 前端 `stores/app.ts` 的 case |
-| 一个新的 HTTP 路由 | `server/routes.go` | 同步契约文档；写操作必须是 POST |
+| 一个新的引擎命令 | 公共的放 `engine/session.go`，私有的放 `engine/<kind>/dialect.go` | 能力差异先进 `Caps`，再写调用 |
+| 一个新的 UI 事件 | `engine/Translator`（帧派发在 `engine/frames.go`） | 同步 `docs/API-CONTRACT.md` 事件表 + 前端 `stores/app.ts` 的 case |
+| 一个新的 HTTP 路由 | `server/routes.go` 的路径表 + 按域放 handler | 同步契约文档；写操作必须是 POST |
 | 一个新的错误码 | `pkg/errors.go` | 同步 `docs/ERROR-CODES.md` 的处置表 |
 | 一个新的设置键 | `domain/model.go` 的 `Key*` | 同步 `docs/DATA-MODEL.md` 的表 |
+| 一个新的应用级开关 | `service/prefs.go` + `domain/prefs.go` | 开关背后要是注册表/系统调用，状态以真实来源为准 |
 | 一个新的引擎能力差异 | `engine.Caps` | **不要**在 service / 前端里写 `if kind ==` |
 | 一个新的落盘位置 | `env/layout.go` | 别在业务代码里拼 `~/.omp` / `~/.pi` |
-| 一个新的 git 动作 | `git/write.go` 的白名单 | 写后必须重读 status；危险动作要二次确认 |
+| 一个新的 git 动作 | `git/write.go`（索引与提交）/ `git/branch.go`（HEAD 与 refs）/ `git/remote.go`（走网络） | 写后必须重读 status；危险动作要二次确认 |
 
 ## 改前端时
 

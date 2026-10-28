@@ -58,6 +58,13 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | POST | `/settings/workspace/forget` | 从「最近」里去掉 `{path}` → `{workspaces}`（只动记忆，不动目录） |
 | POST | `/settings/engine` | 切当前引擎 `{engine}` |
 | GET | `/logs` | 最近 500 行日志 |
+| GET | `/prefs` | 应用偏好快照：设置 KV、`auto_start`（**真读注册表**）、`restore_session`、`last_session_file` 与标题、`data_dir`、`log_dir` |
+| POST | `/prefs/autostart` | 开关开机自启 `{enabled}` → 同 `/prefs`（写 `HKCU\...\Run`，不需要管理员） |
+| POST | `/prefs/restore` | 开关「启动时回到上次会话」`{enabled}` → 同 `/prefs` |
+| POST | `/prefs/session` | 记住当前会话 `{engine_kind, session_file}` → 同 `/prefs` |
+| POST | `/prefs/data-dir` | 在资源管理器里打开数据目录 |
+| GET | `/config/files?engine=` | 引擎配置文件清单（`file_path / file_label / exists / size_bytes`） |
+| GET | `/config/text?engine=&file=` | 某份配置的原文（**只读**；`file` 必须是清单里的那个，否则拒绝） |
 | POST | `/system/reveal` | 在资源管理器里定位 `{path}` |
 | POST | `/system/open` | 用默认程序打开 `{path}` |
 
@@ -135,6 +142,7 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 |---|---|---|
 | GET | `/skills?engine=` | 技能列表（带 `kind` 字段区分归属） |
 | GET | `/skills/content?path=` | 技能原文 |
+| POST | `/skills/save` | 覆写技能正文 `{engine_kind, file_path, text}` → `{content}`（只允许用户目录里的 `SKILL.md`，≤256 KB） |
 | POST | `/skills/toggle` | 启停 `{engine, path, enabled}`（只允许用户目录） |
 | POST | `/skills/create` | 新建 `{engine, name, description, body}` |
 | POST | `/skills/delete` | 删除 `{engine, path}`（只允许用户目录） |
@@ -153,7 +161,9 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | GET | `/git/status?path=` | 版本状态；不是仓库或没装 git 时 `available/is_repo` 为假并给 `reason` |
 | GET | `/git/diff?path=` | 差异行；`path` 为空表示整个工作区 |
 | GET | `/git/history?limit=` | 提交列表（≤200） |
-| GET | `/git/commit?hash=` | 单次提交的完整内容 |
+| GET | `/git/commit?hash=` | 单次提交的完整内容（元信息 + 改动文件 + 整份差异） |
+| GET | `/git/file-history?path=&limit=` | 某个文件的提交历史（≤200） |
+| GET | `/git/file-diff?hash=&path=` | 一次提交里某个文件的逐行差异 |
 | GET | `/git/branches` | 本地 + 远端分支 |
 | POST | `/git/stage` | `{paths}` |
 | POST | `/git/unstage` | `{paths}` |
@@ -282,5 +292,8 @@ GET /events?since=41
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`5`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+当前：`6`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
 只增可选字段不需要。
+
+新增端点本身不需要升版本（前端没调它就不受影响）；
+但改了已有端点的响应字段名就必须升——那是「已经写好的前端读完会拿到 undefined」。

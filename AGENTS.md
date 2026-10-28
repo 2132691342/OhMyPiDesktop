@@ -38,6 +38,7 @@ main.go ──→ service ──→ engine ──→ omp / pi
 | `backend/env` | `pkg` / `engine`（只读 `Identity` 等结果类型） | `omp` / `pi` 的具体实现 |
 | `backend/env/ompcfg` / `picfg` | `pkg` | `env` / `engine` / `service` |
 | `backend/git` | `domain` / `pkg` | `service` / `engine` / `env` |
+| `backend/platform` | `pkg` | `service` / `engine` / `env` / `domain`（只给 `main.go` 与 service 用） |
 | `backend/session` / `skill` | `pkg` / `domain` | `service` / `server` / `engine` 实现 |
 | `backend/service` | 以上全部 | `server` / `main` / 任何 `wails` |
 | `backend/server` | `service` / `hub` / `pkg` | `wails` |
@@ -62,8 +63,13 @@ main.go ──→ service ──→ engine ──→ omp / pi
 | HTTP 响应外壳 | `backend/server` | 在 service 里构造 gin 对象 |
 | 子代理字节游标 | `backend/engine/omp/roster.go`（存储）+ `service/agents.go`（用例） | 在 handler 里存游标 |
 | git 调用 | `backend/git` | 在 service / handler 里 `exec.Command("git", …)` |
+| 开机自启 / 系统唤起 | `backend/platform` | 在 service 里直接读注册表或调 `explorer` |
 
 `service` 只编排：拿数据、做判断、调下一层。它不解析文件格式、不做 HTTP。
+
+**一个 go 文件不超过 500 行**，超了就按职责拆开而不是先合着再说：
+`service/` 与 `server/` 都按业务概念分文件（`chat.go` / `models.go` / `skills.go` …），
+一个文件对应界面上的一块。拆分不新增包、不新增层——只是把同一层的函数放到各自该在的文件里。
 
 ## 3. 错误
 

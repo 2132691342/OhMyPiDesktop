@@ -91,10 +91,13 @@ application.New（第二次启动在这里就转交并退出，走不到建窗�
   └─ SystemTray.New         → 托盘与菜单
   └─ ServiceStartup         → 读数据目录 / 打开设置 / 装 hub / 建 service / 建 server
      （失败写 startErr，但一定关闭 startDone，让后面有确定的等待点）
+     启动末尾：对齐开机自启的镜象值（以注册表为准）
      **不探测引擎**：探测要起子进程（pi 要起 Node），装配阶段不该等它
+  └─ 装配完成后按 --hidden 决定是否显示窗口，并重铺一次托盘菜单
   └─ app.Run()              → 事件循环
      前端 mount  → getEndpoint()（生成绑定）→ 触发 server.Start() → GET /bootstrap
                   → 打开 EventSource → 拉会话与引擎状态
+                  → GET /prefs，恢复上次会话（若开了那个开关且 URL 没指定会话）
   └─ OnShutdown  → 停引擎（进程树）→ 停 HTTP → 关设置存储
 ```
 
@@ -104,6 +107,9 @@ application.New（第二次启动在这里就转交并退出，走不到建窗�
 
 关窗不等于退出：`WindowClosing` 钩子里 `e.Cancel()` 把窗口收进托盘，
 真正退出只有托盘菜单的「退出」一条路。
+
+开机自启（`--hidden`）时窗口建好也不显示；但**装配失败一定把窗口弹出来**——
+启动失败的信息只能由界面说，此时还藏在托盘后面等于双击没反应。
 
 ## 引擎探测（不做安装）
 
@@ -183,10 +189,15 @@ Supervisor                      // 按 (Kind, WorkDir) 管理 Engine
   │    └─ session/runID         // 当前会话与当前轮
   ├─ Dialect（omp / pi）         // 只有 4 个方法：Args / Handshake / Caps / Consume
   └─ engine.Proc
-       ├─ 读协程（独占 stdout，按 id 唤醒等待者）
+       ├─ 读协程（独占 stdout，按 id 唤醒等待者；代码在 readloop.go）
        ├─ 写锁（行分隔协议，半行写入会卡死后续命令）
        └─ v2 分片重组（Caps.Fragments 为真时）
 ```
+
+引擎包内的文件分工：`engine.go` 是抽象（Kind / Caps / Dialect 接口），
+`proc.go` 是进程与命令收发，`readloop.go` 是读协程与分片，`process.go` 是拉起与重启，
+`session.go` 是会话命令，`frames.go` 是帧派发与一轮的收尾。
+改协议翻译时没有「先读哪个」的疑问——帧名差异只在两个 `dialect.go` 里。
 
 **Dialect 是唯一的分叉点。** 它只有四个方法：
 
@@ -215,6 +226,39 @@ Supervisor                      // 按 (Kind, WorkDir) 管理 Engine
 | 子进程 `CREATE_NO_WINDOW` | 否则每拉一次闪一个黑框 |
 | 杀进程走 `taskkill /T` | 引擎会拉起子代理与 bash 工具进程，只杀父进程会留孤儿 |
 | 投影只在一个协程里写 | 翻译器跨协程共享必须加锁，否则块下标会错位 |
+
+## 应用级偏好（注册表与系统调用）
+
+有三类设置不是「存一个字符串」就能完成的，它们各自牵着系统或进程：
+
+| 偏好 | 真值在哪 | 为什么不能只在设置文件里 |
+|---|---|---|
+| 开机自启 | `HKCU\...\Run` 注册表值 | 用户可在任务管理器里禁掉；只读设置文件会显示「开」而实际不生效 |
+| 恢复上次会话 | 设置键 + 引擎的会话文件 | 记的是路径，内容永远在引擎那边；文件被删了就安全地落在空会话 |
+| 数据目录 | `%LOCALAPPDATA%\OhMyPiDesktop` | 用户报「设置不对」时最快的排障路径是直接看到那个 JSON 文件 |
+
+这三件事的唯一落点是 `backend/service/prefs.go`，系统调用收在 `backend/platform`
+（它只被 `main.go` 与 service 使用，业务层不该 import 它）。
+开机自启写入的值带 `--hidden`：登录后只拉起托盘，不往屏幕上弹一个空窗口。
+
+**托盘菜单**因此不是一张固定菜单：它包含「最近工作目录」这一支，
+目录一切换就整棵树重建。托盘是关窗之后唯一还活着的入口，
+所以它必须能回答「我现在要做什么」——显示窗口 / 回到刚干过活的目录 /
+打开数据目录 / 退出。菜单项由后端定，文案不进前端：语言切换时后端菜单
+不会跟着变，前后端各准备一份只会让它们不同步。
+
+## 引擎配置的只读原文
+
+设置页能看到引擎的配置文件原文（omp 的 `models.yml` / `config.yml` / `mcp.json`，
+pi 的 `models.json` / `settings.json` / `mcp.json`），但**只能看不能改**。
+
+写引擎配置有节点级接口（`env/ompcfg` 与 `env/picfg`），它们的正确性建立在
+「只改自己掌管的那几个键」上。原文编辑会让它们下一次写入把用户手动改的东西
+一起覆盖掉，而那种丢失不会报错。
+
+读原文也有限制：`service.ConfigText` 只接受枚举出来的那几个路径，
+否则它就是一个任意文件读取接口。凭据文件（`auth.json`）不在清单里——
+界面上不该有「一键看密钥」的入口。
 
 ## 引擎层的错误契约
 
