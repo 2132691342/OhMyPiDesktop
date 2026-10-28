@@ -1,3 +1,5 @@
+// Package ompcfg 读写 omp 的落盘配置：models.yml（服务商与模型）与 config.yml（其余设置）。
+// 它只改自己掌管的少数键，不重写整份文件，保证用户手改的内容下次打开还在。
 package ompcfg
 
 import (

@@ -37,3 +37,38 @@ tasks:
     summary: Generates the frontend bindings
     cmds:
       - task: common:generate:bindings
+
+  # 开发期统一入口：fmt / vet / test / smoke / dev:server 都收口到 Task，
+  # 不再散落在文档里的裸 `go run ./tools/...` 或本地临时脚本。
+  fmt:
+    summary: Formats all Go code (gofmt -w)
+    cmds:
+      - gofmt -w backend main.go assets.go tray.go tools
+
+  fmt:check:
+    summary: Verifies gofmt formatting; used by CI
+    shell: pwsh
+    cmds:
+      - |
+        $bad = gofmt -l backend main.go assets.go tray.go tools
+        if ($bad) { Write-Host "未格式化:"; Write-Host $bad; exit 1 }
+
+  vet:
+    summary: Runs go vet on backend and tools
+    cmds:
+      - go vet ./backend/... ./tools/...
+
+  test:
+    summary: Runs the backend test suite once
+    cmds:
+      - go test ./backend/... -count=1
+
+  smoke:
+    summary: Runs a one-round manual smoke test against a real engine
+    cmds:
+      - go run ./tools/smoke
+
+  dev:server:
+    summary: Runs the backend HTTP server only (no GUI) for browser debugging
+    cmds:
+      - go run ./tools/devserver

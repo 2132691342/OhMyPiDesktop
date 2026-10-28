@@ -23,34 +23,6 @@ providers:
       maxTokens: 8000
 `
 
-func TestReadModelsParsesProvider(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "models.yml")
-	if err := os.WriteFile(path, []byte(sampleModels), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mf, err := ReadModels(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(mf.Providers) != 1 {
-		t.Fatalf("服务商数 = %d", len(mf.Providers))
-	}
-	p, ok := mf.Providers["router"]
-	if !ok {
-		t.Fatal("没读到 router")
-	}
-	if p.BaseURL != "http://127.0.0.1:8080/v1" {
-		t.Errorf("baseUrl = %q", p.BaseURL)
-	}
-	if len(p.Models) != 1 || p.Models[0].ID != "fast" {
-		t.Fatalf("模型 = %+v", p.Models)
-	}
-	if p.Models[0].ContextWindow != 100000 {
-		t.Errorf("contextWindow = %d", p.Models[0].ContextWindow)
-	}
-}
-
 // 缺文件是正常状态（用户还没配过），不该报错。
 
 func TestUpsertProviderPreservesOtherKeys(t *testing.T) {

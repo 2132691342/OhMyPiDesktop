@@ -72,9 +72,8 @@
 
 两个引擎的会话文件是**同源不同代**，一套代码可读，但必须处理三处：
 
-1. **首行可能不是头**。omp 首行是 256 字节固定宽度的 `title` 槽位
-   （`OMP .../session-title-slot.ts:84`），第一行 `type==="title" && v===1`；
-   pi 首行就是 `{type:"session",version:3,…}`（`PI .../session-manager.ts:41-49`）。
+1. **首行可能不是头**。omp 首行是 256 字节固定宽度的 `title` 槽位，
+   第一行 `type==="title" && v===1`；pi 首行就是 `{type:"session",version:3,…}`。
    适配：读到 `title` 槽位就取 `title` 覆盖头部标题，然后继续读下一行当头部。
 2. **未知条目跳过而不是报错**。omp 有 16 种条目、pi 有 11 种，各有私有类型
    （omp: `model_usage` / `title_change` / `mode_change` / `ttsr_injection` …；

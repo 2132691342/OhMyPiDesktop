@@ -35,7 +35,6 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.GET("/engines", s.engines)
 	api.POST("/engines/detect", s.detectEngines)
 	api.POST("/engines/restart", s.restartEngines)
-	api.GET("/engine/logs", func(c *gin.Context) { ok(c, gin.H{"lines": pkg.Ring()}) })
 
 	// 会话
 	api.GET("/sessions", s.sessions)

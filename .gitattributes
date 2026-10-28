@@ -1,0 +1,3 @@
+# 仓库统一 LF 行尾。Windows 检出的 CRLF 会被 gofmt -l 误报，
+# 统一成 LF 后本地与 CI 表现一致。
+* text=auto eol=lf

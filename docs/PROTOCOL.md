@@ -115,10 +115,10 @@ service 层返回 `ErrUnsupported`，界面据此隐藏控件——**不要发�
 | `available_commands_update` | ✅ | — | → `engine:commands` |
 | `extension_ui_request` | 13 种 method | 9 种 | 见 §提问基元 |
 | `extension_error` | ✅ | ✅ | 只进日志：那是扩展自己的问题，弹给用户也没法处理 |
-| `notice` / `command_output` | ✅ | — | → `chat:notice` / `chat:command_output` |
+| `notice` / `command_output` | ✅ | ✅ | → `chat:notice` / `chat:command_output`（通用处理，两家都会转发） |
 | `rpc_frame_error` | ✅ | — | → `chat:gap`（超大帧被丢，需要 `get_state` 对账） |
 | `subagent_lifecycle/progress/event` | ✅ | — | → `subagent:*`（见 §子代理） |
-| 其他（btw / live / goal / todo / irc / advisor / ttsr / cache_warming） | ✅ | — | 原样转发，前端不订阅就不显示 |
+| 其他（btw / live / goal / todo / irc / advisor / ttsr / cache_warming） | ✅ | — | 静默丢弃：翻译层不处理、不报错（未知帧一律忽略） |
 
 ### 一轮什么时候算完（两个引擎的判据不同，不能混）
 

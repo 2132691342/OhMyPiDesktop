@@ -15,7 +15,7 @@ import (
 // chunkFrame 造一个 rpc_chunk 帧。
 //
 // byteLength 按协议是**整段 JSON 的总字节数**（每一片都带同一个值），
-// 不是这一片自己的长度——引擎就是这么发的（rpc-frame.ts:154）。
+// 不是这一片自己的长度——引擎就是这么发的。
 func chunkFrame(t *testing.T, chunkID string, index, count int, payload string, totalLen int) []byte {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{

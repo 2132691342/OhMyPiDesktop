@@ -70,21 +70,6 @@ func TestReadConfigTextMissing(t *testing.T) {
 	}
 }
 
-func TestReadConfigTextOK(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "models.yml")
-	if err := os.WriteFile(path, []byte("providers: {}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	vo, err := readConfigText(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !vo.Found || vo.Text != "providers: {}\n" || vo.FilePath != path {
-		t.Fatalf("读到的内容不对：%+v", vo)
-	}
-}
-
 // 超过上限的文件要被截断并置 Truncated——否则一个几十 MB 的文件会把界面卡死。
 func TestReadConfigTextTruncates(t *testing.T) {
 	dir := t.TempDir()

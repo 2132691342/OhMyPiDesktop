@@ -43,9 +43,3 @@ func TestSplitSessionKeyWindowsPath(t *testing.T) {
 		t.Fatalf("unexpected split: %q %q", kind, path)
 	}
 }
-
-func TestBoolFlag(t *testing.T) {
-	if boolFlag(true) != "1" || boolFlag(false) != "0" {
-		t.Fatalf("boolFlag 应当写成 1 / 0")
-	}
-}

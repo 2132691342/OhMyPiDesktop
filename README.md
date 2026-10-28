@@ -101,8 +101,7 @@ OhMyPiDesktop/
 ├── frontend/src/           api / components / composables / locales / stores / types / utils / views + CSS
 ├── tools/
 │   ├── smoke/              真起引擎跑一轮，打印事件序列与投影结果
-│   ├── devserver/          只起后端，供浏览器直连调试
-│   └── fmtfix/             归一化行尾后跑 gofmt（本地 CRLF 仓库用）
+│   └── devserver/          只起后端，供浏览器直连调试
 └── docs/                   工程文档
 ```
 
@@ -123,7 +122,7 @@ npm i -g @earendil-works/pi-coding-agent
 
 ```bash
 wails3 task dev                 # 热重载
-go test ./backend/... -count=1  # 后端测试
+task test                       # 后端测试（gofmt / vet / test 统一入口见 Taskfile）
 go build ./backend/...          # 只验后端
 cd frontend && npm run build    # 前端类型检查 + 打包
 wails3 build                    # 产物 bin/OhMyPiDesktop.exe
@@ -132,7 +131,7 @@ wails3 build                    # 产物 bin/OhMyPiDesktop.exe
 只调后端时不必开 Wails：
 
 ```bash
-go run ./tools/devserver -token dev    # 打印端口与 localStorage 设置命令
+task dev:server                 # 打印端口与 localStorage 设置命令
 cd frontend && npm run dev             # Vite
 # 浏览器控制台里设 localStorage 的 omp.dev.port / omp.dev.token 即可直连
 ```
@@ -140,8 +139,8 @@ cd frontend && npm run dev             # Vite
 真起引擎验一轮（改了协议翻译后必做）：
 
 ```bash
-go run ./tools/smoke -engine omp -msg "Reply with exactly: OK"
-go run ./tools/smoke -engine pi  -msg "Reply with exactly: OK"
+task smoke -- -engine omp -msg "Reply with exactly: OK"
+task smoke -- -engine pi  -msg "Reply with exactly: OK"
 ```
 
 构建需要 Go 1.26+、Node 18+、Wails v3 CLI（`wails3`）。

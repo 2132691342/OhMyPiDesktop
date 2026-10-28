@@ -170,7 +170,7 @@ func isOMPVersion(version string) bool {
 
 // helpIsOMP 看根帮助里有没有 omp 独有的小节标题。
 //
-// omp 的首行是 `omp v<ver>`，紧接一行全大写 `USAGE`（utils/src/cli.ts:299-300）；
+// omp 的首行是 `omp v<ver>`，紧接一行全大写 `USAGE`；
 // pi 用的是 `Usage:`。这两个形状不会互相串。
 func helpIsOMP(help string) bool {
 	return strings.Contains(help, "\nUSAGE\n") || strings.HasPrefix(help, "omp v")

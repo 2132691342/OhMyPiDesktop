@@ -23,6 +23,7 @@ go vet   ./backend/...            # 静态检查
 cd frontend && npm run build      # vue-tsc --noEmit + vite build
 wails3 build                      # 产物 bin/OhMyPiDesktop.exe
 wails3 generate bindings -ts -i   # 改了绑定方法后重新生成 frontend/bindings
+# 后端通用入口（替代上面的裸命令）：task fmt / task vet / task test / task smoke / task dev:server
 ```
 
 提交前的三道门（缺一不可）：
@@ -33,32 +34,8 @@ go test  ./backend/... -count=1
 cd frontend && npm run build
 ```
 
-**关于 `gofmt -l` 的误报**：仓库里多数 `.go` 文件是 CRLF 行尾，本地 `gofmt -l`
-会把它们全列出来——那是行尾问题，不是格式问题。**只关心内容格式**时，
-先归一化行尾再判（注意别用 `tr -d '
-'`，它会破坏 UTF-8 中文字节）：
-
-```bash
-# 只看真实问题：把 CRLF 换成 LF，别的字节不动
-python - <<'EOF'
-import subprocess, os, tempfile
-files = [os.path.join(dp, f) for dp, _, fn in os.walk('backend') for f in fn if f.endswith('.go')]
-files += ['main.go', 'assets.go']
-for f in files:
-    norm = open(f, 'rb').read().replace(b'
-
-', b'
-')
-    with tempfile.NamedTemporaryFile('wb', suffix='.go', delete=False) as t:
-        t.write(norm); tmp = t.name
-    r = subprocess.run(['gofmt', '-l', tmp], capture_output=True, text=True)
-    os.unlink(tmp)
-    if r.stdout.strip():
-        print(f)
-EOF
-```
-
-CI 上跑的是朴素的 `gofmt -l`（runner checkout 是 LF，不会误报）。
+仓库里的 `.go` 文件统一是 LF 行尾（见 `.gitattributes`），本地与 CI 的 `gofmt -l`
+表现一致，不再有 CRLF 误报。格式化用 `task fmt`，CI 用 `task fmt:check` 卡格式。
 
 ## 验证真实引擎
 
@@ -66,8 +43,8 @@ CI 上跑的是朴素的 `gofmt -l`（runner checkout 是 LF，不会误报）�
 「引擎真的这么吐帧」。`tools/smoke` 做这件事：
 
 ```bash
-go run ./tools/smoke -engine omp -msg "Reply with exactly: OK"
-go run ./tools/smoke -engine pi  -msg "Reply with exactly: OK"
+task smoke -- -engine omp -msg "Reply with exactly: OK"
+task smoke -- -engine pi  -msg "Reply with exactly: OK"
 ```
 
 它打印事件计数、事件顺序、会话文件位置、用量与最后一轮的块。
@@ -81,7 +58,7 @@ go run ./tools/smoke -engine pi  -msg "Reply with exactly: OK"
 `tools/smoke` 也可以指定工作目录与引擎路径：
 
 ```bash
-go run ./tools/smoke -engine pi -dir C:\Users\me\src\my-project -msg "hi"
+task smoke -- -engine pi -dir C:\Users\me\src\my-project -msg "hi"
 ```
 
 ## 调试真实引擎
@@ -160,7 +137,7 @@ curl -H "X-Desktop-Token: <token>" http://127.0.0.1:<port>/api/v1/engines
 **自检**：`grep -rn "scale(1\.0" frontend/src` 应该只命中 `base.css` 里的共享类，
 如果出现在某个组件的 scoped 样式里，说明五态又被复制了一份。
 
-**只调后端**：`go run ./tools/devserver -token dev` 会打印端口与一行
+**只调后端**：`task dev:server` 会打印端口与一行
 `localStorage.setItem(...)`；在浏览器控制台里执行它，就能用 Vite 直连真实后端。
 
 ## 常见问题

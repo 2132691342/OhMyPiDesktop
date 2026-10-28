@@ -3,7 +3,7 @@
 // 用法：
 //
 //	go run ./tools/smoke -engine omp -msg "Reply with exactly: OK"
-//	go run ./tools/smoke -engine pi  -dir D:\gitFiles\pi -msg "hi"
+//	go run ./tools/smoke -engine pi  -dir C:\path\to\repo -msg "hi"
 //
 // 它不写测试断言：这里要回答的是「真引擎跑通了吗、事件顺序对不对」，
 // 那件事只能靠人看一眼输出。
