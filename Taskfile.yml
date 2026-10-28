@@ -20,6 +20,15 @@ tasks:
     cmds:
       - task: "{{.GOOS}}:build"
 
+  package:
+    summary: Builds the application and packages it (NSIS installer)
+    cmds:
+      - task: "{{.GOOS}}:package"
+        vars:
+          INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
+    vars:
+      INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
+
   run:
     summary: Runs the application
     cmds:

@@ -4,6 +4,8 @@
 build/bin/
 build/windows/icon.ico
 build/windows/*.tmp
+# NSIS 打包时由 wails3 generate webview2bootstrapper 生成，非源码
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 frontend/dist/
 *.syso
 *.exe

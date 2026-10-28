@@ -132,7 +132,8 @@ wails3 task dev                 # 热重载
 task test                       # 后端测试（gofmt / vet / test 统一入口见 Taskfile）
 go build ./backend/...          # 只验后端
 cd frontend && npm run build    # 前端类型检查 + 打包
-wails3 build                    # 产物 bin/OhMyPiDesktop.exe
+wails3 build                    # 产物 bin/OhMyPiDesktop.exe（便携版）
+wails3 package                  # 构建并打包成 NSIS 安装器 bin/OhMyPiDesktop-amd64-installer.exe
 ```
 
 只调后端时不必开 Wails：
@@ -182,7 +183,7 @@ task smoke -- -engine pi  -msg "Reply with exactly: OK"
 ## 发布
 
 版本号跟随 tag（`v<major>.<minor>.<patch>`）。在 tag 上推送会触发发版流水线，
-产出 Windows 便携版可执行文件并挂到 GitHub Release：
+构建并打包成 NSIS 安装器，连同便携 exe 一起挂到 GitHub Release：
 
 ```bash
 git tag -a v1.0.0 -m "v1.0.0"

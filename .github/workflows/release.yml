@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 60
     env:
       EXE: bin/OhMyPiDesktop.exe
+      INSTALLER: bin/OhMyPiDesktop-amd64-installer.exe
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -40,6 +41,12 @@ jobs:
       - name: Install Wails v3 CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
 
+      - name: Install NSIS (makensis)
+        # 安装器靠 makensis 打包；choco 装在 C:\ProgramData\chocolatey\bin，写进 PATH 供后续步骤使用。
+        run: |
+          choco install nsis -y
+          echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+
       - name: Install frontend dependencies
         run: npm ci
         working-directory: frontend
@@ -58,12 +65,11 @@ jobs:
           go build ./backend/... ./tools/...
           if ($LASTEXITCODE -ne 0) { throw "go build 失败" }
 
-      - name: Wails build
+      - name: Wails package (build + NSIS installer)
         shell: pwsh
-        # v3 用 Taskfile 驱动，产物落在仓库根的 bin/（不是 build/bin/）。
-        # 不出安装器：本项目只发便携 exe。
-        # 不加 -clean：v3 的 build 没有这个标志（那是 v2 的），加了会直接报错退出。
-        run: wails3 build
+        # v3 用 Taskfile 驱动：windows:package 先 build 出便携 exe，再用 makensis 打成安装器。
+        # 产物落在仓库根的 bin/：OhMyPiDesktop.exe 与 OhMyPiDesktop-amd64-installer.exe。
+        run: wails3 package
 
       - name: Verify artifacts
         shell: pwsh
@@ -72,6 +78,9 @@ jobs:
           $exeMB = (Get-Item $env:EXE).Length / 1MB
           if ($exeMB -lt 3) { throw ("$([System.IO.Path]::GetFileName($env:EXE)) 只有 {0:N1} MB，构建产物疑似不完整" -f $exeMB) }
           Write-Host ("Artifact OK (exe {0:N1} MB)" -f $exeMB)
+          if (-not (Test-Path $env:INSTALLER)) { throw "wails package 没产出安装器 $([System.IO.Path]::GetFileName($env:INSTALLER))" }
+          $instMB = (Get-Item $env:INSTALLER).Length / 1MB
+          Write-Host ("Artifact OK (installer {0:N1} MB)" -f $instMB)
 
       - name: Upload failure diagnostics
         if: failure()
@@ -92,4 +101,6 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           overwrite_files: true
-          files: bin/OhMyPiDesktop.exe
+          files: |
+            bin/OhMyPiDesktop.exe
+            bin/OhMyPiDesktop-amd64-installer.exe

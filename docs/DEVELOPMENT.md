@@ -25,7 +25,8 @@ go build ./backend/...            # 只验后端能编译
 go test  ./backend/... -count=1   # 后端测试
 go vet   ./backend/...            # 静态检查
 cd frontend && npm run build      # vue-tsc --noEmit + vite build
-wails3 build                      # 产物 bin/OhMyPiDesktop.exe
+wails3 build                      # 产物 bin/OhMyPiDesktop.exe（便携版）
+wails3 package                    # 构建并打包成 NSIS 安装器（需本机装 makensis）
 wails3 generate bindings -ts -i   # 改了绑定方法后重新生成 frontend/bindings
 # 后端通用入口（替代上面的裸命令）：task fmt / task vet / task test / task smoke / task dev:server
 ```
