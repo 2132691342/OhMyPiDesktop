@@ -10,6 +10,7 @@ import { ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
 import DiffView from '@/components/workspace/DiffView.vue'
 import FilePanel from '@/components/workspace/FilePanel.vue'
+import HistoryPanel from '@/components/workspace/HistoryPanel.vue'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
 import { useToasts } from '@/composables/useToasts'
@@ -31,6 +32,9 @@ const message = ref('')
 const committing = ref(false)
 const pending = ref('')
 const tab = ref<'changes' | 'history'>('changes')
+// 文件时间线：选中一个文件就看它的历史，空串表示看整个仓库。
+// 它与「差异选中」是同一份 selected——用户点的就是一个文件，不该分两处。
+const historyFile = ref('')
 
 const unstaged = computed(() => (status.value?.changed_files ?? []).filter((f) => !f.staged))
 const staged = computed(() => (status.value?.changed_files ?? []).filter((f) => f.staged))
@@ -86,6 +90,13 @@ async function refresh() {
 function pick(file: GitFile) {
   selected.value = file.file_path
   void loadDiff(file.file_path)
+}
+
+/** 切到历史标签并只看这个文件。 */
+function showFileHistory(filePath: string) {
+  selected.value = filePath
+  historyFile.value = filePath
+  tab.value = 'history'
 }
 
 // 写动作统一走这里：挂 loading、成功刷新状态、失败给原文。
@@ -256,8 +267,7 @@ onMounted(refresh)
             <button class="seg-btn" :class="{ active: tab === 'history' }" @click="tab = 'history'">
               {{ t('workspace.history') }}
               <span v-if="history.length" class="count">{{ history.length }}</span>
-            </button>
-          </div>
+            </button>          </div>
 
           <div v-if="tab === 'changes'" class="mid-body">
             <div v-if="!status.changed_files.length" class="empty-mini">{{ t('workspace.noChanges') }}</div>
@@ -278,6 +288,13 @@ onMounted(refresh)
                   <span class="chg" :class="`chg-${changeTag(file)}`">{{ changeTag(file) }}</span>
                   <span class="path">{{ file.file_path }}</span>
                   <span class="num"><b class="add">+{{ file.additions }}</b><b class="del">−{{ file.deletions }}</b></span>
+                  <button
+                    class="omp-btn text sm"
+                    :title="t('history.forFile')"
+                    @click.stop="showFileHistory(file.file_path)"
+                  >
+                    {{ t('workspace.history') }}
+                  </button>
                   <button class="omp-btn text sm" :disabled="Boolean(pending)" @click.stop="unstage(file)">
                     {{ t('workspace.unstage') }}
                   </button>
@@ -302,6 +319,13 @@ onMounted(refresh)
                   <span class="chg" :class="`chg-${changeTag(file)}`">{{ changeTag(file) }}</span>
                   <span class="path">{{ file.file_path }}</span>
                   <span class="num"><b class="add">+{{ file.additions }}</b><b class="del">−{{ file.deletions }}</b></span>
+                  <button
+                    class="omp-btn text sm"
+                    :title="t('history.forFile')"
+                    @click.stop="showFileHistory(file.file_path)"
+                  >
+                    {{ t('workspace.history') }}
+                  </button>
                   <button class="omp-btn text sm" :disabled="Boolean(pending)" @click.stop="stage(file)">
                     {{ t('workspace.stage') }}
                   </button>
@@ -351,14 +375,8 @@ onMounted(refresh)
             </div>
           </div>
 
-          <div v-else class="mid-body">
-            <div v-if="!history.length" class="empty-mini">{{ t('workspace.noHistory') }}</div>
-            <div v-for="item in history" :key="item.commit_hash" class="commit-line">
-              <span class="hash mono">{{ item.short_hash }}</span>
-              <span class="subject">{{ item.subject }}</span>
-              <span class="readout">{{ item.author_name }}</span>
-              <span class="num"><b class="add">+{{ item.additions }}</b><b class="del">−{{ item.deletions }}</b></span>
-            </div>
+          <div v-else class="mid-body history-body">
+            <HistoryPanel :commits="history" :file="historyFile" @clear-file="historyFile = ''" />
           </div>
         </div>
 
@@ -451,6 +469,10 @@ onMounted(refresh)
   display: flex;
   flex-direction: column;
   gap: var(--omp-sp-3);
+}
+/* 历史面板自己管滚动：提交详情展开后高度会变，外层再套一个滚动条会双重跳动 */
+.mid-body.history-body {
+  overflow: hidden;
 }
 .group-head {
   display: flex;

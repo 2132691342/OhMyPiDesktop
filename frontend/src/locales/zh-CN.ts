@@ -52,6 +52,16 @@ export default {
     diffEmpty: '这个文件没有差异',
     diffTruncated: '差异过大，省略了 {n} 行',
   },
+  history: {
+    forFile: '看这个文件的历史',
+    showAll: '看全部提交',
+    noFileHistory: '这个文件还没有提交记录',
+    parent: '上一提交',
+    justNow: '刚刚',
+    minutesAgo: '{n} 分钟前',
+    hoursAgo: '{n} 小时前',
+    daysAgo: '{n} 天前',
+  },
 
   common: {
     save: '保存',

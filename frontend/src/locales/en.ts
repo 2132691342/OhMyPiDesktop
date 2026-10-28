@@ -51,6 +51,16 @@ export default {
     "diffEmpty": "No differences in this file",
     "diffTruncated": "{n} lines omitted"
   },
+  "history": {
+    "forFile": "History of this file",
+    "showAll": "All commits",
+    "noFileHistory": "No commits touch this file yet",
+    "parent": "Parent",
+    "justNow": "just now",
+    "minutesAgo": "{n} min ago",
+    "hoursAgo": "{n} h ago",
+    "daysAgo": "{n} d ago"
+  },
 
   "common": {
     "save": "Save",
