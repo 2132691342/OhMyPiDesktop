@@ -42,10 +42,32 @@ jobs:
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
 
       - name: Install NSIS (makensis)
-        # 安装器靠 makensis 打包；choco 装在 C:\ProgramData\chocolatey\bin，写进 PATH 供后续步骤使用。
+        shell: pwsh
+        # 安装器靠 makensis 打包。nsis 的 chocolatey 包把 makensis.exe 装到
+        # C:\Program Files (x86)\NSIS（也可能在 C:\ProgramData\chocolatey\bin 留 shim），
+        # 两个目录都加进 PATH 才保险。choco 失败不能静默吞掉（否则后续步骤拿不到退出码）。
+        # 两条路都不通时回退到官方 NSIS 便携 zip。
         run: |
-          choco install nsis -y
-          echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+          $candidates = @('C:\ProgramData\chocolatey\bin', 'C:\Program Files (x86)\NSIS')
+          if (Get-Command choco -ErrorAction SilentlyContinue) {
+            try { choco install nsis -y } catch { Write-Host "choco install nsis failed: $_" }
+          }
+          foreach ($d in $candidates) {
+            if (Test-Path (Join-Path $d 'makensis.exe')) {
+              Add-Content -Path $env:GITHUB_PATH -Value $d
+            }
+          }
+          if (-not (Test-Path (Join-Path $candidates[0] 'makensis.exe')) -and -not (Test-Path (Join-Path $candidates[1] 'makensis.exe'))) {
+            # 兜底：官方 NSIS 便携版（解压即得 makensis.exe）。
+            $zip = Join-Path $env:RUNNER_TEMP 'nsis.zip'
+            Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.11/nsis-3.11.zip/download' -OutFile $zip
+            $base = Join-Path $env:RUNNER_TEMP 'nsis'
+            Expand-Archive -Path $zip -DestinationPath $base -Force
+            $mk = Get-ChildItem $base -Recurse -Filter 'makensis.exe' | Select-Object -First 1
+            if (-not $mk) { throw 'NSIS 下载解压后仍未找到 makensis.exe' }
+            Add-Content -Path $env:GITHUB_PATH -Value $mk.DirectoryName
+          }
+          Write-Host "NSIS ready: $((Get-ChildItem $candidates -Recurse -Filter makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName)"
 
       - name: Install frontend dependencies
         run: npm ci
