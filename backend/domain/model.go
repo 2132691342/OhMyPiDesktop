@@ -3,16 +3,16 @@ package domain
 
 // 设置键。集中在这里，避免字符串散落。
 const (
-	KeyTheme        = "ui.theme"      // light / dark / system
-	KeyLang         = "ui.lang"       // zh-CN / en
-	KeyWorkspace    = "app.workspace" // 上次用的工作目录
+	KeyTheme     = "ui.theme"      // light / dark / system
+	KeyLang      = "ui.lang"       // zh-CN / en
+	KeyWorkspace = "app.workspace" // 上次用的工作目录
 	// KeyRecentWorkspaces 是最近用过的工作目录列表（JSON 数组，最多 RecentWorkspaceMax 条）。
 	// 单独一个键而不是每次从会话反推：会话文件的扫描要开几百个文件头，
 	// 而「最近在哪些目录干过活」是界面自己的记忆。
 	KeyRecentWorkspaces = "app.recent_workspaces"
-	KeyProfile      = "app.profile"   // omp profile 名
-	KeyActiveEngine = "app.engine"    // 当前选中的引擎（omp / pi）
-	KeyEnginePath   = "engine.path"   // 已废弃：早先只有 omp 一份，保留读兼容
+	KeyProfile          = "app.profile" // omp profile 名
+	KeyActiveEngine     = "app.engine"  // 当前选中的引擎（omp / pi）
+	KeyEnginePath       = "engine.path" // 已废弃：早先只有 omp 一份，保留读兼容
 	// KeyEngineExePrefix 是「某引擎的显式路径」，键 = engine.path.omp / engine.path.pi。
 	// 用前缀而不是两个常量：新增引擎时不必再改这里。
 	KeyEngineExePrefix = "engine.path."
@@ -27,6 +27,7 @@ const (
 // 上限存在的理由不是省空间：超过一屏的「最近」就不再是快捷方式，
 // 而变成第二份需要浏览的列表。12 条在设置页里刚好一屏出头。
 const RecentWorkspaceMax = 12
+
 // WorkspaceRow 是最近用过的工作目录。
 type WorkspaceRow struct {
 	// WorkspacePath 目录绝对路径

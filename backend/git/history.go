@@ -63,7 +63,7 @@ func CommitDetail(dir, hash string) (*domain.GitCommitDetailVO, error) {
 	// 差异复用既有解析：一条链路两处配色规则，改格式只改一处。
 	// show 输出的路径是仓库根相对；历史抽屉展示的也是它，无需折回工作区。
 	lines, dropped := parseDiff(res.stdout, nil)
-	vo.Diff = &domain.GitDiffVO{FilePath: "", Lines: lines, Dropped: dropped, Truncated: dropped > 0}
+	vo.Diff = &domain.GitDiffVO{FilePath: "", DiffLines: lines, Dropped: dropped, Truncated: dropped > 0}
 	return vo, nil
 }
 
@@ -129,7 +129,7 @@ func parseLog(out string) []domain.GitCommitVO {
 				continue
 			}
 			cur := &commits[len(commits)-1]
-			cur.Files++
+			cur.FileCount++
 			if a, err := strconv.Atoi(strings.TrimSpace(cols[0])); err == nil {
 				cur.Additions += a
 			}
@@ -147,8 +147,8 @@ func parseLog(out string) []domain.GitCommitVO {
 			when *= 1000 // git 给秒，界面统一毫秒
 		}
 		commits = append(commits, domain.GitCommitVO{
-			Hash: strings.TrimSpace(f[0]), Short: strings.TrimSpace(f[1]),
-			Subject: strings.TrimSpace(f[2]), Author: strings.TrimSpace(f[3]), When: when,
+			CommitHash: strings.TrimSpace(f[0]), ShortHash: strings.TrimSpace(f[1]),
+			Subject: strings.TrimSpace(f[2]), AuthorName: strings.TrimSpace(f[3]), CommitTime: when,
 		})
 	}
 	return commits
@@ -169,18 +169,18 @@ func parseShow(sc *scope, out string) (*domain.GitCommitDetailVO, error) {
 		when *= 1000
 	}
 	vo := &domain.GitCommitDetailVO{
-		Hash: strings.TrimSpace(f[0]), Short: strings.TrimSpace(f[1]),
+		CommitHash: strings.TrimSpace(f[0]), ShortHash: strings.TrimSpace(f[1]),
 		Subject: strings.TrimSpace(f[2]), Body: strings.TrimSpace(f[3]),
-		Author: strings.TrimSpace(f[4]), When: when,
-		Parents: []string{}, Files: []domain.GitFileVO{},
+		AuthorName: strings.TrimSpace(f[4]), CommitTime: when,
+		ParentHash: []string{}, ChangedFile: []domain.GitFileVO{},
 	}
 	for _, p := range strings.Fields(strings.TrimSpace(f[6])) {
 		if p != "" {
-			vo.Parents = append(vo.Parents, p)
+			vo.ParentHash = append(vo.ParentHash, p)
 		}
 	}
 	// 文件清单从 numstat 拿：show 默认不给，补一次带 --numstat 的查询比解析 diff 头更省。
-	res, err := run(sc.root, statusTimeout, "show", "--no-color", "--numstat", "--pretty=format:", vo.Hash)
+	res, err := run(sc.root, statusTimeout, "show", "--no-color", "--numstat", "--pretty=format:", vo.CommitHash)
 	if err != nil {
 		return vo, nil
 	}
@@ -193,14 +193,14 @@ func parseShow(sc *scope, out string) (*domain.GitCommitDetailVO, error) {
 		if path == "" {
 			continue
 		}
-		fv := domain.GitFileVO{FilePath: path, Status: domain.GitChangeModified}
+		fv := domain.GitFileVO{FilePath: path, ChangeCode: domain.GitChangeModified}
 		if a, err := strconv.Atoi(strings.TrimSpace(cols[0])); err == nil {
 			fv.Additions = a
 		}
 		if d, err := strconv.Atoi(strings.TrimSpace(cols[1])); err == nil {
 			fv.Deletions = d
 		}
-		vo.Files = append(vo.Files, fv)
+		vo.ChangedFile = append(vo.ChangedFile, fv)
 	}
 	return vo, nil
 }

@@ -117,40 +117,40 @@ func Version() string {
 // Status 读取 dir 的仓库状态；不是仓库或没装 git 时返回 Available/IsRepo 标记而不是错误。
 func Status(dir string) (*domain.GitStatusVO, error) {
 	vo := &domain.GitStatusVO{
-		Workspace: dir,
-		State:     domain.GitStateNone,
-		Remotes:   []domain.GitRemoteVO{},
-		Files:     []domain.GitFileVO{},
+		Workspace:    dir,
+		RepoState:    domain.GitStateNone,
+		Remotes:      []domain.GitRemoteVO{},
+		ChangedFiles: []domain.GitFileVO{},
 	}
 	if !Available() {
-		vo.Reason = "这台电脑上还没有 Git，装好后这里就能看到改动"
+		vo.UnavailableReason = "这台电脑上还没有 Git，装好后这里就能看到改动"
 		return vo, nil
 	}
 	vo.Available = true
-	vo.Git = Version()
+	vo.GitVersion = Version()
 
 	scope, err := openScope(dir)
 	if err != nil {
 		return nil, err
 	}
 	if scope == nil {
-		vo.Reason = "这个工作目录还不是 Git 仓库，初始化后这里就能看到改动"
+		vo.UnavailableReason = "这个工作目录还不是 Git 仓库，初始化后这里就能看到改动"
 		return vo, nil
 	}
 	vo.IsRepo = true
 	vo.RepoRoot = scope.root
-	vo.Branch = scope.branch()
-	vo.Upstream = scope.upstream()
+	vo.BranchName = scope.branch()
+	vo.UpstreamRef = scope.upstream()
 	vo.Remotes = scope.remotes()
 	st := scope.state()
-	vo.State = st.Kind
-	vo.StateDetail = st.Detail
+	vo.RepoState = st.StateCode
+	vo.RepoStateDetail = st.Detail
 	vo.Ahead, vo.Behind = scope.aheadBehind()
 	files, err := scope.changedFiles()
 	if err != nil {
 		return nil, err
 	}
-	vo.Files = files
+	vo.ChangedFiles = files
 	for _, f := range files {
 		if f.Conflict {
 			vo.Conflict = true
@@ -329,30 +329,30 @@ func (s *scope) remoteNames() []string {
 
 // repoState 是仓库当前所处的中间状态：普通 / 合并中 / 变基中 / 拣选或回退中。
 type repoState struct {
-	Kind   string
-	Detail string
+	StateCode string
+	Detail    string
 }
 
 // state 判定仓库是否有未完成的合并或变基；判定靠 git 自己，不靠猜目录里的文件。
 func (s *scope) state() repoState {
 	gitDir := s.gitDir()
 	if gitDir == "" {
-		return repoState{Kind: domain.GitStateNone}
+		return repoState{StateCode: domain.GitStateNone}
 	}
 	if pkg.DirExists(filepath.Join(gitDir, "rebase-merge")) ||
 		pkg.DirExists(filepath.Join(gitDir, "rebase-apply")) {
-		return repoState{Kind: domain.GitStateRebase, Detail: s.readText(filepath.Join(gitDir, "rebase-merge", "head-name"))}
+		return repoState{StateCode: domain.GitStateRebase, Detail: s.readText(filepath.Join(gitDir, "rebase-merge", "head-name"))}
 	}
 	if pkg.FileExists(filepath.Join(gitDir, "MERGE_HEAD")) {
-		return repoState{Kind: domain.GitStateMerge, Detail: s.readText(filepath.Join(gitDir, "MERGE_MSG"))}
+		return repoState{StateCode: domain.GitStateMerge, Detail: s.readText(filepath.Join(gitDir, "MERGE_MSG"))}
 	}
 	if pkg.FileExists(filepath.Join(gitDir, "CHERRY_PICK_HEAD")) {
-		return repoState{Kind: domain.GitStateCherryPick}
+		return repoState{StateCode: domain.GitStateCherryPick}
 	}
 	if pkg.FileExists(filepath.Join(gitDir, "REVERT_HEAD")) {
-		return repoState{Kind: domain.GitStateRevert}
+		return repoState{StateCode: domain.GitStateRevert}
 	}
-	return repoState{Kind: domain.GitStateNone}
+	return repoState{StateCode: domain.GitStateNone}
 }
 
 // gitDir 解析 .git 的真实路径（工作区可能是子目录，也可能是 worktree）。
@@ -393,12 +393,12 @@ func (s *scope) changedFiles() ([]domain.GitFileVO, error) {
 		}
 		c := counts[entry.path]
 		out = append(out, domain.GitFileVO{
-			FilePath:  rel,
-			Status:    entry.status,
-			Staged:    entry.staged,
-			Conflict:  entry.conflict,
-			Additions: c.add,
-			Deletions: c.del,
+			FilePath:   rel,
+			ChangeCode: entry.status,
+			Staged:     entry.staged,
+			Conflict:   entry.conflict,
+			Additions:  c.add,
+			Deletions:  c.del,
 		})
 	}
 	return out, nil
@@ -490,14 +490,14 @@ func (s *scope) diffAll() (*domain.GitDiffVO, error) {
 		lines = append(lines, add...)
 		total += rest
 	}
-	return &domain.GitDiffVO{FilePath: "", Lines: lines, Dropped: total, Truncated: total > 0}, nil
+	return &domain.GitDiffVO{FilePath: "", DiffLines: lines, Dropped: total, Truncated: total > 0}, nil
 }
 
 // diffOne 单个文件的差异；未跟踪文件同样补读正文。
 func (s *scope) diffOne(full, wsRel, rootRel string) (*domain.GitDiffVO, error) {
 	if !s.isTracked(rootRel) {
 		lines, dropped := s.untrackedSection(wsRel, rootRel)
-		return &domain.GitDiffVO{FilePath: wsRel, Lines: lines, Dropped: dropped, Truncated: dropped > 0}, nil
+		return &domain.GitDiffVO{FilePath: wsRel, DiffLines: lines, Dropped: dropped, Truncated: dropped > 0}, nil
 	}
 	args := []string{"diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U3"}
 	if s.hasHead() {
@@ -509,7 +509,7 @@ func (s *scope) diffOne(full, wsRel, rootRel string) (*domain.GitDiffVO, error) 
 		return nil, err
 	}
 	lines, dropped := parseDiff(res.stdout, s.headerToWorkspace)
-	return &domain.GitDiffVO{FilePath: wsRel, Lines: lines, Dropped: dropped, Truncated: dropped > 0}, nil
+	return &domain.GitDiffVO{FilePath: wsRel, DiffLines: lines, Dropped: dropped, Truncated: dropped > 0}, nil
 }
 
 // untrackedInScope 列出工作区内未跟踪且未被忽略的文件（仓库根相对路径）。
@@ -546,11 +546,11 @@ func (s *scope) untrackedSection(wsRel, rootRel string) ([]domain.GitDiffLineVO,
 	if err != nil {
 		return nil, 0
 	}
-	out := []domain.GitDiffLineVO{{Kind: domain.GitLineFile, Text: wsRel}}
+	out := []domain.GitDiffLineVO{{LineKind: domain.GitLineFile, LineText: wsRel}}
 	// 二进制文件不逐行渲染：读成 UTF-8 再显示只会得到一堆替换字符，
 	// 看起来像「文件坏了」而不是「这是二进制」。
 	if isBinary(data) {
-		return append(out, domain.GitDiffLineVO{Kind: domain.GitLineHunk, Text: "(binary)"}), 0
+		return append(out, domain.GitDiffLineVO{LineKind: domain.GitLineHunk, LineText: "(binary)"}), 0
 	}
 	dropped := 0
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
@@ -563,7 +563,7 @@ func (s *scope) untrackedSection(wsRel, rootRel string) ([]domain.GitDiffLineVO,
 			dropped++
 			continue
 		}
-		out = append(out, domain.GitDiffLineVO{Kind: domain.GitLineAdd, NewNo: i + 1, Text: row})
+		out = append(out, domain.GitDiffLineVO{LineKind: domain.GitLineAdd, NewNo: i + 1, LineText: row})
 	}
 	return out, dropped
 }
@@ -683,11 +683,11 @@ func parseDiff(text string, fileHeader func(string) string) ([]domain.GitDiffLin
 			if fileHeader != nil {
 				header = fileHeader(header)
 			}
-			out = append(out, domain.GitDiffLineVO{Kind: domain.GitLineFile, Text: header})
+			out = append(out, domain.GitDiffLineVO{LineKind: domain.GitLineFile, LineText: header})
 			continue
 		case strings.HasPrefix(line, "@@"):
 			oldNo, newNo = hunkPos(line)
-			out = append(out, domain.GitDiffLineVO{Kind: domain.GitLineHunk, Text: line})
+			out = append(out, domain.GitDiffLineVO{LineKind: domain.GitLineHunk, LineText: line})
 			continue
 		case strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") ||
 			strings.HasPrefix(line, "index ") || strings.HasPrefix(line, "new file ") ||
@@ -703,10 +703,10 @@ func parseDiff(text string, fileHeader func(string) string) ([]domain.GitDiffLin
 		// @@ 头给出的就是首行行号，先落号再推进，否则整块行号偏移一行。
 		switch {
 		case strings.HasPrefix(line, "+"):
-			out = append(out, domain.GitDiffLineVO{Kind: domain.GitLineAdd, NewNo: newNo, Text: line[1:]})
+			out = append(out, domain.GitDiffLineVO{LineKind: domain.GitLineAdd, NewNo: newNo, LineText: line[1:]})
 			newNo++
 		case strings.HasPrefix(line, "-"):
-			out = append(out, domain.GitDiffLineVO{Kind: domain.GitLineDel, OldNo: oldNo, Text: line[1:]})
+			out = append(out, domain.GitDiffLineVO{LineKind: domain.GitLineDel, OldNo: oldNo, LineText: line[1:]})
 			oldNo++
 		case strings.HasPrefix(line, "\\"):
 			// `\ No newline at end of file` 是注解，不是内容行
@@ -716,7 +716,7 @@ func parseDiff(text string, fileHeader func(string) string) ([]domain.GitDiffLin
 			if len(line) > 0 {
 				body = line[1:]
 			}
-			out = append(out, domain.GitDiffLineVO{Kind: domain.GitLineCtx, OldNo: oldNo, NewNo: newNo, Text: body})
+			out = append(out, domain.GitDiffLineVO{LineKind: domain.GitLineCtx, OldNo: oldNo, NewNo: newNo, LineText: body})
 			oldNo++
 			newNo++
 		}

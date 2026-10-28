@@ -32,9 +32,9 @@ const committing = ref(false)
 const pending = ref('')
 const tab = ref<'changes' | 'history'>('changes')
 
-const unstaged = computed(() => (status.value?.files ?? []).filter((f) => !f.staged))
-const staged = computed(() => (status.value?.files ?? []).filter((f) => f.staged))
-const conflicts = computed(() => (status.value?.files ?? []).filter((f) => f.conflict))
+const unstaged = computed(() => (status.value?.changed_files ?? []).filter((f) => !f.staged))
+const staged = computed(() => (status.value?.changed_files ?? []).filter((f) => f.staged))
+const conflicts = computed(() => (status.value?.changed_files ?? []).filter((f) => f.conflict))
 const canCommit = computed(() => Boolean(message.value.trim()) && staged.value.length > 0 && !committing.value)
 
 async function loadStatus() {
@@ -135,7 +135,7 @@ async function commit() {
     const result = await api.gitCommit(message.value.trim())
     status.value = result.status
     message.value = ''
-    toasts.push('ok', t('workspace.committed', { hash: result.hash.slice(0, 7) }))
+    toasts.push('ok', t('workspace.committed', { hash: result.commit_hash.slice(0, 7) }))
     await Promise.all([loadDiff(), loadExtras()])
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
@@ -185,7 +185,7 @@ async function createBranch() {
 
 function changeTag(file: GitFile): string {
   if (file.conflict) return 'U'
-  return file.status || '?'
+  return file.change_code || '?'
 }
 
 onMounted(refresh)
@@ -201,9 +201,9 @@ onMounted(refresh)
       <div class="head-actions">
         <span v-if="status?.is_repo" class="tag" :class="status.conflict ? 'warn' : ''">
           <AppIcon name="branch" :size="11" />
-          {{ status.branch || t('workspace.noCommit') }}
+          {{ status.branch_name || t('workspace.noCommit') }}
         </span>
-        <span v-if="status?.is_repo && status.upstream" class="readout">
+        <span v-if="status?.is_repo && status.upstream_ref" class="readout">
           ↑{{ status.ahead }} ↓{{ status.behind }}
         </span>
         <button class="omp-btn icon ghost" :class="{ 'is-loading': loadingStatus }" :title="t('common.refresh')" @click="refresh">
@@ -215,7 +215,7 @@ onMounted(refresh)
     <!-- 不可用：说清原因与下一步 -->
     <div v-if="status && !status.available" class="notice">
       <span class="dot warn" />
-      <span>{{ status.reason }}</span>
+      <span>{{ status.unavailable_reason }}</span>
     </div>
 
     <div v-else-if="status && !status.is_repo" class="notice">
@@ -228,9 +228,9 @@ onMounted(refresh)
 
     <template v-else-if="status">
       <!-- 中间态横幅：冲突时的处置入口 -->
-      <div v-if="status.state !== 'none' || status.conflict" class="notice warn">
+      <div v-if="status.repo_state !== 'none' || status.conflict" class="notice warn">
         <span class="dot warn" />
-        <span>{{ status.state_detail || t('workspace.inProgress') }}</span>
+        <span>{{ status.repo_state_detail || t('workspace.inProgress') }}</span>
         <button class="omp-btn sm" :class="{ 'is-loading': pending === 'resolve' }" :disabled="!conflicts.length || Boolean(pending)" @click="resolveConflicts">
           {{ t('workspace.markResolved') }}
         </button>
@@ -251,7 +251,7 @@ onMounted(refresh)
           <div class="tabs seg">
             <button class="seg-btn" :class="{ active: tab === 'changes' }" @click="tab = 'changes'">
               {{ t('workspace.changes') }}
-              <span v-if="status.files.length" class="count">{{ status.files.length }}</span>
+              <span v-if="status.changed_files.length" class="count">{{ status.changed_files.length }}</span>
             </button>
             <button class="seg-btn" :class="{ active: tab === 'history' }" @click="tab = 'history'">
               {{ t('workspace.history') }}
@@ -260,7 +260,7 @@ onMounted(refresh)
           </div>
 
           <div v-if="tab === 'changes'" class="mid-body">
-            <div v-if="!status.files.length" class="empty-mini">{{ t('workspace.noChanges') }}</div>
+            <div v-if="!status.changed_files.length" class="empty-mini">{{ t('workspace.noChanges') }}</div>
 
             <template v-else>
               <div v-if="staged.length" class="group">
@@ -353,10 +353,10 @@ onMounted(refresh)
 
           <div v-else class="mid-body">
             <div v-if="!history.length" class="empty-mini">{{ t('workspace.noHistory') }}</div>
-            <div v-for="item in history" :key="item.hash" class="commit-line">
-              <span class="hash mono">{{ item.short }}</span>
+            <div v-for="item in history" :key="item.commit_hash" class="commit-line">
+              <span class="hash mono">{{ item.short_hash }}</span>
               <span class="subject">{{ item.subject }}</span>
-              <span class="readout">{{ item.author }}</span>
+              <span class="readout">{{ item.author_name }}</span>
               <span class="num"><b class="add">+{{ item.additions }}</b><b class="del">−{{ item.deletions }}</b></span>
             </div>
           </div>

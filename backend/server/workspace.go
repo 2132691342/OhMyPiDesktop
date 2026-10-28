@@ -147,10 +147,10 @@ func (s *Server) gitStateAction(c *gin.Context) {
 
 func (s *Server) gitInit(c *gin.Context) {
 	var body struct {
-		Branch string `json:"branch"`
+		BranchName string `json:"branch_name"`
 	}
 	_ = c.ShouldBindJSON(&body)
-	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitInit(body.Branch) })
+	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitInit(body.BranchName) })
 }
 
 func (s *Server) gitAddRemote(c *gin.Context) {
@@ -166,9 +166,9 @@ func (s *Server) gitAddRemote(c *gin.Context) {
 
 // pushBody 是推送入参（分级由 mode 表达）。
 type pushBody struct {
-	Remote string `json:"remote"`
-	Branch string `json:"branch"`
-	Force  string `json:"force"`
+	RemoteName string `json:"remote_name"`
+	BranchName string `json:"branch_name"`
+	Force      string `json:"force"`
 }
 
 func (s *Server) gitPush(c *gin.Context) {
@@ -177,7 +177,7 @@ func (s *Server) gitPush(c *gin.Context) {
 		return
 	}
 	s.run(c, func(*gin.Context) (any, error) {
-		return s.svc.GitPush(domain.GitPushREQ{Remote: body.Remote, Branch: body.Branch, Force: body.Force})
+		return s.svc.GitPush(domain.GitPushREQ{RemoteName: body.RemoteName, BranchName: body.BranchName, Force: body.Force})
 	})
 }
 
@@ -210,20 +210,20 @@ func strconvAtoi(s string) (int, error) {
 
 func (s *Server) gitPull(c *gin.Context) {
 	var body struct {
-		Remote string `json:"remote"`
-		Branch string `json:"branch"`
-		Rebase bool   `json:"rebase"`
+		RemoteName string `json:"remote_name"`
+		BranchName string `json:"branch_name"`
+		Rebase     bool   `json:"rebase"`
 	}
 	if !bind(c, &body) {
 		return
 	}
-	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitPull(body.Remote, body.Branch, body.Rebase) })
+	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitPull(body.RemoteName, body.BranchName, body.Rebase) })
 }
 
 func (s *Server) gitFetch(c *gin.Context) {
 	var body struct {
-		Remote string `json:"remote"`
+		RemoteName string `json:"remote_name"`
 	}
 	_ = c.ShouldBindJSON(&body)
-	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitFetch(body.Remote) })
+	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitFetch(body.RemoteName) })
 }

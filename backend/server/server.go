@@ -24,7 +24,7 @@ import (
 )
 
 // ContractVersion 与前端 types/api.ts 同键；改响应字段形态必须 +1。
-const ContractVersion = 5
+const ContractVersion = 6
 
 // Server 是内嵌 HTTP 服务。
 type Server struct {

@@ -121,12 +121,12 @@ func Discard(dir string, paths []string) (*domain.GitStatusVO, error) {
 	for _, rel := range args {
 		want[rel] = true
 	}
-	for _, f := range st.Files {
+	for _, f := range st.ChangedFiles {
 		rootRel := sc.relFromRoot(f.FilePath)
 		if !want[rootRel] {
 			continue
 		}
-		if f.Status == domain.GitChangeUntracked {
+		if f.ChangeCode == domain.GitChangeUntracked {
 			untracked = append(untracked, rootRel)
 		} else {
 			tracked = append(tracked, rootRel)
@@ -176,7 +176,7 @@ func Commit(dir, message string, amend bool) (*domain.GitCommitRESP, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &domain.GitCommitRESP{Status: st, Hash: sc.headHash()}, nil
+	return &domain.GitCommitRESP{Status: st, CommitHash: sc.headHash()}, nil
 }
 
 // commitFailure 把 git 的多种拒绝形态翻成用户能照着做的下一步。
@@ -302,16 +302,16 @@ func UpdateState(dir, action string) (*domain.GitStatusVO, error) {
 		return nil, err
 	}
 	st := sc.state()
-	if st.Kind == domain.GitStateNone {
+	if st.StateCode == domain.GitStateNone {
 		return nil, pkg.New("1018", "当前没有进行中的合并或变基", "")
 	}
 	verb := strings.TrimSpace(action)
 	if verb != domain.GitStateContinue && verb != domain.GitStateAbort {
 		return nil, pkg.New("1018", "只支持继续或中止", verb)
 	}
-	cmd := stateCommand(st.Kind, verb)
+	cmd := stateCommand(st.StateCode, verb)
 	if len(cmd) == 0 {
-		return nil, pkg.New("1018", "这个中间状态不支持该操作", st.Kind)
+		return nil, pkg.New("1018", "这个中间状态不支持该操作", st.StateCode)
 	}
 	if _, err := writeRun(sc.root, writeTimeout, cmd...); err != nil {
 		text := strings.ToLower(errText(err))
@@ -385,26 +385,26 @@ func Push(dir string, req domain.GitPushREQ) (*domain.GitStatusVO, error) {
 	if cur == "" {
 		return nil, pkg.New("1018", "还没有提交，先提交一次再推送", "")
 	}
-	remote := strings.TrimSpace(req.Remote)
-	branch := strings.TrimSpace(req.Branch)
-	if branch == "" {
-		branch = cur
+	remoteName := strings.TrimSpace(req.RemoteName)
+	branchName := strings.TrimSpace(req.BranchName)
+	if branchName == "" {
+		branchName = cur
 	}
-	if !validBranchName(branch) {
-		return nil, pkg.New("1018", "分支名不合法", branch)
+	if !validBranchName(branchName) {
+		return nil, pkg.New("1018", "分支名不合法", branchName)
 	}
-	if remote != "" && !validRemoteName(remote) {
-		return nil, pkg.New("1018", "远端名不合法", remote)
+	if remoteName != "" && !validRemoteName(remoteName) {
+		return nil, pkg.New("1018", "远端名不合法", remoteName)
 	}
 	// 没指定远端时按上游推断；再没有就只认唯一远端，多于一个必须让用户选。
-	if remote == "" {
+	if remoteName == "" {
 		if up := sc.upstream(); up != "" {
-			remote, _ = splitUpstream(up)
+			remoteName, _ = splitUpstream(up)
 		} else {
 			remotes := sc.remoteNames()
 			switch len(remotes) {
 			case 1:
-				remote = remotes[0]
+				remoteName = remotes[0]
 			case 0:
 				return nil, pkg.New("1023", "这个仓库还没有配置远端",
 					"先在设置里添加一个远端地址（git remote add origin <url>）")
@@ -423,8 +423,8 @@ func Push(dir string, req domain.GitPushREQ) (*domain.GitStatusVO, error) {
 		args = append(args, "--force-with-lease")
 	case domain.GitForceTrue:
 		// 无条件强制推送会静默覆盖别人的提交，必须输入分支名确认。
-		if strings.TrimSpace(req.Confirm) != branch {
-			return nil, pkg.New("1018", "强制推送需要输入分支名确认", "请输入 "+branch)
+		if strings.TrimSpace(req.Confirm) != branchName {
+			return nil, pkg.New("1018", "强制推送需要输入分支名确认", "请输入 "+branchName)
 		}
 		args = append(args, "--force")
 	default:
@@ -435,7 +435,7 @@ func Push(dir string, req domain.GitPushREQ) (*domain.GitStatusVO, error) {
 	if req.SetUpstream || sc.upstream() == "" {
 		args = append(args, "--set-upstream")
 	}
-	args = append(args, remote, branch)
+	args = append(args, remoteName, branchName)
 
 	env := gitNonInteractive()
 	if _, err := writeRunEnv(sc.root, pushTimeout, env, args...); err != nil {

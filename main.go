@@ -68,9 +68,9 @@ func main() {
 		Width:  1360,
 		Height: 900,
 		// 无边框：标题栏由前端自绘，窗口位置与尺寸才与界面一致。
-		Frameless: true,
-		MinWidth:  1040,
-		MinHeight: 680,
+		Frameless:        true,
+		MinWidth:         1040,
+		MinHeight:        680,
 		BackgroundColour: application.NewRGB(248, 250, 252),
 		URL:              "/",
 		// 装配完成前不显示窗口，避免用户看见一帧白屏。

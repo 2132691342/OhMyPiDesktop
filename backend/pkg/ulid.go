@@ -27,6 +27,7 @@ const (
 // ulidMu 串行化同一毫秒内的生成：ulid 的单调性靠上一次的值，
 // 并发调用会各自拿到独立的随机段，顺序就丢了。
 var ulidMu sync.Mutex
+
 // 单调源：同一毫秒内递增而不是重新随机，保证同一进程内严格有序。
 var ulidEntropy = ulid.Monotonic(rand.Reader, 0)
 

@@ -379,7 +379,7 @@ export type GitChange = 'M' | 'A' | 'D' | 'R' | 'C' | 'T' | '?' | 'U'
 
 export interface GitFile {
   file_path: string
-  status: string
+  change_code: GitChange
   staged: boolean
   conflict: boolean
   additions: number
@@ -393,57 +393,57 @@ export interface GitRemote {
 
 export interface GitStatus {
   available: boolean
-  reason: string
+  unavailable_reason: string
   is_repo: boolean
   workspace: string
   repo_root: string
-  branch: string
-  upstream: string
+  branch_name: string
+  upstream_ref: string
   ahead: number
   behind: number
-  state: string
-  state_detail: string
+  repo_state: string
+  repo_state_detail: string
   remotes: GitRemote[]
-  files: GitFile[]
+  changed_files: GitFile[]
   conflict: boolean
-  git: string
+  git_version: string
 }
 
 export interface GitDiffLine {
-  kind: 'file' | 'hunk' | 'add' | 'del' | 'ctx'
+  line_kind: 'file' | 'hunk' | 'add' | 'del' | 'ctx'
   old_no: number
   new_no: number
-  text: string
+  line_text: string
 }
 
 export interface GitDiff {
   file_path: string
   truncated: boolean
   dropped: number
-  lines: GitDiffLine[]
+  diff_lines: GitDiffLine[]
 }
 
 export interface GitCommit {
-  hash: string
-  short: string
+  commit_hash: string
+  short_hash: string
   subject: string
-  author: string
-  when: number
-  files: number
+  author_name: string
+  commit_time: number
+  file_count: number
   additions: number
   deletions: number
 }
 
 /** 单个提交的完整内容：元信息 + 改动文件 + 逐行差异。 */
 export interface GitCommitDetail {
-  hash: string
-  short: string
+  commit_hash: string
+  short_hash: string
   subject: string
   body: string
-  author: string
-  when: number
-  parents: string[]
-  files: GitFile[]
+  author_name: string
+  commit_time: number
+  parent_hash: string[]
+  changed_file: GitFile[]
   diff?: GitDiff
 }
 
@@ -457,7 +457,7 @@ export interface GitBranch {
 
 export interface GitCommitResult {
   status: GitStatus
-  hash: string
+  commit_hash: string
 }
 
 // ---------------- SSE ----------------

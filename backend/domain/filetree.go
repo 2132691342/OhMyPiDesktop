@@ -14,7 +14,7 @@ type FileEntryVO struct {
 // FileListVO 一次目录列举的出参。
 type FileListVO struct {
 	// DirPath 相对工作区的目录路径，空串即根目录
-	DirPath string `json:"dir_path"`
+	DirPath string        `json:"dir_path"`
 	Entries []FileEntryVO `json:"entries"`
 	// Truncated 为真表示条目被上限截断，界面要给一句「只看前 N 条」。
 	Truncated bool `json:"truncated"`

@@ -33,8 +33,8 @@ const (
 type GitFileVO struct {
 	// FilePath 相对工作目录的路径，分隔符统一为斜杠
 	FilePath string `json:"file_path"`
-	// Status 取 GitChange*：M 改过 / A 新增 / D 删除 / R 改名 / C 复制 / T 类型变化 / ? 未跟踪 / U 冲突
-	Status string `json:"status"`
+	// ChangeCode 取 GitChange*：M 改过 / A 新增 / D 删除 / R 改名 / C 复制 / T 类型变化 / ? 未跟踪 / U 冲突
+	ChangeCode string `json:"change_code"`
 	// Staged 区分「已放进待提交区」与「只改了工作区」，两者在界面上是两种处置动作
 	Staged bool `json:"staged"`
 	// Conflict 该文件有未解决的冲突；解决后要显式标记，否则 git 不接受提交
@@ -57,33 +57,33 @@ type GitRemoteVO struct {
 type GitStatusVO struct {
 	// Available 系统里有没有可执行的 git
 	Available bool `json:"available"`
-	// Reason 不可用时的一句话原因；可用为空
-	Reason string `json:"reason"`
+	// UnavailableReason 不可用时的一句话原因；可用为空
+	UnavailableReason string `json:"unavailable_reason"`
 	// IsRepo 工作目录是否在 Git 仓库里
 	IsRepo bool `json:"is_repo"`
 	// Workspace 实际读取的那个目录（会话级工作目录优先）
 	Workspace string `json:"workspace"`
 	// RepoRoot 仓库根目录；工作区是仓库子目录时与 Workspace 不同
 	RepoRoot string `json:"repo_root"`
-	// Branch 当前分支名；空表示还没有第一次提交
-	Branch string `json:"branch"`
-	// Upstream 当前分支的上游引用（如 origin/main）；没有上游为空
-	Upstream string `json:"upstream"`
+	// BranchName 当前分支名；空表示还没有第一次提交
+	BranchName string `json:"branch_name"`
+	// UpstreamRef 当前分支的上游引用（如 origin/main）；没有上游为空
+	UpstreamRef string `json:"upstream_ref"`
 	// Ahead / Behind 相对上游的领先 / 落后提交数；没有上游时都是 0
 	Ahead  int `json:"ahead"`
 	Behind int `json:"behind"`
-	// State 仓库中间状态，取 GitState*
-	State string `json:"state"`
-	// StateDetail 中间状态的一句话说明（合并来源分支 / 变基分支）
-	StateDetail string `json:"state_detail"`
+	// RepoState 仓库中间状态，取 GitState*
+	RepoState string `json:"repo_state"`
+	// RepoStateDetail 中间状态的一句话说明（合并来源分支 / 变基分支）
+	RepoStateDetail string `json:"repo_state_detail"`
 	// Remotes 已配置的远端；没有为空数组
 	Remotes []GitRemoteVO `json:"remotes"`
-	// Files 改动清单；没有改动为空数组而不是 null
-	Files []GitFileVO `json:"files"`
+	// ChangedFiles 改动清单；没有改动为空数组而不是 null
+	ChangedFiles []GitFileVO `json:"changed_files"`
 	// Conflict 当前是否有未解决的冲突
 	Conflict bool `json:"conflict"`
-	// Git 系统里的 git 版本串，不可用为空
-	Git string `json:"git"`
+	// GitVersion 系统里的 git 版本串，不可用为空
+	GitVersion string `json:"git_version"`
 }
 
 // 差异行的种类取值。
@@ -102,14 +102,14 @@ const (
 
 // GitDiffLineVO 差异里的一行；OldNo / NewNo 为 0 表示该侧没有对应行。
 type GitDiffLineVO struct {
-	// Kind 取 GitLine*
-	Kind string `json:"kind"`
+	// LineKind 取 GitLine*
+	LineKind string `json:"line_kind"`
 	// OldNo 改动前的行号；新增行为 0
 	OldNo int `json:"old_no"`
 	// NewNo 改动后的行号；删除行为 0
 	NewNo int `json:"new_no"`
-	// Text 行内容（不含 diff 的 + / - 前缀）；file 与 hunk 行存原始文本
-	Text string `json:"text"`
+	// LineText 行内容（不含 diff 的 + / - 前缀）；file 与 hunk 行存原始文本
+	LineText string `json:"line_text"`
 }
 
 // GitDiffVO 一份差异。Truncated 为真时 Dropped 是被丢掉的行数——
@@ -121,6 +121,6 @@ type GitDiffVO struct {
 	Truncated bool `json:"truncated"`
 	// Dropped 被丢掉的行数
 	Dropped int `json:"dropped"`
-	// Lines 行序列；没有改动为空数组而不是 null
-	Lines []GitDiffLineVO `json:"lines"`
+	// DiffLines 行序列；没有改动为空数组而不是 null
+	DiffLines []GitDiffLineVO `json:"diff_lines"`
 }

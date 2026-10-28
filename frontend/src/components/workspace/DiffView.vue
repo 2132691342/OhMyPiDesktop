@@ -13,9 +13,9 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-const lines = computed(() => props.diff?.lines ?? [])
-const adds = computed(() => lines.value.filter((l) => l.kind === 'add').length)
-const dels = computed(() => lines.value.filter((l) => l.kind === 'del').length)
+const lines = computed(() => props.diff?.diff_lines ?? [])
+const adds = computed(() => lines.value.filter((l) => l.line_kind === 'add').length)
+const dels = computed(() => lines.value.filter((l) => l.line_kind === 'del').length)
 const blank = computed(() => !props.loading && lines.value.length === 0)
 const blankText = computed(() => (props.path ? t('workspace.diffEmpty') : t('workspace.noChanges')))
 </script>
@@ -42,11 +42,11 @@ const blankText = computed(() => (props.path ? t('workspace.diffEmpty') : t('wor
         v-for="(l, i) in lines"
         :key="i"
         class="diff-row"
-        :class="{ 'is-add': l.kind === 'add', 'is-del': l.kind === 'del', 'is-hunk': l.kind === 'hunk' }"
+        :class="{ 'is-add': l.line_kind === 'add', 'is-del': l.line_kind === 'del', 'is-hunk': l.line_kind === 'hunk' }"
       >
         <span class="ln">{{ l.old_no || '' }}</span>
         <span class="ln">{{ l.new_no || '' }}</span>
-        <span class="tx">{{ l.text }}</span>
+        <span class="tx">{{ l.line_text }}</span>
       </div>
     </div>
 

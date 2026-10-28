@@ -81,7 +81,7 @@ go run ./tools/smoke -engine pi  -msg "Reply with exactly: OK"
 `tools/smoke` 也可以指定工作目录与引擎路径：
 
 ```bash
-go run ./tools/smoke -engine pi -dir D:\gitFiles\pi -msg "hi"
+go run ./tools/smoke -engine pi -dir C:\Users\me\src\my-project -msg "hi"
 ```
 
 ## 调试真实引擎

@@ -3,27 +3,27 @@ package domain
 
 // GitCommitVO 历史列表里的一次提交。
 type GitCommitVO struct {
-	Hash      string `json:"hash"`      // 完整 hash
-	Short     string `json:"short"`     // 短 hash，界面显示用
-	Subject   string `json:"subject"`   // 首行提交信息
-	Author    string `json:"author"`    // 作者名
-	When      int64  `json:"when"`      // 提交时间，毫秒
-	Files     int    `json:"files"`     // 这次提交涉及的文件数
-	Additions int    `json:"additions"` // 新增行数
-	Deletions int    `json:"deletions"` // 删除行数
+	CommitHash string `json:"commit_hash"` // 完整 hash
+	ShortHash  string `json:"short_hash"`  // 短 hash，界面显示用
+	Subject    string `json:"subject"`     // 首行提交信息
+	AuthorName string `json:"author_name"` // 作者名
+	CommitTime int64  `json:"commit_time"` // 提交时间，毫秒
+	FileCount  int    `json:"file_count"`  // 这次提交涉及的文件数
+	Additions  int    `json:"additions"`   // 新增行数
+	Deletions  int    `json:"deletions"`   // 删除行数
 }
 
 // GitCommitDetailVO 一次提交的完整内容：元信息 + 每个文件 + 逐行差异。
 type GitCommitDetailVO struct {
-	Hash    string      `json:"hash"`
-	Short   string      `json:"short"`
-	Subject string      `json:"subject"`
-	Body    string      `json:"body"`
-	Author  string      `json:"author"`
-	When    int64       `json:"when"`
-	Parents []string    `json:"parents"`
-	Files   []GitFileVO `json:"files"`
-	Diff    *GitDiffVO  `json:"diff,omitempty"`
+	CommitHash  string      `json:"commit_hash"`
+	ShortHash   string      `json:"short_hash"`
+	Subject     string      `json:"subject"`
+	Body        string      `json:"body"`
+	AuthorName  string      `json:"author_name"`
+	CommitTime  int64       `json:"commit_time"`
+	ParentHash  []string    `json:"parent_hash"`
+	ChangedFile []GitFileVO `json:"changed_file"`
+	Diff        *GitDiffVO  `json:"diff,omitempty"`
 }
 
 // GitBranchVO 一个分支及其相对上游的领先 / 落后数。
@@ -47,14 +47,14 @@ const GitCommitMsgLimit = 5000
 // GitCommitRESP 一次提交的结果：写后重读的状态 + 新提交的 hash。
 // 返回重读后的状态是为了让界面用一份数据刷新列表，而不是前端自己推断「刚才那个文件现在在哪」。
 type GitCommitRESP struct {
-	Status *GitStatusVO `json:"status"`
-	Hash   string       `json:"hash"`
+	Status     *GitStatusVO `json:"status"`
+	CommitHash string       `json:"commit_hash"`
 }
 
 // GitMessageRESP 助手起草的提交信息。Err 非空表示起草失败，界面回落到手写。
 type GitMessageRESP struct {
-	Message string `json:"message"`
-	Err     string `json:"err"`
+	CommitMessage string `json:"commit_message"`
+	Err           string `json:"err"`
 }
 
 // GitPathsREQ 受控写入的公共入参：要操作哪些文件。空表示全部改动。
@@ -64,7 +64,7 @@ type GitPathsREQ struct {
 
 // GitCommitREQ 提交入参：信息由用户填，助手只起草不代填。
 type GitCommitREQ struct {
-	Message string `json:"message"`
+	CommitMessage string `json:"commit_message"`
 	// Amend 把这次提交改写成上一次提交（未推送时才该用，界面二次确认）
 	Amend bool `json:"amend"`
 }
@@ -81,10 +81,10 @@ type GitBranchREQ struct {
 
 // GitPushREQ 推送入参。没有上游时第一次推送要指定远端并建立跟踪。
 type GitPushREQ struct {
-	// Remote 远端名；为空时用当前分支的上游，再没有就用唯一远端
-	Remote string `json:"remote"`
-	// Branch 推送的本地分支；为空时用当前分支
-	Branch string `json:"branch"`
+	// RemoteName 远端名；为空时用当前分支的上游，再没有就用唯一远端
+	RemoteName string `json:"remote_name"`
+	// BranchName 推送的本地分支；为空时用当前分支
+	BranchName string `json:"branch_name"`
 	// SetUpstream 把这次推送的远端建立为上游（首次推送必须）
 	SetUpstream bool `json:"set_upstream"`
 	// Force 强制推送级别，取 GitForce*；none 是普通推送
@@ -105,18 +105,18 @@ const (
 
 // GitPullREQ 拉取入参。
 type GitPullREQ struct {
-	// Remote 远端名；为空时用上游
-	Remote string `json:"remote"`
-	// Branch 远端分支；为空时用上游
-	Branch string `json:"branch"`
+	// RemoteName 远端名；为空时用上游
+	RemoteName string `json:"remote_name"`
+	// BranchName 远端分支；为空时用上游
+	BranchName string `json:"branch_name"`
 	// Rebase 用变基而不是合并
 	Rebase bool `json:"rebase"`
 }
 
 // GitInitREQ 初始化仓库入参。
 type GitInitREQ struct {
-	// Branch 初始分支名；为空用 git 默认
-	Branch string `json:"branch"`
+	// BranchName 初始分支名；为空用 git 默认
+	BranchName string `json:"branch_name"`
 }
 
 // GitRemoteREQ 添加远端入参。
