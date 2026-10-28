@@ -220,6 +220,13 @@ const hint = computed(() => {
   if (chat.streaming) return t('chat.placeholderBusy')
   return t('chat.placeholder')
 })
+
+/** 把光标放回输入框（全局 Ctrl+K 用）。 */
+function focus() {
+  textarea.value?.focus()
+}
+
+defineExpose({ focus })
 </script>
 
 <template>
@@ -298,6 +305,15 @@ const hint = computed(() => {
     <div v-if="chat.retry" class="retry-strip">
       <span class="dot warn" />
       {{ t('chat.retrying') }} {{ chat.retry.attempt }}/{{ chat.retry.max }}
+    </div>
+
+    <!-- 错误必须把原话说出来：只把面板染红等于没告诉用户发生了什么 -->
+    <div v-if="chat.promptError" class="error-strip">
+      <span class="dot warn" />
+      <span class="error-text selectable">{{ chat.promptError }}</span>
+      <button class="omp-btn text sm" @click="chat.promptError = ''">
+        {{ t('common.close') }}
+      </button>
     </div>
 
     <div class="composer-inner">
@@ -545,6 +561,27 @@ const hint = computed(() => {
   gap: 6px;
   font-size: var(--omp-fs-2xs);
   color: var(--omp-warn);
+}
+
+/* 错误条：原话 + 关闭。面板染色只是提示，不代替具体原因 */
+.error-strip {
+  max-width: var(--omp-col);
+  margin: 0 auto var(--omp-sp-2);
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  padding: var(--omp-sp-2) var(--omp-sp-3);
+  border: 1px solid var(--omp-bad);
+  border-radius: var(--omp-r);
+  background: var(--omp-bad-soft);
+  font-size: var(--omp-fs-2xs);
+  color: var(--omp-bad);
+}
+
+.error-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .slash-anchor {

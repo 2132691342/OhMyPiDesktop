@@ -1,10 +1,12 @@
 <script setup lang="ts">
 // 对话页：左栏会话列表 + 主区消息流 + 输入区。
 // 滚动贴底由 JS 管（流式时元素高度在变，浏览器锚定会乱跳）。
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import ChatComposer from '@/components/chat/ChatComposer.vue'
+import ChatNotices from '@/components/chat/ChatNotices.vue'
+import ContextMeter from '@/components/chat/ContextMeter.vue'
 import TurnBlocks from '@/components/chat/TurnBlocks.vue'
 import AskCard from '@/components/chat/AskCard.vue'
 import MarkdownBlock from '@/components/chat/MarkdownBlock.vue'
@@ -23,20 +25,28 @@ const router = useRouter()
 const { t } = useI18n()
 
 const scroller = ref<HTMLElement | null>(null)
+const composer = ref<{ focus: () => void } | null>(null)
 const pinned = ref(true)
 
-const hasTurn = computed(() => Boolean(chat.turn))
-const contextLabel = computed(() => {
-  if (!chat.context) return ''
-  return `${formatTokens(chat.context.tokens ?? 0)} / ${formatTokens(chat.context.contextWindow)}`
-})
-
-function formatTokens(n: number): string {
-  if (!n) return '0'
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k`
-  return String(n)
+/**
+ * 全局快捷键：只放两个真的每天会用的。
+ *
+ * Ctrl+K 是「我要说话」——不管光标在哪都回到输入框；
+ * Esc 是「先不管这段授权提示」——它贴在消息上方，不关掉就一直在占位。
+ * 其他都交给控件自己的 Enter / 方向键，不在全局抢按键。
+ */
+function onKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    composer.value?.focus()
+    return
+  }
+  if (event.key === 'Escape' && app.pendingLink) {
+    app.pendingLink = null
+  }
 }
+
+const hasTurn = computed(() => Boolean(chat.turn))
 
 function nearBottom(): boolean {
   const el = scroller.value
@@ -88,6 +98,7 @@ function sessionFromQuery(): string {
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', onKeydown)
   try {
     const path = sessionFromQuery()
     await chat.refresh(path)
@@ -96,6 +107,10 @@ onMounted(async () => {
   } catch {
     /* 引擎没起来时对话页仍是可用的空态 */
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
 })
 
 watch(
@@ -159,7 +174,7 @@ async function openLink(url: string) {
           >
             <AppIcon name="refresh" :size="15" />
           </button>
-          <span v-if="contextLabel" class="tag" :title="t('chat.context')">{{ contextLabel }}</span>
+          <ContextMeter />
         </div>
       </header>
 
@@ -182,8 +197,7 @@ async function openLink(url: string) {
         </div>
       </div>
 
-      <div ref="scroller" class="chat-scroll" @scroll="onScroll">
-        <div v-if="!app.hasEngine" class="chat-gate">
+      <div ref="scroller" class="chat-scroll" @scroll="onScroll">        <div v-if="!app.hasEngine" class="chat-gate">
           <p class="gate-title">{{ t('chat.noEngine') }}</p>
           <router-link class="omp-btn primary" :to="{ name: 'settings' }">{{ t('nav.settings') }}</router-link>
         </div>
@@ -237,7 +251,8 @@ async function openLink(url: string) {
         <AppIcon name="chevron" :size="13" />
       </button>
 
-      <ChatComposer />
+      <ChatComposer ref="composer" />
+      <ChatNotices />
     </section>
 
     <AgentPanel />
