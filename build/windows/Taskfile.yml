@@ -34,7 +34,12 @@ tasks:
       - cmd: powershell Remove-item *.syso
         platforms: [windows]
     vars:
-      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui"{{end}}'
+      # VERSION 从 git 描述取：tag 上构建就是 tag 号，否则是短 hash + 距离。
+      # 不这么做的话，界面上报的还是那个写死的 0.1.0，与发布出去的 tag 对不上。
+      VERSION:
+        sh: 'git describe --tags --always --dirty 2>/dev/null || echo dev'
+      # 版本号写进 main.version，-X 只能跟在 -ldflags 后面，所以要拼进同一串。
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X main.version={{.VERSION}}"{{end}}'
     env:
       GOOS: windows
       CGO_ENABLED: '0'

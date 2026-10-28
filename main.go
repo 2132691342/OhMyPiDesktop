@@ -32,8 +32,9 @@ var assets embed.FS
 
 // 用户手册随二进制一起发行，断网也能看。声明在 assets.go。
 
-// version 由构建时注入；默认 dev 便于本地区分。
-var version = "0.1.0"
+// version 由构建时注入（-ldflags "-X main.version=…"），跟着 git tag 走。
+// 默认值是 dev：本地 `go run` 出来的就是开发版，不会误当成正式版。
+var version = "dev"
 
 // singleInstanceID 判「两次启动是不是同一个应用」的唯一标识。
 const singleInstanceID = "com.ohmypi.desktop"
