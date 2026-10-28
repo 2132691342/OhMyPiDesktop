@@ -168,6 +168,8 @@ task smoke -- -engine pi  -msg "Reply with exactly: OK"
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 环境、命令、调试真实引擎、改代码时改什么 |
 | [docs/modules/env.md](docs/modules/env.md) | 环境层：探测、落盘布局、两套配置读写 |
 | [docs/modules/apps.md](docs/modules/apps.md) | 应用管理：分发事实、渠道判定、代跑安装器、最新版查询 |
+| [docs/modules/hub.md](docs/modules/hub.md) | 事件总线：序号、环形重放、非阻塞投递 |
+| [docs/modules/repo.md](docs/modules/repo.md) | 设置存储（一个 JSON）与系统能力（注册表） |
 | [docs/modules/session.md](docs/modules/session.md) | 会话层：一套读取代码 + 三点适配 |
 | [docs/modules/skill.md](docs/modules/skill.md) | 技能与插件：发现规则、启停语义、CLI 装卸 |
 | [docs/modules/subagents.md](docs/modules/subagents.md) | 子代理观测台：双源数据、字节游标、干预 |

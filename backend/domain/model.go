@@ -47,6 +47,7 @@ type WorkspaceRow struct {
 
 // ProvidersView 是一个引擎的服务商全量视图。
 type ProvidersView struct {
+	// Providers 服务商列表
 	Providers []ProviderView `json:"providers"`
 	// ConfigPath 这份视图读出来的那个配置文件（omp 是 models.yml，pi 是 models.json）
 	ConfigPath string `json:"config_path"`
@@ -56,14 +57,17 @@ type ProvidersView struct {
 type ProviderView struct {
 	// ProviderName 服务商名，也是配置文件里那个键
 	ProviderName string `json:"provider_name"`
-	BaseURL      string `json:"base_url"`
+	// BaseURL 接口地址
+	BaseURL string `json:"base_url"`
 	// API 接口协议（openai-completions / anthropic-messages …）
 	API string `json:"api"`
 	// Auth 认证方式（api-key / oauth …）
 	Auth string `json:"auth"`
 	// APIKey 打码后的密钥；HasKey 才是「配没配」的判断依据
-	APIKey string       `json:"api_key"`
-	HasKey bool         `json:"has_key"`
+	APIKey string `json:"api_key"`
+	// HasKey 是不是真的配了密钥
+	HasKey bool `json:"has_key"`
+	// Models 这个服务商下的模型列表
 	Models []ModelEntry `json:"models"`
 }
 

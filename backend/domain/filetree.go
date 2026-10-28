@@ -14,7 +14,8 @@ type FileEntryVO struct {
 // FileListVO 一次目录列举的出参。
 type FileListVO struct {
 	// DirPath 相对工作区的目录路径，空串即根目录
-	DirPath string        `json:"dir_path"`
+	DirPath string `json:"dir_path"`
+	// Entries 条目，目录在前
 	Entries []FileEntryVO `json:"entries"`
 	// Truncated 为真表示条目被上限截断，界面要给一句「只看前 N 条」。
 	Truncated bool `json:"truncated"`
@@ -24,7 +25,8 @@ type FileListVO struct {
 type FileReadVO struct {
 	// FilePath 相对工作区的路径
 	FilePath string `json:"file_path"`
-	Content  string `json:"content"`
+	// Content 文件内容（文本文件）；二进制文件为空
+	Content string `json:"content"`
 	// SizeBytes 文件总字节数；Content 可能只是前面一段
 	SizeBytes int64 `json:"size"`
 	// IsBinary 二进制文件：只给标记，不把 PNG 读成乱码

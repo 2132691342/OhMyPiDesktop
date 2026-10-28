@@ -34,15 +34,9 @@ backend/env/
 | 没找到 | 灰点 + **一行可复制的安装命令** + 「去应用页安装」 |
 | 路径无效 | 仍显示「没找到」，但输入框里保留用户填的路径供修正 |
 
-安装命令原文与实际执行的是同一串（收口在 `backend/engine/dist.go`）：
-
-```
-omp: irm https://omp.sh/install.ps1 | iex
-pi : npm i -g --ignore-scripts @earendil-works/pi-coding-agent
-```
-
-它同时做两件事：给人复制，给应用页当真正要跑的命令。渠道判定与代跑流程见
-[apps.md](apps.md)。
+安装命令原文与实际执行的是同一串，收口在 `backend/engine/dist.go`，
+清单见 [apps.md](apps.md) 的「分发事实」。它同时做两件事：给人复制，
+给应用页当真正要跑的命令。渠道判定与代跑流程也在 [apps.md](apps.md)。
 
 ### Layout：两个引擎的落盘位置
 

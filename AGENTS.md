@@ -58,7 +58,8 @@ main.go ──→ service ──→ engine ──→ omp / pi
 | `backend/server` | `service` / `hub` / `pkg` | `wails` |
 | `main.go` | 全部 + `wails` | — |
 
-- **`wails` 只能出现在 `main.go`**。业务层一旦 import 它就再也测不了。
+- **`wails` 只能出现在 `package main`**（`main.go` 与 `tray.go`）。业务层一旦 import
+  它就再也测不了——业务层要能在没有 WebView 的情况下跑测试。
 - 依赖方向单向，不出现环。新增包先问：它该在哪一层，会不会造成反向依赖。
 - `engine/omp` 与 `engine/pi` **互不 import**。需要共用的东西上提到 `engine`。
 
@@ -162,8 +163,13 @@ json tag 同步用 snake_case（`branch_name`）。
 ## 8. 测试
 
 - 只测**会悄无声息错**的地方：协议翻译顺序、块下标、工具结果回填、增量与全量的等价性、
-  分片重组、环形重放的跳号对账、会话文件的三点适配
+  分片重组、环形重放的跳号对账、会话文件的三点适配、配置写入不抹掉别人的键
 - 不测「能不能解析 JSON」「函数有没有被调用」这类不会错的
+- **单元测试不依赖本机环境**：探测引擎与查最新版各有一个接缝
+  （`service.SetDetector` 与 `engine.SetLatestFetcher`），测试里换掉它们。
+  不换的话，测试就变成「测这台机器装了什么、网通不通」
+- **一个包一个测试文件，同一主题合成一条表驱动**。五条散落的用例要改五处、
+  跑起来也慢；一条只改一处
 - 后端：`go test ./backend/... -count=1`
 - 前端：`vue-tsc --noEmit` 是硬门禁；没有 UI 单测（成本高、断言脆）
 - 改了协议翻译或会话投影，必须先跑冒烟：真起一个引擎进程跑一轮
@@ -215,3 +221,19 @@ json tag 同步用 snake_case（`branch_name`）。
 
 `docs/modules/apps.md` 是「装」的唯一落点：它同时是引擎分发的**事实来源**
 （包名、安装器、升级与卸载命令）。改命令先改那里再改代码，不要在别处另写一份。
+
+模块文档的清单与代码目录一一对应：
+
+| 文档 | 覆盖的包 |
+|---|---|
+| `docs/modules/apps.md` | 引擎分发事实 + 应用管理的用例（跨 `engine` 与 `service`） |
+| `docs/modules/env.md` | `env`（探测与落盘布局）+ `env/ompcfg` + `env/picfg` |
+| `docs/modules/session.md` | `session`（会话文件读取与投影） |
+| `docs/modules/skill.md` | `skill`（技能发现与启停）+ 插件的 CLI 装卸 |
+| `docs/modules/subagents.md` | `engine/omp` 的子代理观测台 |
+| `docs/modules/git.md` | `git`（工作区版本状态与白名单写入） |
+| `docs/modules/hub.md` | `hub`（事件总线） |
+| `docs/modules/repo.md` | `repo`（设置存储）+ `platform`（注册表与系统调用） |
+
+没有单独文档的包：`domain`（纯结构体，字段即文档）、`pkg`（叶子工具）、
+`server`（见 API-CONTRACT.md）、`service`（见各模块文档的「用例」一节）。

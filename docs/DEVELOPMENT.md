@@ -128,6 +128,52 @@ curl -H "X-Desktop-Token: <token>" http://127.0.0.1:<port>/api/v1/engines
 | 一个新的落盘位置 | `env/layout.go` | 别在业务代码里拼 `~/.omp` / `~/.pi` |
 | 一个新的 git 动作 | `git/write.go`（索引与提交）/ `git/branch.go`（HEAD 与 refs）/ `git/remote.go`（走网络） | 写后必须重读 status；危险动作要二次确认 |
 
+## 写测试
+
+只测**会悄无声息出错**的地方：协议翻译顺序、块下标、工具结果回填、
+增量与全量的等价性、分片重组、环形重放的跳号对账、会话文件的三点适配、
+配置写入不抹掉别人的键。
+
+不测「能不能解一个 JSON」「字符串能不能切」这类不会错的东西。
+
+### 两条接缝：让测试不依赖本机
+
+单元测试一旦依赖「这台机器装了什么」或「网路通不通」，它就变成测环境而不是测代码。
+这两处各有一个接缝：
+
+```go
+// 探测引擎要起子进程（pi 的 --help 要起一次 Node，几秒）
+restore := service.SetDetector(func(path string, kind engine.Kind) (engine.Identity, error) {
+    return engine.Identity{Kind: kind, Exe: `C:\fake\` + string(kind) + `.exe`,
+        Version: "1.0.0", Channel: engine.ChannelNPM, Caps: engine.CapsFor(kind)}, nil
+})
+defer restore()
+
+// 查上游最新版要连 npm registry 与引擎的构建服务
+restore := engine.SetLatestFetcher(func(ctx context.Context, kind engine.Kind) (string, string) {
+    return "9.9.9", ""
+})
+defer restore()
+```
+
+两个都返回「恢复用的函数」，`t.Cleanup` 里调用即可。
+
+### 一个包一个文件
+
+测试文件与被测包同名（`engine` 包的测试在 `engine_test.go`）。
+同一个主题的用例合成一条表驱动，而不是拆成五条：
+
+```go
+cases := []struct{ name string; ... }{...}
+for _, c := range cases {
+    t.Run(c.name, func(t *testing.T) { ... })
+}
+```
+
+**为什么**：五条散落的用例要改五处，跑起来也慢；一条表驱动只改一处。
+`backend/service/service_test.go` 与 `backend/session/session_test.go` 是范例。
+
+
 ## 改前端时
 
 | 要加的东西 | 放哪 | 检查 |

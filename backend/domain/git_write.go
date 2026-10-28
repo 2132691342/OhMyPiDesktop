@@ -15,15 +15,24 @@ type GitCommitVO struct {
 
 // GitCommitDetailVO 一次提交的完整内容：元信息 + 每个文件 + 逐行差异。
 type GitCommitDetailVO struct {
-	CommitHash  string      `json:"commit_hash"`
-	ShortHash   string      `json:"short_hash"`
-	Subject     string      `json:"subject"`
-	Body        string      `json:"body"`
-	AuthorName  string      `json:"author_name"`
-	CommitTime  int64       `json:"commit_time"`
-	ParentHash  []string    `json:"parent_hash"`
+	// CommitHash 完整 hash
+	CommitHash string `json:"commit_hash"`
+	// ShortHash 短 hash，界面显示用
+	ShortHash string `json:"short_hash"`
+	// Subject 首行提交信息
+	Subject string `json:"subject"`
+	// Body 提交信息全文（首行之外的部分）
+	Body string `json:"body"`
+	// AuthorName 作者名
+	AuthorName string `json:"author_name"`
+	// CommitTime 提交时间，毫秒
+	CommitTime int64 `json:"commit_time"`
+	// ParentHash 父提交 hash；根提交为空
+	ParentHash []string `json:"parent_hash"`
+	// ChangedFile 这提交改动的文件
 	ChangedFile []GitFileVO `json:"changed_file"`
-	Diff        *GitDiffVO  `json:"diff,omitempty"`
+	// Diff 整份提交的逐行差异；点开某个文件时界面改用那个文件的差异
+	Diff *GitDiffVO `json:"diff,omitempty"`
 }
 
 // GitBranchVO 一个分支及其相对上游的领先 / 落后数。
@@ -47,23 +56,29 @@ const GitCommitMsgLimit = 5000
 // GitCommitRESP 一次提交的结果：写后重读的状态 + 新提交的 hash。
 // 返回重读后的状态是为了让界面用一份数据刷新列表，而不是前端自己推断「刚才那个文件现在在哪」。
 type GitCommitRESP struct {
-	Status     *GitStatusVO `json:"status"`
-	CommitHash string       `json:"commit_hash"`
+	// Status 写完后的版本状态
+	Status *GitStatusVO `json:"status"`
+	// CommitHash 新提交的 hash
+	CommitHash string `json:"commit_hash"`
 }
 
 // GitMessageRESP 助手起草的提交信息。Err 非空表示起草失败，界面回落到手写。
 type GitMessageRESP struct {
+	// CommitMessage 起草的提交信息
 	CommitMessage string `json:"commit_message"`
-	Err           string `json:"err"`
+	// Err 起草失败的原因；成功时为空
+	Err string `json:"err"`
 }
 
 // GitPathsREQ 受控写入的公共入参：要操作哪些文件。空表示全部改动。
 type GitPathsREQ struct {
+	// Paths 仓库根相对路径；空表示全部改动
 	Paths []string `json:"paths"`
 }
 
 // GitCommitREQ 提交入参：信息由用户填，助手只起草不代填。
 type GitCommitREQ struct {
+	// CommitMessage 提交信息
 	CommitMessage string `json:"commit_message"`
 	// Amend 把这次提交改写成上一次提交（未推送时才该用，界面二次确认）
 	Amend bool `json:"amend"`
