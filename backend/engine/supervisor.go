@@ -4,18 +4,24 @@
 // 缺引擎时只回答「缺什么」与「装它的命令原文」。
 //
 // 文件分工：
-//   - supervisor.go 类型定义与监督者（按键管理实例、拉起、停止）
+//   - supervisor.go 类型定义与监督者（按键管理实例、拉起、停止、回收）
 //   - process.go    单个引擎进程（启动、重启、发命令）
 //   - session.go    会话相关命令（切换、新建、提问、排队、改设置）
 //   - frames.go     读协程的帧回调与事件投递
+//   - translate.go  事件翻译（块顺序 / 增量 / 工具结果回填 / 分片重组）
+//   - probe.go      版本与种类探测（+ 分发事实 channel.go / dist.go / latest.go）
+//   - rpcparams.go / wire.go   RPC 参数名与共有视图类型
+//   - agents.go     子代理视图模型
 package engine
 
 import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"OhMyPiDesktop/backend/pkg"
 )
@@ -38,13 +44,50 @@ type Engine struct {
 	proc    *Proc
 	tr      *Translator
 	session string
-	runSeq  int
-	runID   string
-	booting bool
-	subs    SubagentStore
+	// sessionFile 是当前会话文件的本地副本，由 State() 与会话绑定维护。
+	// 它存在的唯一目的是让热路径不必为「现在哪个会话」发一次 RPC。
+	sessionFile string
+	runSeq      int
+	runID       string
+	booting     bool
+	subs        SubagentStore
+
+	// lastUsed 是最后一次有人跟这个引擎说话的时刻。
+	// 它是回收的唯一依据：进程在不在跑不等于「有没有人在用」——
+	// 一个刚发完消息、正在等下一句的引擎，进程是活的但下一秒就可能被用到。
+	lastUsed time.Time
 
 	sup     *Supervisor
 	dialect Dialect
+}
+
+// touch 记一次使用。每个对外操作都要调，否则回收会把正在用的引擎停掉。
+func (e *Engine) touch() {
+	e.mu.Lock()
+	e.lastUsed = time.Now()
+	e.mu.Unlock()
+}
+
+// lastUse 返回最后使用时刻。
+func (e *Engine) lastUse() time.Time {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.lastUsed
+}
+
+// lastUseBefore 判断本引擎是否比 other 更久没被用过（排序用）。
+func (e *Engine) lastUseBefore(other *Engine) bool {
+	return e.lastUse().Before(other.lastUse())
+}
+
+// recyclable 判断这个引擎现在能不能安全回收。
+//
+// 两个否决条件：正在流式回答（会打断用户正在看的那一轮）、
+// 正在拉起进程（停掉会留下一个半启动状态的进程）。
+func (e *Engine) recyclable() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.runID == "" && !e.booting
 }
 
 // RunID 返回当前轮 id（空闲为空）。
@@ -79,10 +122,46 @@ func (e *Engine) Subagents() SubagentStore {
 }
 
 // send 走监督者的事件出口：出口可能在装配完成后才注入，不能缓存副本。
+//
+// 每一帧都带上 engine_kind 与 work_dir：两个引擎（以及同一引擎的多个工作目录）
+// 共用同一条 SSE。不带的话，用户切了引擎/目录之后，旧实例仍在推的帧会
+// 被界面当成当前那个的——表现是「切走之后旧会话的正文还在往新会话里跳」。
+// 前端按这两个字段丢弃不属于自己的帧。
 func (e *Engine) send(session, event string, data any) {
-	if fn := e.sup.emitter(); fn != nil {
-		fn(session, event, data)
+	fn := e.sup.emitter()
+	if fn == nil {
+		return
 	}
+	stamp := e.origin()
+	if stamp != nil {
+		data = mergeOrigin(data, stamp)
+	}
+	fn(session, event, data)
+}
+
+// origin 返回本帧的身份标记（nil 表示不附）。
+func (e *Engine) origin() map[string]any {
+	out := map[string]any{"engine_kind": string(e.Kind)}
+	if e.WorkDir != "" {
+		out["work_dir"] = e.WorkDir
+	}
+	return out
+}
+
+// mergeOrigin 把身份标记并进载荷。
+//
+// 载荷绝大多数是 map[string]any（事件载荷都是临时构造的），直接写；
+// 遇到其它类型（少数地方传结构体）就跳过——宁可少两个字段，
+// 也不能因为「附不上标记」把整帧弄丢。
+func mergeOrigin(data any, stamp map[string]any) any {
+	m, ok := data.(map[string]any)
+	if !ok || m == nil {
+		return data
+	}
+	for k, v := range stamp {
+		m[k] = v
+	}
+	return m
 }
 
 // Emit 暴露给 Dialect：私有帧要能复用同一条出口。
@@ -93,6 +172,27 @@ func (e *Engine) Emit(session, event string, data any) { e.send(session, event, 
 // 为什么一个目录一个进程：cwd 是进程级属性，共进程会让工具写到错的目录。
 // 为什么键里带 Kind：同一目录下 omp 与 pi 是两个进程，互不干扰；
 // 用户在输入框里切引擎，切的是「跟哪个进程说话」，不是「换一个目录」。
+// idleTTL 是一个引擎进程空闲多久之后可以被回收。
+//
+// 为什么要有这个值：键是 (引擎, 工作目录)，用户换一个目录就新建一个进程。
+// 没有回收的话，切十次目录就常驻二十个 node 进程（每个还占着几百 MB 的
+// 堆与各自的 MCP 连接），直到退出应用才释放——「多开会话还用不同引擎」
+// 这个场景会直接把机器拖垮。
+//
+// 为什么是 10 分钟而不是更短：切走再切回来是常态（对照另一个目录看一眼），
+// 回收太激进会让每次切回都重新走一遍握手（pi 要起一次 Node，几秒）。
+const idleTTL = 10 * time.Minute
+
+// maxEngines 是同时存活的引擎实例上限。
+//
+// TTL 是「温和的」回收：它只清空闲的。上限是「硬的」兜底——
+// 用户在一分钟内快速切过八个目录时，TTL 还没到但进程已经堆起来了，
+// 这时按最久未用淘汰，保证进程数有界。
+const maxEngines = 8
+
+// sweepInterval 是回收扫描的间隔。
+const sweepInterval = time.Minute
+
 type Supervisor struct {
 	mu      sync.Mutex
 	engines map[string]*Engine
@@ -100,19 +200,131 @@ type Supervisor struct {
 	dialect map[Kind]Dialect
 	resolve func(kind Kind) (string, []string, []string)
 	newSubs func(kind Kind) SubagentStore
+
+	// stop 停掉回收协程；done 等它退出。
+	// 退出应用时要先停回收，否则它会与 StopAll 抢同一把锁、并试图停已经停掉的引擎。
+	stop chan struct{}
+	done chan struct{}
 }
 
 // NewSupervisor 构造监督者。resolve 在每次拉起进程时调用，让「换引擎 / 换路径」立刻生效。
 func NewSupervisor(emit Emitter, dialects map[Kind]Dialect,
 	resolve func(kind Kind) (string, []string, []string),
 	newSubs func(kind Kind) SubagentStore) *Supervisor {
-	return &Supervisor{
+	s := &Supervisor{
 		engines: map[string]*Engine{},
 		emit:    emit,
 		dialect: dialects,
 		resolve: resolve,
 		newSubs: newSubs,
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
 	}
+	go s.sweepLoop()
+	return s
+}
+
+// sweepLoop 周期回收空闲引擎。
+func (s *Supervisor) sweepLoop() {
+	defer close(s.done)
+	ticker := time.NewTicker(sweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.stop:
+			return
+		case <-ticker.C:
+			s.Sweep()
+		}
+	}
+}
+
+// Stats 返回实例数与上限，供「引擎健康」那一屏显示。
+//
+// 把进程数暴露出来的理由：它是「有没有泄漏」的唯一可见信号。
+// 只有日志的话，用户看到的是「机器越来越卡」而不知道为什么。
+func (s *Supervisor) Stats() (live int, max int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.engines), maxEngines
+}
+
+// Sweep 回收空闲引擎与超出上限的引擎，返回被回收的数量。
+//
+// 两条规则，都只碰「能安全停掉的」：
+//  1. 空闲超过 idleTTL 且没有进程在跑、也不在忙；
+//  2. 总数超过 maxEngines 时，按最久未用淘汰到上限为止。
+//
+// 正在流式回答（Busy）的引擎永不回收——回收它等于把用户正在看的那轮打断。
+func (s *Supervisor) Sweep() int {
+	stale := s.pickStale()
+	if len(stale) == 0 {
+		return 0
+	}
+	// 停进程要在锁外做：Stop 会关 stdin、等退出，可能耗时数秒，
+	// 持锁期间整个监督者（包括拉起新引擎）都会卡住。
+	for _, e := range stale {
+		e.Stop()
+	}
+	s.mu.Lock()
+	for _, e := range stale {
+		delete(s.engines, key(e.Kind, e.WorkDir))
+	}
+	s.mu.Unlock()
+	if len(stale) > 0 {
+		pkg.Infof("engine: 回收 %d 个空闲引擎", len(stale))
+	}
+	return len(stale)
+}
+
+// pickStale 挑出该回收的引擎。持锁执行，只做判断不做 I/O。
+func (s *Supervisor) pickStale() []*Engine {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.engines) == 0 {
+		return nil
+	}
+	// 先按「最久未用」排序，两条规则都从这个顺序上取。
+	all := make([]*Engine, 0, len(s.engines))
+	for _, e := range s.engines {
+		all = append(all, e)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].lastUseBefore(all[j]) })
+
+	var out []*Engine
+	cutoff := time.Now().Add(-idleTTL)
+	for _, e := range all {
+		if e.lastUse().After(cutoff) {
+			break // 后面的都更常用
+		}
+		if e.recyclable() {
+			out = append(out, e)
+		}
+	}
+	// 上限兜底：还在 TTL 内也淘汰，直到数量回到 maxEngines
+	if len(s.engines)-len(out) > maxEngines {
+		for _, e := range all {
+			if len(s.engines)-len(out) <= maxEngines {
+				break
+			}
+			if contains(out, e) {
+				continue
+			}
+			if e.recyclable() {
+				out = append(out, e)
+			}
+		}
+	}
+	return out
+}
+
+func contains(list []*Engine, want *Engine) bool {
+	for _, e := range list {
+		if e == want {
+			return true
+		}
+	}
+	return false
 }
 
 // SetEmitter 在服务装配完成后注入事件出口。
@@ -140,10 +352,12 @@ func (s *Supervisor) Engine(kind Kind, workDir string) *Engine {
 	}
 	k := key(kind, workDir)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if e, ok := s.engines[k]; ok {
+		s.mu.Unlock()
+		e.touch()
 		return e
 	}
+	defer s.mu.Unlock()
 	d, ok := s.dialect[kind]
 	if !ok {
 		d = s.dialect[KindOMP]
@@ -154,12 +368,53 @@ func (s *Supervisor) Engine(kind Kind, workDir string) *Engine {
 		tr:      NewTranslator(),
 		sup:     s,
 		dialect: d,
+		// 新建即视为「正在被用」：否则 Sweep 拿到零值时间会立刻把它回收掉，
+		// 而调用方正拿着这个句柄要去拉进程。
+		lastUsed: time.Now(),
 	}
 	if s.newSubs != nil {
 		e.subs = s.newSubs(kind)
 	}
 	s.engines[k] = e
+	// 建完就地做一次上限淘汰。不能只依赖外部调 Sweep：
+	// 取引擎句柄本身就会新建实例（EngineFor 每切一次目录就新增一个键），
+	// 而并发取几十次就能把实例数推得远超上限——压测里实测到 32 个。
+	s.evictLocked()
 	return e
+}
+
+// evictLocked 在持锁状态下把实例数压到上限以内。
+//
+// 只摘除「能安全停掉的」：正在回答（runID 非空）与正在启动（booting）的永不摘。
+// 能回收的不够时就让它超过上限——宁可多一点进程，也不能把用户正在看的那一轮打断。
+//
+// 不在这里同步调 e.Stop()：那会关 stdin、等进程退出（秒级），
+// 持着 s.mu 做这种事会把所有取引擎的调用堵住。所以只从表里摘除，停进程异步做。
+func (s *Supervisor) evictLocked() {
+	if len(s.engines) <= maxEngines {
+		return
+	}
+	candidates := make([]*Engine, 0, len(s.engines))
+	for _, e := range s.engines {
+		if e.recyclable() {
+			candidates = append(candidates, e)
+		}
+	}
+	if len(candidates) == 0 {
+		return
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].lastUse().Before(candidates[j].lastUse())
+	})
+	need := len(s.engines) - maxEngines
+	if need > len(candidates) {
+		need = len(candidates)
+	}
+	for _, e := range candidates[:need] {
+		delete(s.engines, key(e.Kind, e.WorkDir))
+		victim := e
+		go victim.Stop()
+	}
 }
 
 // RunRow 是一个在跑的引擎进程。
@@ -169,6 +424,16 @@ type RunRow struct {
 	PID       int    `json:"pid"`
 	SessionID string `json:"session_id"`
 	Running   bool   `json:"running"`
+	// Protocol 生效的协议版本（0 表示还没握手完）
+	Protocol int `json:"protocol"`
+	// StartedAt 进程拉起的时刻（Unix 毫秒）；没在跑时为 0
+	StartedAt int64 `json:"started_at"`
+	// CallCount 这个进程处理过的命令数
+	CallCount int64 `json:"call_count"`
+	// LastError 最近一次命令失败的原文；没失败过为空
+	LastError string `json:"last_error,omitempty"`
+	// Busy 正在流式回答
+	Busy bool `json:"busy"`
 }
 
 // Running 返回当前在跑的引擎快照。
@@ -182,18 +447,19 @@ func (s *Supervisor) Running() []RunRow {
 	out := make([]RunRow, 0, len(engines))
 	for _, e := range engines {
 		e.mu.Lock()
-		pid, session := 0, e.session
+		run := RunRow{Kind: e.Kind, WorkDir: e.WorkDir, SessionID: e.session, Busy: e.runID != ""}
 		if e.proc != nil {
-			pid = e.proc.Pid()
+			run.PID = e.proc.Pid()
+			run.Protocol = e.proc.Protocol()
+			run.CallCount = e.proc.Calls()
+			run.LastError = e.proc.LastError()
+			if at := e.proc.StartedAt(); !at.IsZero() {
+				run.StartedAt = at.UnixMilli()
+			}
+			run.Running = run.PID != 0
 		}
-		out = append(out, RunRow{
-			Kind:      e.Kind,
-			WorkDir:   e.WorkDir,
-			PID:       pid,
-			SessionID: session,
-			Running:   pid != 0,
-		})
 		e.mu.Unlock()
+		out = append(out, run)
 	}
 	return out
 }
@@ -209,12 +475,36 @@ func (s *Supervisor) running() []*Engine {
 	return out
 }
 
-// StopAll 关闭所有引擎（退出应用 / 重启引擎前）。
+// Shutdown 停掉回收协程。退出应用前必须调，否则回收协程会与 StopAll 抢锁，
+// 并试图停已经被停掉的引擎。
+func (s *Supervisor) Shutdown() {
+	select {
+	case <-s.stop:
+		return // 已经停过
+	default:
+	}
+	close(s.stop)
+	<-s.done
+}
+
+// StopAll 关闭所有引擎并清空实例表（退出应用 / 重启引擎前）。
+//
+// 清空实例表是关键：留着的话，退出后这些句柄仍然持有已死的进程引用，
+// 而 map 本身也永远不会被回收。
 func (s *Supervisor) StopAll() {
-	s.stopAll(s.running())
+	all := s.running()
+	s.stopAll(all)
+	s.mu.Lock()
+	for _, e := range all {
+		delete(s.engines, key(e.Kind, e.WorkDir))
+	}
+	s.mu.Unlock()
 }
 
 // StopKind 只停某一种引擎（换版本 / 换路径后）。
+//
+// 停完要把它们从实例表里摘掉：换引擎路径之后，这些句柄记录的是旧路径的进程，
+// 留着就是僵尸——下次按同一个键取出来的还是它，而它已经连不上新路径了。
 func (s *Supervisor) StopKind(kind Kind) {
 	all := s.running()
 	hit := make([]*Engine, 0, 2)
@@ -224,6 +514,11 @@ func (s *Supervisor) StopKind(kind Kind) {
 		}
 	}
 	s.stopAll(hit)
+	s.mu.Lock()
+	for _, e := range hit {
+		delete(s.engines, key(e.Kind, e.WorkDir))
+	}
+	s.mu.Unlock()
 }
 
 // stopAll 并发停一批实例：一个引擎的退出不该拖住另一个。

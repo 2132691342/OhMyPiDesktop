@@ -67,6 +67,16 @@ type Item struct {
 	Tokens    int               `json:"tokens,omitempty"`
 }
 
+// cacheMax 是单个索引器缓存的会话条数上限。
+//
+// 缓存没有上限的话，它就是一个只增不减的 map：用户的会话会一直累积
+// （本机实测 90 个，重度用户几千个），每条都存着解析出来的元信息。
+// 这不是「几百 KB」的小事——它跨引擎各有一份，且永不释放。
+//
+// 上限取 512 的理由：列表一屏几十条，缓存比可见范围大一个数量级就够了；
+// 再大只是把内存换成「极少命中的命中率」。
+const cacheMax = 512
+
 // Index 是会话文件的读取器，带一层 (size+mtime) 缓存。
 type Index struct {
 	SessionsDir string
@@ -80,6 +90,8 @@ type cacheEntry struct {
 	size  int64
 	mtime time.Time
 	meta  Session
+	// usedAt 是这条缓存最后被读到的时刻，淘汰时按它排序。
+	usedAt time.Time
 }
 
 // NewIndex 构造索引器。Kind 决定标题来源与目录编码的解读方式。
@@ -131,6 +143,8 @@ func (ix *Index) List(workspace string) ([]Session, error) {
 func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 	ix.mu.Lock()
 	if c, ok := ix.cache[path]; ok && c.size == size && c.mtime.Equal(mtime) {
+		c.usedAt = time.Now()
+		ix.cache[path] = c
 		ix.mu.Unlock()
 		return c.meta
 	}
@@ -229,9 +243,50 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 	}
 
 	ix.mu.Lock()
-	ix.cache[path] = cacheEntry{size: size, mtime: mtime, meta: meta}
+	ix.cache[path] = cacheEntry{size: size, mtime: mtime, meta: meta, usedAt: time.Now()}
+	ix.trim()
 	ix.mu.Unlock()
 	return meta
+}
+
+// trim 把缓存裁到上限以内。调用方必须持有 ix.mu。
+//
+// 按 usedAt 淘汰而不是按会话时间：缓存的目的是加速「最近在看的那几屏」，
+// 与会话本身的先后无关。一个一年前的老会话如果刚被打开过，它比
+// 上周但没人看的会话更该留在缓存里。
+func (ix *Index) trim() {
+	if len(ix.cache) <= cacheMax {
+		return
+	}
+	type row struct {
+		path string
+		at   time.Time
+	}
+	rows := make([]row, 0, len(ix.cache))
+	for p, c := range ix.cache {
+		rows = append(rows, row{p, c.usedAt})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].at.Before(rows[j].at) })
+	for _, r := range rows[:len(ix.cache)-cacheMax] {
+		delete(ix.cache, r.path)
+	}
+}
+
+// Invalidate 丢掉一条缓存（会话被删掉 / 改名之后）。
+//
+// 不主动失效的话，删掉的会话会一直出现在缓存里直到被淘汰，
+// 表现是「明明删了，列表里还在」。
+func (ix *Index) Invalidate(path string) {
+	ix.mu.Lock()
+	delete(ix.cache, path)
+	ix.mu.Unlock()
+}
+
+// CacheLen 返回当前缓存的会话文件数（观测 / 测试用）。
+func (ix *Index) CacheLen() int {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	return len(ix.cache)
 }
 
 // Detail 读一个会话的完整内容。

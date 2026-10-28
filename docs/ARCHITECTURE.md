@@ -2,7 +2,7 @@
 
 ## 一句话
 
-`desktop` 是 Wails 壳（`main.go` 只装配资源与版本号）；壳里起一个回环 HTTP 服务；
+`backend/desktop` 是 Wails 壳（`main.go` 只装配资源与版本号）；壳里起一个回环 HTTP 服务；
 前端只跟这个服务说话；服务后面是一个**引擎抽象层**，它按用户选中的引擎
 （omp 或 pi）拉起子进程并翻译其协议。
 
@@ -134,7 +134,7 @@ return」的分支——窗口建出来了但仍是隐藏的；紧随其后的 `
 
 | 事 | 落点 | 读网络 | 起进程 |
 |---|---|---|---|
-| 装在哪、什么版本、什么渠道 | `engine.Probe` + `engine.DetectChannel` | 否 | 是（`--version`） |
+| 装在哪、什么版本、什么渠道 | `engine.Detect` + `engine.DetectChannel` | 否 | 是（`--version`） |
 | 上游最新版是多少 | `engine.QueryLatest` | 是 | 否 |
 | 装 / 升级 / 卸载要跑什么 | `engine` 的分发事实 + `service/apps.go` | 代跑 | 是 |
 
@@ -229,8 +229,11 @@ Supervisor                      // 按 (Kind, WorkDir) 管理 Engine
 
 引擎包内的文件分工：`engine.go` 是抽象（Kind / Caps / Dialect 接口），
 `proc.go` 是进程与命令收发，`readloop.go` 是读协程与分片，`process.go` 是拉起与重启，
-`session.go` 是会话命令，`frames.go` 是帧派发与一轮的收尾。
-改协议翻译时没有「先读哪个」的疑问——帧名差异只在两个 `dialect.go` 里。
+`session.go` 是会话命令，`frames.go` 是帧派发与一轮的收尾，`translate.go` 是事件翻译，
+`supervisor.go` 是按 (Kind, WorkDir) 管理实例的监督者，`probe.go` 是版本与种类探测，
+`channel.go` / `dist.go` / `latest.go` 是装与升级的分发事实，`rpcparams.go` / `wire.go`
+是 RPC 参数名与共有视图类型，`agents.go` 是子代理视图。引擎两家的私有帧差异收口在
+`engine/omp/dialect.go` 与 `engine/pi/dialect.go`，改协议翻译时没有「先读哪个」的疑问。
 
 **Dialect 是唯一的分叉点。** 它只有四个方法：
 
@@ -271,7 +274,7 @@ Supervisor                      // 按 (Kind, WorkDir) 管理 Engine
 | 数据目录 | `%LOCALAPPDATA%\OhMyPiDesktop` | 用户报「设置不对」时最快的排障路径是直接看到那个 JSON 文件 |
 
 这三件事的唯一落点是 `backend/service/prefs.go`，系统调用收在 `backend/platform`
-（它只被 `desktop` 与 service 使用，业务层不该 import 它）。
+（它只被 `backend/desktop` 与 service 使用，业务层不该 import 它）。
 开机自启写入的值带 `--hidden`：登录后只拉起托盘，不往屏幕上弹一个空窗口。
 
 **托盘菜单**因此不是一张固定菜单：它包含「最近工作目录」这一支，

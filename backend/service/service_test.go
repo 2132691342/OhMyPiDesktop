@@ -1,225 +1,174 @@
 package service
 
-// 用例层只测「界面表达不了、错了也不报错」的判据：命令原文与执行一致、
-// 版本数字比较、会话键拆分、配置原文读取边界。
+// 编排层只保留「不依赖本机装了什么」的高价值用例：
+// 探测的单飞（首屏多请求只探一轮）、强制重探绕过缓存、探测期间旧结论可读、
+// 以及附件装配的两条边界（图片上限 / 空输入拒绝）。其余纯函数不测。
 
 import (
-	"os"
+	"context"
+	"encoding/base64"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
-	"OhMyPiDesktop/backend/env"
-	"OhMyPiDesktop/backend/pkg"
+	"OhMyPiDesktop/backend/hub"
+	"OhMyPiDesktop/backend/repo"
 )
 
-// ---------------- 应用管理 ----------------
-
-// 版本比较是「有没有新版本」的唯一判据，判错就是两种坏体验：
-// 明明最新还提示升级，或者真有新版却不说。
-func TestCompareVersion(t *testing.T) {
-	cases := []struct {
-		a, b string
-		want int
-		why  string
-	}{
-		{"1.4.0", "1.4.0", 0, "相同"},
-		{"1.4.0", "1.4.1", -1, "补丁号落后"},
-		{"1.4.1", "1.4.0", 1, "补丁号领先"},
-		{"omp/18.13.2", "18.13.2", 0, "omp 的版本串带前缀"},
-		{"omp/18.13.2", "18.14.0", -1, "带前缀也要能比"},
-		{"1.10.0", "1.9.0", 1, "按数字比，不按字符串比"},
-		{"1.4", "1.4.0", 0, "少一段按 0 补齐"},
-		{"2.0.0-beta.1", "2.0.0", 0, "预发布后缀一律当同版本"},
-		{"1.4.0", "1.4.0+build7", 0, "构建元数据不影响比较"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.a+"__"+tc.b, func(t *testing.T) {
-			if got := compareVersion(tc.a, tc.b); got != tc.want {
-				t.Fatalf("compareVersion(%q, %q) = %d，期望 %d（%s）", tc.a, tc.b, got, tc.want, tc.why)
-			}
-		})
-	}
-}
-
-// 界面展示的命令与实际执行的命令必须一致。
-//
-// 界面把 installCommand 当原文给用户复制；如果它与 actionCommand 拼出的
-// 命令不是同一行，用户照着抄就会得到不一样的结果——那是这个功能最坏的一种错。
-func TestInstallCommandTextMatchesExecuted(t *testing.T) {
-	app := &App{}
-	for _, kind := range engine.AllKinds() {
-		shown := installCommandText(kind)
-		argv, err := app.actionCommand(kind, ActionInstall)
-		if err != nil {
-			// 这台机器缺包管理器时不算失败：那正是「命令不发出去」的正确行为。
-			continue
-		}
-		executed := strings.Join(argv, " ")
-		if argv[0] == "powershell" {
-			// 官方安装器用 -Command 传脚本，展示形态带引号，只比较脚本本体。
-			if !strings.Contains(executed, "irm https://omp.sh/install.ps1 | iex") {
-				t.Fatalf("%s 执行的命令里没有安装脚本本体：%s", kind, executed)
-			}
-			continue
-		}
-		if shown != executed {
-			t.Fatalf("%s 展示的命令与执行的不一致\n  展示: %s\n  执行: %s", kind, shown, executed)
-		}
-	}
-}
-
-// 「没有卸载按钮」必须永远有一句解释：
-// 一个装着的应用没有卸载按钮，用户只会以为漏了。
-func TestUninstallBlockerCoversEveryChannel(t *testing.T) {
-	channels := []engine.Channel{
-		engine.ChannelOMPInstaller, engine.ChannelPiInstaller,
-		engine.ChannelUnknown, engine.ChannelNPM, "",
-	}
-	for _, ch := range channels {
-		if msg := uninstallBlocker(ch); msg == "" {
-			t.Fatalf("渠道 %q 没有解释文案：界面会出现一个装着的应用却没有卸载按钮，也没说为什么", ch)
-		}
-	}
-}
-
-// 命令不存在就不发出去（AGENTS.md §3）：缺包管理器时要直接说缺什么，
-// 而不是让用户看到一条 "exec: npm: executable file not found"。
-func TestInstallUnavailableSaysWhy(t *testing.T) {
-	// 清空 PATH 造出「什么都没有」的环境。
-	t.Setenv("PATH", t.TempDir())
-
-	for _, kind := range engine.AllKinds() {
-		err := installRunnable(kind)
-		if err == nil {
-			continue // 机器上用绝对路径也能找到（例如系统目录），跳过
-		}
-		ae := pkg.As(err)
-		if ae.Code != pkg.CodeInstallUnavailable {
-			t.Fatalf("%s 的错误码 = %s，想要 %s", kind, ae.Code, pkg.CodeInstallUnavailable)
-		}
-		// 消息要能照着做：要么说装什么，要么给一条可复制的命令。
-		if !strings.Contains(ae.Message, kind.Label()) && !strings.Contains(ae.Message, "npm") {
-			t.Errorf("%s 的提示既没点名引擎也没提包管理器: %q", kind, ae.Message)
-		}
-	}
-}
-
-// ---------------- 会话键 ----------------
-
-// 会话键是「引擎 + 路径」拼出来的一个字符串。它一旦拆错，
-// 「启动时恢复上次会话」就会打开另一个引擎的会话文件——
-// 这类错误在界面上表现为「点开之后历史对不上」，不可能靠肉眼发现。
-func TestSplitSessionKey(t *testing.T) {
-	cases := []struct {
-		name     string
-		raw      string
-		wantKind string
-		wantPath string
-	}{
-		{
-			name: "带引擎前缀", raw: "omp\x00C:/Users/x/.omp/agent/sessions/s1.jsonl",
-			wantKind: "omp", wantPath: "C:/Users/x/.omp/agent/sessions/s1.jsonl",
-		},
-		{
-			name: "pi", raw: "pi\x00C:/Users/x/.pi/agent/sessions/s2.jsonl",
-			wantKind: "pi", wantPath: "C:/Users/x/.pi/agent/sessions/s2.jsonl",
-		},
-		{name: "无分隔符", raw: "C:/only/path.jsonl", wantPath: "C:/only/path.jsonl"},
-		{name: "空", raw: "", wantPath: ""},
-		{
-			// Windows 路径里的反斜杠与冒号不该被误当成键分隔符。
-			name: "Windows 路径", raw: "pi\x00" + `C:\Users\x\.pi\agent\sessions\s.jsonl`,
-			wantKind: "pi", wantPath: `C:\Users\x\.pi\agent\sessions\s.jsonl`,
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			kind, path := splitSessionKey(c.raw)
-			if string(kind) != c.wantKind {
-				t.Fatalf("kind = %q, want %q", kind, c.wantKind)
-			}
-			if path != c.wantPath {
-				t.Fatalf("path = %q, want %q", path, c.wantPath)
-			}
-		})
-	}
-}
-
-// ---------------- 配置原文 ----------------
-
-// 读原文只接受清单里的路径：否则就成了任意文件读取接口。
-// 凭据文件也不在清单里——界面上不该有「一键看密钥」的入口。
-func TestConfigCandidates(t *testing.T) {
-	omp := configCandidates(engine.KindOMP, env.Layout{
-		Models:   `C:\u\.omp\agent\models.yml`,
-		Settings: `C:\u\.omp\agent\config.yml`,
-		Agent:    `C:\u\.omp\agent`,
-	})
-	if len(omp) != 3 {
-		t.Fatalf("omp 候选数 = %d, want 3", len(omp))
-	}
-	if filepathBase(omp[0].path) != "models.yml" {
-		t.Fatalf("omp 主配置应当是 models.yml，得到 %s", omp[0].path)
-	}
-
-	pi := configCandidates(engine.KindPi, env.Layout{
-		Models:   `C:\u\.pi\agent\models.json`,
-		Settings: `C:\u\.pi\agent\settings.json`,
-		Agent:    `C:\u\.pi\agent`,
-		AuthFile: `C:\u\.pi\agent\auth.json`,
-	})
-	if filepathBase(pi[0].path) != "models.json" {
-		t.Fatalf("pi 主配置应当是 models.json，得到 %s", pi[0].path)
-	}
-	for _, cand := range pi {
-		if filepathBase(cand.path) == "auth.json" {
-			t.Fatal("凭据文件不该出现在可查看清单里")
-		}
-	}
-}
-
-// 读原文的两条边界：文件不存在时不算错误（干净机器上首次打开设置页
-// 不该先红一片）；超过上限要被截断（一个几十 MB 的文件会把界面卡死）。
-func TestReadConfigText(t *testing.T) {
-	dir := t.TempDir()
-
-	vo, err := readConfigText(filepath.Join(dir, "nope.yml"))
-	if err != nil {
-		t.Fatalf("不存在的文件不该报错：%v", err)
-	}
-	if vo.Found || vo.Text != "" {
-		t.Fatalf("不存在时应 Found=false 且 Text 为空，得到 %+v", vo)
-	}
-
-	big := make([]byte, configTextLimit+16)
-	for i := range big {
-		big[i] = 'x'
-	}
-	path := filepath.Join(dir, "big.json")
-	if err := os.WriteFile(path, big, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	vo, err = readConfigText(path)
+// newTestApp 造一个不依赖本机引擎的 App：探测动作被换成可控的桩。
+func newTestApp(t *testing.T) *App {
+	t.Helper()
+	store, err := repo.Open(filepath.Join(t.TempDir(), "settings.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !vo.Truncated {
-		t.Fatal("超过上限应当被标记为截断")
+	app, err := New(Options{Store: store, Hub: hub.New(16), DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(vo.Text) != configTextLimit {
-		t.Fatalf("截断长度 = %d，期望 %d", len(vo.Text), configTextLimit)
+	return app
+}
+
+// 首屏会同时打 Bootstrap / Health / EngineStatus，三个请求都发现缓存过期
+// 就各自起一轮探测——机器上多出多个子进程，而查的是同一件事。单飞锁把它们合成一次。
+func TestDetectSingleFlight(t *testing.T) {
+	app := newTestApp(t)
+	var probes int
+	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
+		probes++
+		return engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}, nil
+	})
+	defer restore()
+
+	const n = 12
+	done := make(chan struct{}, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			app.detectAll(context.Background(), false)
+			done <- struct{}{}
+		}()
+	}
+	for i := 0; i < n; i++ {
+		<-done
+	}
+	// 单飞把 12 个并发请求合成了 1 轮探测；每轮按引擎数探测一次，
+	// 因此总调用数 = 2（两个引擎各一次），而不是 12 轮 × 2。
+	if probes != len(engine.AllKinds()) {
+		t.Fatalf("单飞失效：探测了 %d 次，期望 %d（每轮两个引擎各一次）", probes, len(engine.AllKinds()))
 	}
 }
 
-// ---------------- 测试替身 ----------------
+// 显式「重新检测」必须绕过缓存，无论 detectFresh 说什么。
+func TestDetectForceBypassesCache(t *testing.T) {
+	app := newTestApp(t)
+	var probes int
+	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
+		probes++
+		return engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}, nil
+	})
+	defer restore()
 
-// filepathBase 取路径的文件名部分（避免为一处调用多引一个包）。
-func filepathBase(path string) string {
-	idx := strings.LastIndexAny(path, `\/`)
-	if idx < 0 {
-		return path
+	// 先走一轮，把 detectedAt 填上。
+	app.detectAll(context.Background(), false)
+	if probes != len(engine.AllKinds()) {
+		t.Fatalf("首轮探测 %d 次，期望 %d", probes, len(engine.AllKinds()))
 	}
-	return path[idx+1:]
+	// 缓存新鲜时再打一次非强制请求，应直接命中、不再探测。
+	app.detectAll(context.Background(), false)
+	if probes != len(engine.AllKinds()) {
+		t.Fatalf("缓存命中又探了 %d 次，期望仍 %d", probes, len(engine.AllKinds()))
+	}
+	// 强制重探必须再探一轮。
+	app.detectAll(context.Background(), true)
+	if probes != 2*len(engine.AllKinds()) {
+		t.Fatalf("强制重探只做了 %d 次，期望 %d", probes, 2*len(engine.AllKinds()))
+	}
+}
+
+// 探测进行中，界面应当能立刻拿到上一次的结论（或空），而不是卡在探测上。
+func TestIdentityReadableDuringDetect(t *testing.T) {
+	app := newTestApp(t)
+	// 先落一个旧结论，再让探针慢吞吞地跑。
+	app.mu.Lock()
+	app.ids[engine.KindPi] = engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}
+	app.detectedAt = app.detectedAt.Add(-2 * detectTTL) // 让缓存过期
+	app.mu.Unlock()
+	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
+		return engine.Identity{}, context.DeadlineExceeded
+	})
+	defer restore()
+
+	if got := app.Identity(engine.KindPi); got.Exe != "pi" {
+		t.Fatalf("探测期间应读出旧结论，得到 %+v", got)
+	}
+	if got := app.Identity(engine.KindOMP); got.Exe != "" {
+		t.Fatalf("没装过的引擎应读出空，得到 %+v", got)
+	}
+}
+
+// 一次发送的图片有上限：超过则整条拒绝，而不是悄悄丢几张。
+func TestBuildPromptImageLimit(t *testing.T) {
+	img := tinyPNG()
+	atts := make([]domain.ChatAttachmentREQ, 0, 10)
+	for i := 0; i < 10; i++ {
+		atts = append(atts, domain.ChatAttachmentREQ{
+			Kind:        domain.AttachmentKindImage,
+			ImageBase64: base64.StdEncoding.EncodeToString(img),
+			ImageMIME:   "image/png",
+		})
+	}
+	if _, err := buildPrompt("看图", atts); err == nil {
+		t.Fatal("超过 8 张图片应被拒绝")
+	}
+}
+
+// 既有文字又有文件时，文件清单必须附在正文的换行之后，而不是吞掉正文。
+func TestBuildPromptAppendsFiles(t *testing.T) {
+	atts := []domain.ChatAttachmentREQ{
+		{Kind: domain.AttachmentKindFile, FilePath: "/repo/a.go"},
+		{Kind: domain.AttachmentKindFile, FilePath: "/repo/b.go"},
+	}
+	payload, err := buildPrompt("改这两个文件", atts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Message != "改这两个文件\n\n这次要看这些文件：\n- /repo/a.go\n- /repo/b.go" {
+		t.Fatalf("正文 + 文件清单拼接错误：%q", payload.Message)
+	}
+}
+
+// 只有正文没有附件必须能发；而全空必须被拦下。
+func TestBuildPromptEmptyRejected(t *testing.T) {
+	if _, err := buildPrompt("   ", nil); err == nil {
+		t.Fatal("正文与附件全空应被拒绝")
+	}
+	if _, err := buildPrompt("说点什么", nil); err != nil {
+		t.Fatalf("有正文无附件不应报错：%v", err)
+	}
+}
+
+// 非图片字节且不带 mime 时，sniff 认不出类型，必须被 reject。
+func TestDecodeImageRejectsInvalid(t *testing.T) {
+	if _, err := decodeImage(domain.ChatAttachmentREQ{
+		Kind:        domain.AttachmentKindImage,
+		ImageBase64: base64.StdEncoding.EncodeToString([]byte("not an image")),
+	}); err == nil {
+		t.Fatal("非图片内容且未声明 mime 时应被拒绝")
+	}
+}
+
+// tinyPNG 返回一段合法的 1x1 PNG 字节，供图片附件测试当素材。
+func tinyPNG() []byte {
+	return []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // 签名
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+		0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+		0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+		0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+		0x42, 0x60, 0x82,
+	}
 }

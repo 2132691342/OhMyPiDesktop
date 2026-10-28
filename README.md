@@ -86,9 +86,9 @@
 
 ```
 OhMyPiDesktop/
-├── main.go                 入口：embed 前端产物 + 版本号，交给 desktop
-├── desktop/                Wails 外壳：窗口 / 托盘 / 单实例 / 绑定给前端的系统能力
+├── main.go                 入口：embed 前端产物 + 版本号，交给 backend/desktop
 ├── backend/
+│   ├── desktop/            Wails 外壳：窗口 / 托盘 / 单实例 / 绑定给前端的系统能力
 │   ├── engine/             引擎抽象：Kind / Caps / Proc / Translator / Supervisor / Probe
 │   │   │                   + 分发事实（dist.go / channel.go / latest.go）
 │   │   ├── omp/            omp：ready 握手、v2 分片、子代理、私有帧
@@ -185,7 +185,7 @@ task smoke -- -engine pi  -msg "Reply with exactly: OK"
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | 与两个引擎的 RPC 契约、握手差异、帧处置、不变量 |
 | [docs/API-CONTRACT.md](docs/API-CONTRACT.md) | HTTP 与 SSE 契约、SSE 服务端实现要点 |
 | [docs/DATA-MODEL.md](docs/DATA-MODEL.md) | 哪些数据属于引擎、哪些属于本应用、写边界 |
-| [docs/PAGE-STRUCTURE.md](docs/PAGE-STRUCTURE.md) | 九个页面的骨架与引擎差异 |
+| [docs/PAGE-STRUCTURE.md](docs/PAGE-STRUCTURE.md) | 十一个页面的骨架与引擎差异 |
 | [docs/ERROR-CODES.md](docs/ERROR-CODES.md) | 错误码段位与**前端处置表** |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 环境、命令、调试真实引擎、改代码时改什么 |
 | [docs/modules/desktop.md](docs/modules/desktop.md) | 桌面壳：窗口为什么等前端 Ready()、托盘、单实例、绑定面 |

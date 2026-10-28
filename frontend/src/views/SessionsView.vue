@@ -97,26 +97,26 @@ function onChanged() {
 
     <div class="page-body">
       <section class="summary">
-        <div class="summary-head">
-          <span class="omp-section-title">{{ t('sessions.thisWorkspace') }}</span>
-          <span class="summary-scope selectable" :title="app.workspace">{{ app.workspace }}</span>
+        <div class="omp-sec-head">
+          <span class="omp-sec-title">{{ t('sessions.thisWorkspace') }}</span>
+          <span class="omp-mono summary-scope selectable" :title="app.workspace">{{ app.workspace }}</span>
         </div>
         <div class="stat-row">
-          <div class="stat">
-            <span class="stat-label">{{ t('nav.sessions') }}</span>
-            <span class="stat-value">{{ counts.sessions }}</span>
+          <div class="omp-card card-pad stat">
+            <span class="omp-metric-label">{{ t('nav.sessions') }}</span>
+            <span class="omp-metric">{{ counts.sessions }}</span>
           </div>
-          <div class="stat">
-            <span class="stat-label">{{ t('sessions.messages') }}</span>
-            <span class="stat-value">{{ counts.messages }}</span>
+          <div class="omp-card card-pad stat">
+            <span class="omp-metric-label">{{ t('sessions.messages') }}</span>
+            <span class="omp-metric">{{ counts.messages }}</span>
           </div>
-          <div class="stat">
-            <span class="stat-label">{{ t('sessions.tokens') }}</span>
-            <span class="stat-value">{{ formatTokens(counts.tokens) }}</span>
+          <div class="omp-card card-pad stat">
+            <span class="omp-metric-label">{{ t('sessions.tokens') }}</span>
+            <span class="omp-metric">{{ formatTokens(counts.tokens) }}</span>
           </div>
-          <div class="stat">
-            <span class="stat-label">{{ t('sessions.cost') }}</span>
-            <span class="stat-value">${{ counts.cost.toFixed(2) }}</span>
+          <div class="omp-card card-pad stat">
+            <span class="omp-metric-label">{{ t('sessions.cost') }}</span>
+            <span class="omp-metric">${{ counts.cost.toFixed(2) }}</span>
           </div>
         </div>
       </section>
@@ -200,23 +200,9 @@ function onChanged() {
   flex: none;
 }
 
-.summary-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--omp-sp-3);
-  margin-bottom: var(--omp-sp-2);
-}
-
-.summary-head .omp-section-title {
-  margin-bottom: 0;
-}
-
 .summary-scope {
   flex: 1;
   min-width: 0;
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -233,22 +219,6 @@ function onChanged() {
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.stat-label {
-  font-size: var(--omp-fs-3xs);
-  font-weight: 650;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--omp-faint);
-}
-
-.stat-value {
-  font-family: var(--omp-font-display);
-  font-size: var(--omp-fs-xl);
-  font-weight: 600;
-  color: var(--omp-ink);
-  font-variant-numeric: tabular-nums;
 }
 
 .list-panel {

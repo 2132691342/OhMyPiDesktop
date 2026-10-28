@@ -12,6 +12,7 @@ import (
 //
 // 并发拉起的语义：第二个调用方等第一个的结论，而不是自己也去拉一个进程。
 func (e *Engine) Client(ctx context.Context) (*Proc, error) {
+	e.touch()
 	e.mu.Lock()
 	if e.proc != nil {
 		select {
@@ -108,6 +109,9 @@ func (e *Engine) boot(ctx context.Context) (*Proc, error) {
 // Stop 关闭引擎进程。
 func (e *Engine) Stop() {
 	e.mu.Lock()
+	// 停掉之后也算「刚用过」：StopKind 之后的实例已被摘除，
+	// 而手动停止的场景（重启引擎）紧接着就会重新拉起，不该被回收抢先。
+	e.lastUsed = time.Now()
 	p := e.proc
 	e.proc = nil
 	e.runID = ""
@@ -126,6 +130,7 @@ func (e *Engine) Restart(ctx context.Context) error {
 
 // Call 在已就绪的进程上发一条命令。
 func (e *Engine) Call(ctx context.Context, command string, params any, out any, timeout time.Duration) error {
+	e.touch()
 	p, err := e.Client(ctx)
 	if err != nil {
 		return err

@@ -1,9 +1,15 @@
 <script setup lang="ts">
-// 插件页：装 / 卸 / 重启。全部走引擎自己的 CLI（omp plugin / pi install），
-// 本应用不自己解 node_modules——那会造出第二套真相。
+// 插件页：列、装、卸。
+//
+// 列表来自引擎自己的登记清单（pi 是 settings.json 的 packages，
+// omp 是 plugins/package.json 的 dependencies），不是扫 node_modules——
+// 扫目录会把几百个间接依赖一起当成插件。
+//
+// 装 / 卸仍然代跑引擎自己的 CLI：只有引擎知道怎么把包装进它的私有目录、
+// 怎么同步它自己的锁文件。我们自己去改目录会留下「配置说装了、目录里没有」的脏状态。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
@@ -15,12 +21,15 @@ const app = useAppStore()
 const toasts = useToasts()
 
 const rows = ref<PluginRow[]>([])
+const registry = ref('')
+const readError = ref('')
 const loading = ref(false)
 const busyName = ref('')
 const source = ref('')
 const installing = ref(false)
 const output = ref('')
 const restarting = ref(false)
+
 const kind = computed<EngineKind>(() => app.active)
 const caps = computed(() => app.capsOf(kind.value))
 
@@ -29,6 +38,8 @@ async function load() {
   try {
     const data = await api.plugins(kind.value)
     rows.value = data.plugins ?? []
+    registry.value = data.registry_path ?? ''
+    readError.value = data.read_error ?? ''
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
@@ -45,31 +56,36 @@ async function install() {
     const res = await api.installPlugin(target, kind.value)
     output.value = res.output
     source.value = ''
-    toasts.push('ok', t('common.saved'))
+    ElMessage.success(t('plugins.installed'))
     await load()
   } catch (err) {
+    output.value = err instanceof Error ? err.message : String(err)
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
     installing.value = false
   }
 }
 
+// 卸的是清单里那一行原文而不是裸包名：pi 的 packages 记的是
+// `npm:name@1.2.3`，只给裸名会匹配不到。
 async function uninstall(row: PluginRow) {
   try {
-    await ElMessageBox.confirm(t('plugins.uninstallConfirm', { name: row.name }), t('plugins.uninstallTitle'), {
-      confirmButtonText: t('common.uninstall'),
-      cancelButtonText: t('common.cancel'),
-      type: 'warning',
-    })
+    await ElMessageBox.confirm(
+      t('plugins.uninstallConfirm', { name: row.plugin_name }),
+      t('plugins.uninstallTitle'),
+      { confirmButtonText: t('common.uninstall'), cancelButtonText: t('common.cancel'), type: 'warning' },
+    )
   } catch {
     return
   }
-  busyName.value = row.name
+  busyName.value = row.plugin_name
+  output.value = ''
   try {
-    const res = await api.uninstallPlugin(row.name, kind.value)
+    const res = await api.uninstallPlugin(row.plugin_source, kind.value)
     output.value = res.output
     await load()
   } catch (err) {
+    output.value = err instanceof Error ? err.message : String(err)
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
     busyName.value = ''
@@ -81,12 +97,17 @@ async function restart() {
   try {
     await api.restartEngines(kind.value)
     await app.refreshEngines()
-    toasts.push('ok', t('common.saved'))
+    ElMessage.success(t('common.saved'))
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
     restarting.value = false
   }
+}
+
+function resourceLabel(kinds: string[]): string {
+  if (!kinds?.length) return '—'
+  return kinds.join(' · ')
 }
 
 watch(kind, () => {
@@ -110,30 +131,37 @@ onMounted(load)
           <AppIcon name="refresh" :size="14" />
           {{ t('plugins.restart') }}
         </button>
-        <button class="omp-btn icon ghost" :title="t('common.refresh')" :class="{ 'is-loading': loading }" @click="load">
+        <button class="omp-btn icon ghost" :class="{ 'is-loading': loading }" :title="t('common.refresh')" @click="load">
           <AppIcon name="refresh" :size="15" />
         </button>
       </div>
     </header>
 
-    <div v-if="!caps?.extensions" class="empty-block">
-      <div class="empty-mark"><AppIcon name="plug" :size="22" /></div>
-      <p class="empty-title">{{ t('plugins.unsupported') }}</p>
-      <p class="empty-hint">{{ t('plugins.unsupportedHint', { engine: kind }) }}</p>
+    <div v-if="!caps?.extensions" class="omp-empty">
+      <span class="omp-tile omp-tile--lg omp-tile--neutral"><AppIcon name="plug" :size="22" /></span>
+      <p class="omp-empty-title">{{ t('plugins.unsupported') }}</p>
+      <p class="omp-empty-hint">{{ t('plugins.unsupportedHint', { engine: kind }) }}</p>
     </div>
 
     <div v-else class="page-body">
-      <section class="install-card card-pad">
-        <div class="omp-section-title">{{ t('plugins.installTitle') }}</div>
+      <section class="omp-card card-pad install-card">
+        <div class="omp-sec-head">
+          <span class="omp-sec-title">{{ t('plugins.installTitle') }}</span>
+        </div>
         <div class="install-row">
-          <input
+          <el-input
             v-model="source"
-            class="omp-input"
             :placeholder="t('plugins.installPlaceholder')"
             :disabled="installing"
+            size="small"
             @keyup.enter="install"
           />
-          <button class="omp-btn primary" :class="{ 'is-loading': installing }" :disabled="installing || !source.trim()" @click="install">
+          <button
+            class="omp-btn primary"
+            :class="{ 'is-loading': installing }"
+            :disabled="installing || !source.trim()"
+            @click="install"
+          >
             <AppIcon name="download" :size="14" />
             {{ t('common.install') }}
           </button>
@@ -141,59 +169,80 @@ onMounted(load)
         <p class="hint">{{ t('plugins.restartHint') }}</p>
       </section>
 
-      <section v-if="output" class="card-pad output-card">
-        <div class="omp-section-title">{{ t('plugins.output') }}</div>
+      <p v-if="readError" class="notice">
+        <AppIcon name="alert" :size="14" />
+        {{ readError }}
+      </p>
+
+      <section v-if="output" class="omp-card card-pad">
+        <div class="omp-sec-head">
+          <span class="omp-sec-title">{{ t('plugins.output') }}</span>
+        </div>
         <pre class="output selectable">{{ output }}</pre>
       </section>
 
       <section>
-        <div class="omp-section-title">{{ t('nav.plugins') }} <span class="count">{{ rows.length }}</span></div>
-        <div v-if="!rows.length && !loading" class="empty">
-          <div class="empty-mark"><AppIcon name="plug" :size="22" /></div>
-          <p class="empty-title">{{ t('plugins.emptyTitle') }}</p>
-          <p class="empty-hint">{{ t('plugins.emptyHint') }}</p>
+        <div class="omp-sec-head">
+          <span class="omp-sec-title">{{ t('nav.plugins') }} <span class="count">{{ rows.length }}</span></span>
+          <span v-if="registry" class="omp-mono registry">{{ registry }}</span>
         </div>
-        <div v-else class="grid">
-          <article v-for="row in rows" :key="row.name" class="plugin-card card-pad">
-            <div class="plugin-head">
-              <div class="plugin-title">
-                <span class="plugin-name">{{ row.name }}</span>
-                <span class="tag">{{ row.version }}</span>
+
+        <div v-if="!rows.length && !loading" class="omp-empty">
+          <span class="omp-tile omp-tile--lg omp-tile--neutral"><AppIcon name="plug" :size="22" /></span>
+          <p class="omp-empty-title">{{ t('plugins.emptyTitle') }}</p>
+          <p class="omp-empty-hint">{{ t('plugins.emptyHint') }}</p>
+        </div>
+
+        <el-table v-else :data="rows" size="small">
+          <el-table-column :label="t('plugins.name')" min-width="180">
+            <template #default="{ row }">
+              <div class="cell-name">
+                <span class="name">{{ row.plugin_name }}</span>
+                <span v-if="row.plugin_desc" class="desc">{{ row.plugin_desc }}</span>
               </div>
-              <span class="tag brand">{{ row.kind }}</span>
-            </div>
-            <div class="plugin-meta">
-              <span v-if="row.source" class="tag mono">{{ row.source }}</span>
-            </div>
-            <div class="plugin-path selectable">{{ row.path }}</div>
-            <div class="plugin-actions">
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('plugins.version')" width="92">
+            <template #default="{ row }">
+              <span class="omp-mono">{{ row.plugin_version || '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('plugins.resources')" width="120">
+            <template #default="{ row }">
+              <span class="omp-mono">{{ resourceLabel(row.resource_kinds) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('plugins.state')" width="96">
+            <template #default="{ row }">
+              <span class="tag" :class="row.installed ? 'ok' : 'warn'">
+                {{ row.installed ? t('plugins.installedState') : t('plugins.missingState') }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('plugins.path')" min-width="180">
+            <template #default="{ row }">
+              <span class="omp-mono clip">{{ row.plugin_path || '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('common.actions')" width="96" align="right">
+            <template #default="{ row }">
               <button
                 class="omp-btn text sm danger"
-                :class="{ 'is-loading': busyName === row.name }"
+                :class="{ 'is-loading': busyName === row.plugin_name }"
                 :disabled="Boolean(busyName)"
                 @click="uninstall(row)"
               >
                 {{ t('common.uninstall') }}
               </button>
-            </div>
-          </article>
-        </div>
+            </template>
+          </el-table-column>
+        </el-table>
       </section>
     </div>
   </div>
 </template>
 
 <style scoped>
-.empty-block {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--omp-sp-2);
-  padding: var(--omp-sp-10);
-}
-
 .page {
   display: flex;
   flex-direction: column;
@@ -221,7 +270,7 @@ onMounted(load)
 
 .page-sub {
   margin: 4px 0 0;
-  max-width: var(--omp-w-desc, 620px);
+  max-width: var(--omp-w-desc);
   font-size: var(--omp-fs-sm);
   line-height: 1.65;
   color: var(--omp-mute);
@@ -236,10 +285,10 @@ onMounted(load)
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--omp-sp-5) var(--omp-sp-6) var(--omp-sp-10);
+  padding: var(--omp-sp-5) var(--omp-sp-6) var(--omp-sp-12);
   display: flex;
   flex-direction: column;
-  gap: var(--omp-sp-5);
+  gap: var(--omp-sp-4);
 }
 
 .install-card {
@@ -255,6 +304,19 @@ onMounted(load)
   margin: var(--omp-sp-2) 0 0;
   font-size: var(--omp-fs-2xs);
   color: var(--omp-faint);
+  line-height: var(--omp-lh-base);
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  margin: 0;
+  padding: var(--omp-sp-2) var(--omp-sp-3);
+  border-radius: var(--omp-r);
+  background: var(--omp-warn-soft);
+  color: var(--omp-warn);
+  font-size: var(--omp-fs-xs);
 }
 
 .output {
@@ -278,98 +340,38 @@ onMounted(load)
   text-transform: none;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: var(--omp-sp-3);
+.registry {
+  margin-left: auto;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.plugin-card {
+.cell-name {
   display: flex;
   flex-direction: column;
-  gap: var(--omp-sp-2);
-  transition:
-    transform var(--omp-dur-fast) var(--omp-ease),
-    box-shadow var(--omp-dur-fast) var(--omp-ease);
-}
-
-.plugin-card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--omp-shadow-lift);
-}
-
-.plugin-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--omp-sp-2);
-}
-
-.plugin-title {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
   min-width: 0;
 }
 
-.plugin-name {
-  font-size: var(--omp-fs-sm);
+.name {
   font-weight: 650;
   color: var(--omp-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.plugin-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.plugin-path {
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plugin-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  padding: var(--omp-sp-10);
-  text-align: center;
-}
-
-.empty-mark {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--omp-r-lg);
-  background: var(--omp-brand-soft);
-  color: var(--omp-brand);
-}
-
-.empty-title {
-  margin: 0;
-  font-size: var(--omp-fs-sm);
-  font-weight: 600;
-  color: var(--omp-ink);
-}
-
-.empty-hint {
-  margin: 0;
+.desc {
   font-size: var(--omp-fs-2xs);
   color: var(--omp-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip {
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

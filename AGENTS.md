@@ -30,7 +30,7 @@
 ## 1. 分层与依赖方向
 
 ```
-main.go ──→ desktop ──→ server ──→ service ──→ engine ──→ omp / pi
+main.go ──→ backend/desktop ──→ server ──→ service ──→ engine ──→ omp / pi
      │         │            │           │           │
      │         │            │           │           └──→ pkg
      │         │            │           ├──→ env / session / skill / git
@@ -40,8 +40,12 @@ main.go ──→ desktop ──→ server ──→ service ──→ engine �
      └──→ pkg
 ```
 
-`desktop` 是唯一 import `wails` 的包：窗口、托盘、单实例、绑定给前端的
+`backend/desktop` 是唯一 import `wails` 的包：窗口、托盘、单实例、绑定给前端的
 系统能力全在那里。`main.go` 只做装配（内嵌资源 + 版本号）。
+
+桌面层也在 `backend/` 下：它依赖 `backend/*`，放外面会让人以为它是「比 backend
+更高的一层」，而实际上它只是 backend 里唯一碰 `wails` 的那个包。
+根目录因此只剩 `main.go` 一个 Go 文件。
 
 硬规则：
 
@@ -57,14 +61,14 @@ main.go ──→ desktop ──→ server ──→ service ──→ engine �
 | `backend/env` | `pkg` / `engine`（只读 `Identity` 等结果类型） | `omp` / `pi` 的具体实现 |
 | `backend/env/ompcfg` / `picfg` | `pkg` | `env` / `engine` / `service` |
 | `backend/git` | `domain` / `pkg` | `service` / `engine` / `env` |
-| `backend/platform` | `pkg` | `service` / `engine` / `env` / `domain`（只给 `desktop` 与 service 用） |
+| `backend/platform` | `pkg` | `service` / `engine` / `env` / `domain`（只给 `backend/desktop` 与 service 用） |
 | `backend/session` / `skill` | `pkg` / `domain` | `service` / `server` / `engine` 实现 |
-| `backend/service` | 以上全部 | `server` / `desktop` / 任何 `wails` |
+| `backend/service` | 以上全部 | `server` / `backend/desktop` / 任何 `wails` |
 | `backend/server` | `service` / `hub` / `pkg` | `wails` |
-| `desktop` | `backend/*` + `wails` | 被 `backend/*` 反向依赖 |
-| `main.go` | `desktop` / `pkg` | 堆积启动逻辑 |
+| `backend/desktop` | `backend/*` + `wails` | 被 `backend/*` 反向依赖 |
+| `main.go` | `backend/desktop` / `pkg` | 堆积启动逻辑 |
 
-- **`wails` 只能出现在 `desktop` 与 `package main` 两个地方**。业务层一旦 import
+- **`wails` 只能出现在 `backend/desktop` 与 `package main` 两个地方**。业务层一旦 import
   它就再也测不了——业务层要能在没有 WebView 的情况下跑测试。
 - 依赖方向单向，不出现环。新增包先问：它该在哪一层，会不会造成反向依赖。
 - `engine/omp` 与 `engine/pi` **互不 import**。需要共用的东西上提到 `engine`。
@@ -73,7 +77,7 @@ main.go ──→ desktop ──→ server ──→ service ──→ engine �
 
 | 概念 | 唯一落点 | 不许 |
 |---|---|---|
-| 引擎进程 | `backend/engine` | 在 service 里 `exec.Command`（例外：跑引擎自己的 CLI 取插件列表，收口在 `service/proc.go`） |
+| 引擎进程 | `backend/engine` | 在 service 里 `exec.Command`（例外：跑引擎自己的 CLI 取插件列表与 MCP 状态，收口在 `service/proc.go`） |
 | 「这个引擎能干什么」 | `backend/engine/engine.go` 的 `Caps` | 在 service / 前端里 `if kind ==` |
 | 引擎探测（版本与种类） | `backend/engine/probe.go` | 在 service 里跑 `--version` |
 | 引擎的分发事实（包名 / 安装器 / 升级 / 卸载命令） | `backend/engine/dist.go` | 在 service 或前端里拼引擎命令 |
@@ -81,7 +85,10 @@ main.go ──→ desktop ──→ server ──→ service ──→ engine �
 | 上游最新版查询 | `backend/engine/latest.go` | 在 service 里发外网请求 |
 | 装 / 升级 / 卸载的用例与并发保护 | `backend/service/apps.go` + `appexec.go` | 在 handler 里 `exec.Command` |
 | 一个引擎的落盘布局 | `backend/env/layout.go` | 在别处拼 `~/.omp/...` 或 `~/.pi/...` |
-| 引擎配置文件格式 | `backend/env/ompcfg`（YAML）/ `picfg`（JSONC） | 在别处 `yaml.Unmarshal` / `json.Unmarshal` 那些文件 |
+| 引擎配置文件格式 | `backend/env/ompcfg`（YAML）/ `picfg`（JSONC）/ `mcpcfg`（mcp.json） | 在别处 `yaml.Unmarshal` / `json.Unmarshal` 那些文件 |
+| 插件登记清单 | `backend/env/pluginreg.go` | 扫 `node_modules` 猜装了什么（会把间接依赖当插件） |
+| MCP 配置读写与启用优先级 | `backend/env/mcpcfg` | 在 service 或前端里排 `disabledServers` / `enabled` 的顺序 |
+| 引擎健康快照（一屏的全部事实） | `backend/service/engines.go` 的 `Health` | 前端为概览页连打四五个接口再自己拼 |
 | 会话文件格式 | `backend/session` | 在 service 里解 JSONL |
 | 技能发现规则 | `backend/skill` | 在 service 里扫目录 |
 | 事件出口 | `backend/hub` | 在 handler 里直接写 SSE 帧 |
@@ -175,7 +182,10 @@ json tag 同步用 snake_case（`branch_name`）。
   （`service.SetDetector` 与 `engine.SetLatestFetcher`），测试里换掉它们。
   不换的话，测试就变成「测这台机器装了什么、网通不通」
 - **一个包一个测试文件，同一主题合成一条表驱动**。五条散落的用例要改五处、
-  跑起来也慢；一条只改一处
+  跑起来也慢；一条只改一处。删掉测了等于没测的用例（只断言「能解析 JSON」「函数被调用」）
+  与重复覆盖同一分支的用例，只留「会悄无声息错」的长链路：跨引擎投影等价、增量与全量等价、
+  分片重组丢弃残缺、实例回收有界、探测单飞。复用已有 helper（如 `fakeDialect` / `writeSession`），
+  不在各测试文件里重新定义
 - 后端：`go test ./backend/... -count=1`
 - 前端：`vue-tsc --noEmit` 是硬门禁；没有 UI 单测（成本高、断言脆）
 - 改了协议翻译或会话投影，必须先跑冒烟：真起一个引擎进程跑一轮
@@ -232,10 +242,11 @@ json tag 同步用 snake_case（`branch_name`）。
 
 | 文档 | 覆盖的包 |
 |---|---|
-| `docs/modules/desktop.md` | `desktop`（Wails 外壳：窗口 / 托盘 / 单实例 / 绑定） |
+| `docs/modules/desktop.md` | `backend/desktop`（Wails 外壳：窗口 / 托盘 / 单实例 / 绑定） |
 | `docs/modules/apps.md` | 引擎分发事实 + 应用管理的用例（跨 `engine` 与 `service`） |
 | `docs/modules/env.md` | `env`（探测与落盘布局）+ `env/ompcfg` + `env/picfg` |
 | `docs/modules/session.md` | `session`（会话文件读取与投影） |
+| `docs/modules/mcp.md` | `env/mcpcfg` + `service/mcp.go`（MCP 服务器的读写与启停） |
 | `docs/modules/skill.md` | `skill`（技能发现与启停）+ 插件的 CLI 装卸 |
 | `docs/modules/subagents.md` | `engine/omp` 的子代理观测台 |
 | `docs/modules/git.md` | `git`（工作区版本状态与白名单写入） |

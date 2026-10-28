@@ -218,19 +218,19 @@ onMounted(load)
         <input v-model="filter" class="omp-input" :placeholder="t('common.searchPlaceholder')" />
       </div>
 
-      <section v-if="!rows.length && !loading" class="empty">
-        <div class="empty-mark"><AppIcon name="book" :size="22" /></div>
-        <p class="empty-title">{{ t('skills.emptyTitle') }}</p>
-        <p class="empty-hint">{{ t('skills.emptyHint') }}</p>
+      <section v-if="!rows.length && !loading" class="omp-empty">
+        <span class="omp-tile omp-tile--lg omp-tile--neutral"><AppIcon name="book" :size="22" /></span>
+        <p class="omp-empty-title">{{ t('skills.emptyTitle') }}</p>
+        <p class="omp-empty-hint">{{ t('skills.emptyHint') }}</p>
+        <button class="omp-btn sm primary" @click="openCreate">{{ t('skills.create') }}</button>
       </section>
 
-      <p v-else-if="!filtered.length" class="empty-hint no-match">{{ t('skills.noMatch') }}</p>
+      <p v-else-if="!filtered.length" class="no-match">{{ t('skills.noMatch') }}</p>
 
       <template v-else>
         <section v-for="group in groups" :key="group.source" class="source-group">
-          <div class="omp-section-title">
-            {{ t(`skills.sources.${group.source}`) }}
-            <span class="count">{{ group.rows.length }}</span>
+          <div class="omp-sec-head">
+            <span class="omp-sec-title">{{ t(`skills.sources.${group.source}`) }} <span class="count">{{ group.rows.length }}</span></span>
           </div>
 
           <div class="skill-list">
@@ -470,40 +470,12 @@ onMounted(load)
   flex: none;
 }
 
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  padding: var(--omp-sp-10);
-  text-align: center;
-}
-
-.empty-mark {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--omp-r-lg);
-  background: var(--omp-brand-soft);
-  color: var(--omp-brand);
-}
-
-.empty-title {
+.no-match {
   margin: 0;
-  font-size: var(--omp-fs-sm);
-  font-weight: 600;
-  color: var(--omp-ink);
-}
-
-.empty-hint {
-  margin: 0;
+  padding: var(--omp-sp-6) 0;
   font-size: var(--omp-fs-2xs);
   color: var(--omp-mute);
-}
-
-.no-match {
-  padding: var(--omp-sp-6) 0;
+  text-align: center;
 }
 
 .drawer-loading {

@@ -24,6 +24,9 @@ func (e *Engine) Switch(ctx context.Context, sessionPath string) error {
 		return pkg.New(pkg.CodeEngineBusy, "引擎拒绝了这次切换（有扩展拦下了）", "")
 	}
 	e.afterSessionBound()
+	// 切完之后立刻回填会话文件：不回填的话下一次 CurrentSessionFile 拿到空串，
+	// 于是每一次发消息都要重新问一次引擎，并且可能多发一次 switch_session。
+	e.setSessionFile(sessionPath)
 	return nil
 }
 
@@ -36,6 +39,10 @@ func (e *Engine) NewSession(ctx context.Context) error {
 		return err
 	}
 	e.afterSessionBound()
+	// 新会话的文件名由引擎决定，只能问一次。
+	if st, err := e.State(ctx); err == nil {
+		e.setSessionFile(st.SessionFile)
+	}
 	return nil
 }
 
@@ -52,6 +59,9 @@ func (e *Engine) afterSessionBound() {
 	e.mu.Lock()
 	e.session = ""
 	e.mu.Unlock()
+	// 会话换了，本地记住的文件路径也要清掉：Switch / NewSession 会在之后回填正确的那个，
+	// 而这里先清空是为了不让一个已不属于这个进程的旧路径被当成「当前会话」。
+	e.setSessionFile("")
 }
 
 // State 拉一份会话状态快照。
@@ -63,6 +73,9 @@ func (e *Engine) State(ctx context.Context) (*SessionState, error) {
 	e.mu.Lock()
 	e.session = st.SessionID
 	e.mu.Unlock()
+	// 顺手记住会话文件：State 是唯一稳定拿到它的地方，
+	// 记下来之后热路径（发消息 / 删会话 / 改名）就不必再问一次。
+	e.setSessionFile(st.SessionFile)
 	if st.ContextUsage == nil {
 		// pi 的 get_state 不含用量，只有 get_session_stats 里有；补一次让界面统一。
 		var stats SessionStats
@@ -96,8 +109,21 @@ func (e *Engine) Messages(ctx context.Context) ([]json.RawMessage, error) {
 	return out.Messages, nil
 }
 
-// CurrentSessionFile 返回当前会话文件路径（界面用来判断「是不是同一个会话」）。
+// CurrentSessionFile 返回当前会话文件路径。
+//
+// 优先读本地缓存：State() 与每次会话绑定后都会更新它，而调用它的地方
+// （发消息、删会话、改名）全在热路径上——每次发消息前多一次 get_state
+// 往返是纯浪费。
+//
+// 缓存为空时退回一次 RPC：刚拉起进程、还没问过引擎的时候，
+// 正确性优先于省那一次往返。宁可慢一次，也不能把消息发到错的会话。
 func (e *Engine) CurrentSessionFile() string {
+	e.mu.Lock()
+	cached := e.sessionFile
+	e.mu.Unlock()
+	if cached != "" {
+		return cached
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	st, err := e.State(ctx)
@@ -105,6 +131,13 @@ func (e *Engine) CurrentSessionFile() string {
 		return ""
 	}
 	return st.SessionFile
+}
+
+// setSessionFile 记住当前会话文件。
+func (e *Engine) setSessionFile(path string) {
+	e.mu.Lock()
+	e.sessionFile = path
+	e.mu.Unlock()
 }
 
 // SetSessionID 记录当前会话 id（会话内切换时由引擎通知）。

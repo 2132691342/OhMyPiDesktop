@@ -191,9 +191,44 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | POST | `/skills/toggle` | 启停 `{engine, path, enabled}`（只允许用户目录） |
 | POST | `/skills/create` | 新建 `{engine, name, description, body}` |
 | POST | `/skills/delete` | 删除 `{engine, path}`（只允许用户目录） |
-| GET | `/plugins?engine=` | 已装插件（omp: `omp plugin list --json`；pi: `pi list --json`） |
-| POST | `/plugins/install` | 装 `{engine, source}` |
-| POST | `/plugins/uninstall` | 卸 `{engine, source}` |
+| GET | `/plugins?engine=` | 已装插件清单，读引擎自己的登记文件（见下方说明） |
+| POST | `/plugins/install` | 装 `{engine, source}`，代跑引擎 CLI |
+| POST | `/plugins/uninstall` | 卸 `{engine, source}`，代跑引擎 CLI |
+
+> **插件的「列」读文件，「装 / 卸」跑 CLI。**
+> 列：pi 读 `~/.pi/agent/settings.json` 的 `packages` 数组；
+> omp 读 `~/.omp/plugins/package.json` 的 `dependencies`。
+> 不扫 `node_modules`——那会把几百个间接依赖一起当成插件。
+> 装 / 卸：只有引擎知道怎么把包装进它的私有目录、怎么同步它的锁文件，
+> 所以这两条仍然是 `omp plugin install` / `pi install` 的原样转发。
+> 清单里登记了但包目录不在盘上时 `installed=false`，界面给「重装」而不是「卸载」。
+
+### MCP 服务器（两个引擎共用同一份文件形状）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/mcp?engine=&live=` | MCP 清单；`live=1` 时额外问引擎一次连接状态（只有 pi 有 `mcp list --json`） |
+| POST | `/mcp/save` | 新增或覆盖 `{engine_kind, server_name, command_text?, server_url?, transport_kind?, desc?, env_list?, work_dir?, target_project?}` |
+| POST | `/mcp/toggle` | 启停 `{engine_kind, server_name, enabled}` |
+| POST | `/mcp/remove` | 删除 `{engine_kind, server_name}` |
+
+> 写 `~/.omp/agent/mcp.json` 与 `~/.pi/agent/mcp.json`——两者都是 `mcpServers` 映射，
+> 所以读写只有一份代码。差别是「停用一个服务器写哪个键」：
+> omp 用顶层 `disabledServers` 名单，pi 写条目上的 `enabled`。
+> 这个分叉在 `backend/env/mcpcfg` 内部消化，界面只发「启 / 停」。
+>
+> 为什么写文件而不是转发 `pi mcp add`：CLI 的参数面（OAuth 客户端、回调端口、
+> 头部、暴露模式 …）远大于界面能表达的，而写文件只改掌管的那几个键，
+> 用户手配的 `headers` / `auth` / `oauth` / `timeout` 原样保留。
+>
+> 启用的优先级：顶层停用名单 > 顶层强制启用名单 > 条目 `enabled` > 默认开。
+> 被名单压住时 `disabled_by_deny=true`，界面要说清为什么点不动。
+
+### 引擎健康度（概览页）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/health/engines` | 两个引擎的健康快照：探测结果（版本 / 渠道 / 最新版）+ 进程事实（pid / 协议 / 启动时刻 / 命令数 / 最近错误）+ 落盘计数（会话 / 技能 / 插件 / MCP）+ 配置现状 |
 
 ### 工作区（文件与 Git）
 
@@ -338,7 +373,7 @@ GET /events?since=41
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`7`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+当前：`8`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
 只增可选字段不需要。
 
 新增端点本身不需要升版本（前端没调它就不受影响）；

@@ -233,55 +233,58 @@ onUnmounted(() => {
 
     <div class="page-body">
       <section class="stat-row">
-        <div class="stat card-pad">
-          <span class="stat-label">{{ t('usage.total') }}</span>
-          <span class="stat-value">{{ formatCost(totals.cost) }}</span>
+        <div class="omp-card card-pad stat">
+          <span class="omp-metric-label">{{ t('usage.total') }}</span>
+          <span class="omp-metric">{{ formatCost(totals.cost) }}</span>
         </div>
-        <div class="stat card-pad">
-          <span class="stat-label">{{ t('usage.inputTokens') }} + {{ t('usage.outputTokens') }}</span>
-          <span class="stat-value">{{ formatTokens(totals.tokens) }}</span>
+        <div class="omp-card card-pad stat">
+          <span class="omp-metric-label">{{ t('usage.inputTokens') }} + {{ t('usage.outputTokens') }}</span>
+          <span class="omp-metric">{{ formatTokens(totals.tokens) }}</span>
         </div>
-        <div class="stat card-pad">
-          <span class="stat-label">{{ t('usage.sessionCount') }}</span>
-          <span class="stat-value">{{ totals.sessions }}</span>
+        <div class="omp-card card-pad stat">
+          <span class="omp-metric-label">{{ t('usage.sessionCount') }}</span>
+          <span class="omp-metric">{{ totals.sessions }}</span>
         </div>
       </section>
 
       <section class="card-pad chart-card">
-        <div class="omp-section-title">{{ t('usage.byDay') }}</div>
+        <div class="omp-sec-head"><span class="omp-sec-title">{{ t('usage.byDay') }}</span></div>
         <div ref="trendEl" class="chart" />
       </section>
 
       <div class="chart-row">
         <section class="card-pad chart-card">
-          <div class="omp-section-title">{{ t('usage.byModel') }}</div>
+          <div class="omp-sec-head"><span class="omp-sec-title">{{ t('usage.byModel') }}</span></div>
           <div v-if="byModel.length" ref="modelEl" class="chart" />
-          <p v-else class="empty-hint">{{ t('usage.emptyHint') }}</p>
+          <div v-else class="omp-empty">
+            <span class="omp-tile omp-tile--sm omp-tile--neutral"><AppIcon name="chart" :size="16" /></span>
+            <p class="omp-empty-title">{{ t('usage.emptyHint') }}</p>
+          </div>
         </section>
 
         <section class="card-pad table-card">
-          <div class="omp-section-title">{{ t('usage.model') }}</div>
-          <table class="omp-table">
-            <thead>
-              <tr>
-                <th>{{ t('usage.model') }}</th>
-                <th class="num">{{ t('usage.inputTokens') }}</th>
-                <th class="num">{{ t('usage.cost') }}</th>
-                <th class="num">{{ t('usage.sessionCount') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in byModel" :key="row.model">
-                <td class="mono">{{ row.model }}</td>
-                <td class="num">{{ formatTokens(row.tokens) }}</td>
-                <td class="num">{{ formatCost(row.cost) }}</td>
-                <td class="num">{{ row.sessions }}</td>
-              </tr>
-              <tr v-if="!byModel.length">
-                <td colspan="4" class="empty-cell">{{ t('usage.emptyTitle') }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="omp-sec-head"><span class="omp-sec-title">{{ t('usage.model') }}</span></div>
+          <el-table :data="byModel" size="small" max-height="260">
+            <el-table-column prop="model" :label="t('usage.model')" min-width="150">
+              <template #default="{ row }">
+                <span class="omp-mono">{{ row.model }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('usage.inputTokens')" width="96" align="right">
+              <template #default="{ row }">
+                <span class="omp-mono">{{ formatTokens(row.tokens) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('usage.cost')" width="92" align="right">
+              <template #default="{ row }">
+                <span class="omp-mono">{{ formatCost(row.cost) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="sessions" :label="t('usage.sessionCount')" width="80" align="right" />
+            <template #empty>
+              <span class="omp-empty-title">{{ t('usage.emptyTitle') }}</span>
+            </template>
+          </el-table>
         </section>
       </div>
     </div>
@@ -358,23 +361,7 @@ onUnmounted(() => {
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.stat-label {
-  font-size: var(--omp-fs-3xs);
-  font-weight: 650;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--omp-faint);
-}
-
-.stat-value {
-  font-family: var(--omp-font-display);
-  font-size: var(--omp-fs-2xl);
-  font-weight: 600;
-  color: var(--omp-ink);
-  font-variant-numeric: tabular-nums;
+  gap: 4px;
 }
 
 .chart-card {
@@ -394,56 +381,5 @@ onUnmounted(() => {
 
 .table-card {
   min-width: 0;
-  overflow-x: auto;
-}
-
-.omp-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--omp-fs-xs);
-}
-
-.omp-table th {
-  text-align: left;
-  padding: 6px 8px;
-  font-size: var(--omp-fs-3xs);
-  font-weight: 650;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--omp-faint);
-  border-bottom: 1px solid var(--omp-line);
-}
-
-.omp-table td {
-  padding: 7px 8px;
-  border-bottom: 1px solid var(--omp-line);
-  color: var(--omp-ink-5);
-}
-
-.omp-table tr:last-child td {
-  border-bottom: none;
-}
-
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-}
-
-.mono {
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-ink);
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.empty-cell {
-  text-align: center;
-  color: var(--omp-faint);
-  padding: var(--omp-sp-6) 0;
 }
 </style>

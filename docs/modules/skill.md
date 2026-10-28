@@ -16,10 +16,16 @@ skill
 ├── Parse     // frontmatter（name / description / enabled / …）
 └── Toggle    // 只改 enabled 一行，原子写
 
-plugin（在 service 层，无独立包）
-├── omp: omp plugin list --json / install / uninstall
-└── pi : 读 settings.json 的扩展源 + pi install / remove
+plugin（读取在 env 层，用例在 service 层）
+├── 列：读引擎自己的登记清单
+│   ├── pi : ~/.pi/agent/settings.json 的 packages 数组
+│   └── omp: ~/.omp/plugins/package.json 的 dependencies
+└── 装 / 卸：代跑引擎 CLI
+    ├── omp: omp plugin install / uninstall
+    └── pi : pi install / remove
 ```
+
+MCP 独立成篇，见 [mcp.md](mcp.md)。
 
 ### 一套扫描 + 不同的根
 
@@ -68,12 +74,28 @@ func TogglePi(path string, enabled bool) error // pi：disable-model-invocation
 func Create(rootDir, name, description, body string) (string, error)
 func DeleteByPath(path string) error
 func Content(path string) (string, error)
+```
 
-type Plugin struct {
-    Name     string
-    Version  string
-    Source   string   // "npm" | "marketplace" | "settings"
-    Location string
+插件的读取在 `env` 层，视图形态在 `domain`：
+
+```go
+// backend/env/pluginreg.go
+func ReadPluginEntries(kind string, layout Layout) ([]PluginEntry, string, error)
+func ReadPluginDetail(modulesDir string, entry PluginEntry) PluginDetail
+func ParsePackageSource(source string) PackageSpec
+
+// backend/domain/plugin.go
+type PluginRowVO struct {
+    EngineKind    string   // omp / pi
+    PluginName    string
+    PluginVersion string
+    PluginSource  string   // 清单里那一行的原文；卸载要原样交回给引擎
+    PluginPath    string   // 空表示目录不在盘上
+    PluginDesc    string
+    ResourceKinds []string // extensions / skills / prompts / themes
+    ScopeKind     string   // user / project
+    Enabled       bool
+    Installed     bool     // 目录是否存在
 }
 ```
 
@@ -107,11 +129,29 @@ Create(name, description, body):
   4. 不回写任何索引文件
 ```
 
+### 插件的「列」为什么读文件
+
+pi 的 `list` 子命令不接受 `--json`，也没有稳定的机器可读输出。
+用 CLI 取列表的话，命令失败就会让整个分支被跳过——**界面显示为空，
+而用户明明装了十几个包**。
+
+读登记清单不依赖子命令的参数稳定性，也不必为每次列表起一次
+Node 子进程（约 3 秒）。清单与 CLI 的关系是：
+
+| 动作 | 走哪条路 | 理由 |
+|---|---|---|
+| 列 | 读登记文件 | 快、不依赖 CLI 参数、不把间接依赖当插件 |
+| 装 | 代跑 CLI | 引擎要装包、要写自己的锁文件 |
+| 卸 | 代跑 CLI，传**清单里那一行原文** | pi 的 `packages` 记的是 `npm:name@1.2.3`，只给裸名匹配不到 |
+
+登记清单与包目录可能不一致（换机器、手删目录、包管理器只删了目录）。
+这时 `Installed=false`，界面给「重装」而不是「卸载」。
+
 ### 插件装卸
 
 ```
-omp: omp plugin install <spec> --json
-     omp plugin uninstall <name> --json
+omp: omp plugin install <spec>
+     omp plugin uninstall <name>
 pi : pi install <spec> / pi remove <name>
 ```
 
@@ -137,6 +177,6 @@ pi : pi install <spec> / pi remove <name>
 |---|---|---|
 | 两套发现规则 | 两份代码 | 各自与引擎结论一致 |
 | 只按 `Editable` 开放 | 用户不能在工作区技能上点开关 | 不会出现「点了被引擎忽略」的假开关 |
-| 插件列表来自 CLI | 依赖 CLI 的 JSON 稳定 | 装了什么就是什么，不会读错 `node_modules` 结构 |
+| 插件列表读登记文件 | 依赖引擎的清单格式（两处各一份） | 不受 CLI 参数变动影响，不把间接依赖当插件 |
 | 新建只写 SKILL.md | 没有模板库 | 结构简单，用户能直接用编辑器改 |
 | 安装可取消而不是超时 | 要多一层 context 传递 | 大包不会因为「等太久」被误判失败 |

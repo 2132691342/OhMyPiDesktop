@@ -23,9 +23,11 @@ import type {
   GitCommitResult,
   GitDiff,
   GitStatus,
+  HealthData,
   LoginProvider,
+  McpListData,
   ModelRow,
-  PluginRow,
+  PluginListData,
   ProvidersView,
   ProviderView,
   SessionDetail,
@@ -123,6 +125,8 @@ export const api = {
   engineStatus: () => get<EngineStatus>('/engines'),
   detectEngines: () => post<EngineStatus>('/engines/detect'),
   restartEngines: (engine?: EngineKind) => post<{ ok: boolean }>('/engines/restart', k(engine)),
+  // 引擎健康度：概览页一屏要用的全部事实
+  health: () => get<HealthData>('/health/engines'),
 
   // 应用：装 / 升级 / 卸载引擎本身（代跑引擎自己的安装器）
   apps: (refresh = false) => get<{ apps: AppRow[] }>('/apps', refresh ? { refresh: '1' } : undefined),
@@ -198,11 +202,30 @@ export const api = {
   deleteSkill: (path: string, engine?: EngineKind) =>
     post<{ ok: boolean }>('/skills/delete', { path, ...k(engine) }),
 
-  plugins: (engine?: EngineKind) => get<{ plugins: PluginRow[] }>('/plugins', k(engine)),
+  plugins: (engine?: EngineKind) => get<PluginListData>('/plugins', k(engine)),
   installPlugin: (source: string, engine?: EngineKind) =>
     post<{ output: string }>('/plugins/install', { source, ...k(engine) }),
   uninstallPlugin: (source: string, engine?: EngineKind) =>
     post<{ output: string }>('/plugins/uninstall', { source, ...k(engine) }),
+
+  // MCP 服务器
+  mcpList: (engine?: EngineKind, live = false) =>
+    get<McpListData>('/mcp', { ...k(engine), ...(live ? { live: '1' } : {}) }),
+  mcpSave: (body: {
+    engine_kind?: EngineKind
+    server_name: string
+    command_text?: string
+    server_url?: string
+    transport_kind?: string
+    desc?: string
+    env_list?: string[]
+    work_dir?: string
+    target_project?: boolean
+  }) => post<McpListData>('/mcp/save', body),
+  mcpToggle: (serverName: string, enabled: boolean, engine?: EngineKind) =>
+    post<McpListData>('/mcp/toggle', { server_name: serverName, enabled, ...k(engine) }),
+  mcpRemove: (serverName: string, engine?: EngineKind) =>
+    post<McpListData>('/mcp/remove', { server_name: serverName, ...k(engine) }),
 
   // 工作区
   files: (path: string) => get<FileList>('/files', { path }),

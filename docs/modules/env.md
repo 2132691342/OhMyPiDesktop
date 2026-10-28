@@ -14,7 +14,7 @@
 ```
 backend/env/
 ├── layout.go     Layout：一个引擎的落盘布局（按 kind 分叉的唯一处）
-├── detect.go     Detect：候选路径 → engine.Identity（复用 engine.Probe）
+├── detect.go     Detect：候选路径 → engine.Identity（复用 engine.Detect）
 ├── ompcfg/       models.yml 的 YAML 节点级读写
 └── picfg/        models.json 的 JSONC 键级读写
 ```

@@ -93,3 +93,8 @@ func (s *Server) restartEngines(c *gin.Context) {
 		return gin.H{"ok": true}, nil
 	})
 }
+
+// engineHealth 是概览页要用的引擎健康快照。
+func (s *Server) engineHealth(c *gin.Context) {
+	s.run(c, func(ctx *gin.Context) (any, error) { return s.svc.Health(ctx) })
+}

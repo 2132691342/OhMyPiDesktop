@@ -60,7 +60,7 @@
 
 ### 它不被谁依赖
 
-`platform` 只被 `desktop` 与 `service` 使用。它不进 `engine`、`repo`、`domain`
+`platform` 只被 `backend/desktop` 与 `service` 使用。它不进 `engine`、`repo`、`domain`
 ——那些层不碰系统调用，测试它们也不需要 Windows。
 
 平台特定代码按 `//go:build windows` 分文件，不写 `runtime.GOOS` 大分支。

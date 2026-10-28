@@ -300,6 +300,9 @@ func (a *App) toTray() {
 
 func (a *App) shutdown() {
 	if a.svc != nil {
+		// 先停回收协程再停引擎：否则它会与 StopAll 抢同一把锁，
+		// 并试图停已经被停掉的实例。
+		a.svc.Engine.Shutdown()
 		a.svc.Engine.StopAll()
 	}
 	if a.srv != nil {

@@ -58,6 +58,9 @@ func (a *App) SaveSettings(kv map[string]string) error {
 }
 
 // SetWorkspace 切工作目录。
+//
+// 切目录不切引擎、不停旧进程：别的目录可能还有正在跑的那一轮。
+// 旧目录的引擎由回收逻辑按空闲时间清掉（见 engine.Supervisor.Sweep）。
 func (a *App) SetWorkspace(dir string) error {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
@@ -82,6 +85,12 @@ func (a *App) SetWorkspace(dir string) error {
 	if err := a.rememberWorkspace(abs); err != nil {
 		pkg.Warnf("app: 记不住这个工作目录：%v", err)
 	}
+	// 切目录会新建一个 (引擎, 目录) 的进程键，这是进程数增长的唯一入口。
+	// 此刻立刻回收一次，比等下一轮定时扫描更贴合「刚切走」的时机：
+	// 旧目录的引擎正是从这一刻起变成空闲的。
+	// 计数也跟着变（项目级技能 / MCP 换了目录就不一样），一并失效。
+	a.InvalidateCounts()
+	a.Engine.Sweep()
 	if a.OnWorkspaceChange != nil {
 		a.OnWorkspaceChange()
 	}

@@ -52,52 +52,38 @@ func (ix *Index) List(workspace string) ([]Session, error)
 func (ix *Index) Detail(path string) (*Detail, error)
 
 type Session struct {
-    ID, Path, Title, CWD, WorkDir, Model string
-    UpdatedAt time.Time
-    Size      int64
-    Messages  int
-    Tokens    int
-    Cost      float64
-}
-
-type Meta struct {
-    Path        string
-    Engine      string    // "omp" | "pi"
-    Cwd         string
-    Title       string
-    TitleSource string    // omp: slot 的 source；pi: "session_info"
-    SessionID   string
-    Parent      string    // parentSession，可为空
-    Created     time.Time
-    Modified    time.Time
-    Messages    int
-    Tokens      int64
-    Cost        float64
-    Model       string    // 最近一次 model_change
-    Thinking    string    // 最近一次 thinking_level_change
+    ID        string    `json:"id"`
+    Path      string    `json:"path"`
+    Title     string    `json:"title"`
+    CWD       string    `json:"cwd"`
+    WorkDir   string    `json:"work_dir"` // 目录 slug 还原出的路径
+    Model     string    `json:"model"`
+    UpdatedAt time.Time `json:"updated_at"`
+    Size      int64     `json:"size"`
+    Messages  int       `json:"messages"`
+    Tokens    int       `json:"tokens"`
+    Cost      float64   `json:"cost"`
 }
 
 type Detail struct {
-    Meta
-    Items []Item
+    Session
+    Thinking string `json:"thinking"` // 最近一次 thinking_level_change
+    Items    []Item `json:"items"`
 }
 
 type Item struct {
-    Kind    string    // "user" | "assistant" | "tool" | "note"
-    Blocks  []Block
-    Usage   *Usage
-}
-
-type Block struct {
-    Kind      string          // "text" | "thinking" | "tool"
-    Text      string
-    ToolName  string
-    ToolCall  string
-    Status    string          // "running" | "done" | "error"
-    Args      json.RawMessage
-    Result    json.RawMessage
-    StartedAt int64
-    EndedAt   int64
+    Kind      string            `json:"kind"`    // user / assistant / tool / system
+    Role      string            `json:"role"`
+    Text      string            `json:"text,omitempty"`
+    Thinking  string            `json:"thinking,omitempty"`
+    Blocks    []json.RawMessage `json:"blocks,omitempty"`
+    Model     string            `json:"model,omitempty"`
+    ToolName  string            `json:"tool_name,omitempty"`
+    ToolCall  string            `json:"tool_call_id,omitempty"`
+    IsError   bool              `json:"is_error,omitempty"`
+    Timestamp int64             `json:"timestamp,omitempty"`
+    Cost      float64           `json:"cost,omitempty"`
+    Tokens    int               `json:"tokens,omitempty"`
 }
 ```
 

@@ -1,4 +1,4 @@
-// 应用入口：装配 Wails 外壳并运行。业务一律在 backend/，桌面层在 desktop/。
+// 应用入口：装配 Wails 外壳并运行。业务与桌面层都在 backend/。
 //
 // 这里只做三件事：内嵌前端产物、读出构建期注入的版本号、把两者交给 desktop.Run。
 // 任何「启动逻辑」都不该长在这个文件里——它在根目录，最容易被当成放什么都行的抽屉。
@@ -8,8 +8,8 @@ import (
 	"embed"
 	"os"
 
+	"OhMyPiDesktop/backend/desktop"
 	"OhMyPiDesktop/backend/pkg"
-	"OhMyPiDesktop/desktop"
 )
 
 //go:embed all:frontend/dist

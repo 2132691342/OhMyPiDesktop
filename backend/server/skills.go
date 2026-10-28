@@ -105,52 +105,6 @@ func (s *Server) deleteSkill(c *gin.Context) {
 	})
 }
 
-// ---------------- 插件 ----------------
-
-func (s *Server) plugins(c *gin.Context) {
-	s.run(c, func(ctx *gin.Context) (any, error) {
-		rows, err := s.svc.Plugins(ctx, kind(c))
-		if err != nil {
-			return nil, err
-		}
-		return gin.H{"plugins": rows}, nil
-	})
-}
-
-func (s *Server) installPlugin(c *gin.Context) {
-	var body struct {
-		Engine string `json:"engine"`
-		Source string `json:"source"`
-	}
-	if !bind(c, &body) {
-		return
-	}
-	s.run(c, func(ctx *gin.Context) (any, error) {
-		out, err := s.svc.InstallPlugin(ctx, s2kind(body.Engine), body.Source)
-		if err != nil {
-			return nil, err
-		}
-		return gin.H{"output": out}, nil
-	})
-}
-
-func (s *Server) uninstallPlugin(c *gin.Context) {
-	var body struct {
-		Engine string `json:"engine"`
-		Source string `json:"source"`
-	}
-	if !bind(c, &body) {
-		return
-	}
-	s.run(c, func(ctx *gin.Context) (any, error) {
-		out, err := s.svc.UninstallPlugin(ctx, s2kind(body.Engine), body.Source)
-		if err != nil {
-			return nil, err
-		}
-		return gin.H{"output": out}, nil
-	})
-}
-
 // ---------------- 系统能力 ----------------
 
 func (s *Server) revealPath(c *gin.Context) {

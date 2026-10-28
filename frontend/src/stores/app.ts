@@ -90,6 +90,7 @@ export const useAppStore = defineStore('app', () => {
       settings.value = data.settings ?? {}
       workspaces.value = data.workspaces ?? []
       active.value = data.active ?? 'omp'
+      setActiveKind(active.value)
       chat.kind = data.active ?? 'omp'
       chat.caps = data.caps?.[data.active] ?? null
       applyTheme(theme.value)
@@ -121,6 +122,7 @@ export const useAppStore = defineStore('app', () => {
       if (!prefs.restore_session || !prefs.last_session_file) return
       if (prefs.last_engine_kind) {
         active.value = prefs.last_engine_kind
+        setActiveKind(prefs.last_engine_kind)
         chat.kind = prefs.last_engine_kind
         chat.caps = capsOf(prefs.last_engine_kind)
       }
@@ -196,6 +198,8 @@ export const useAppStore = defineStore('app', () => {
     if (kind === active.value) return
     await api.setEngine(kind)
     active.value = kind
+    // 先同步过滤目标再切通道：反过来的话，切换期间到达的旧引擎帧会被放进来。
+    setActiveKind(kind)
     await chat.switchEngine(kind)
   }
 
@@ -257,6 +261,13 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function route(event: string, data: Record<string, unknown>) {
+    // 两个引擎、多个工作目录共用一条 SSE。聊天与子代理帧只属于某一个引擎，
+    // 不属于当前引擎的要丢掉——否则切走之后旧实例仍在推的正文会跳进新会话。
+    //
+    // 引擎状态、安装进度、会话标题是全局的，**不能**过滤，
+    // 否则切过去看到的是旧状态。所以过滤只做在聊天类命名空间上。
+    if (isChatScoped(event) && !belongsToActive(data)) return
+
     switch (event) {
       case 'stream:open':
         return
@@ -486,6 +497,39 @@ export interface AppProgressLog {
   command: string
   lines: string[]
   message: string
+}
+
+/** 当前正在看的引擎。由 store 在切引擎时同步。 */
+let currentActiveKind = ''
+
+/** 同步当前引擎，供帧过滤读。 */
+export function setActiveKind(kind: string) {
+  currentActiveKind = kind
+}
+
+/** 哪些事件属于「某一个引擎的某一次对话」。
+ *
+ * 判据是命名空间：chat:* 是一个会话内的流，subagent:* 与 agents:* 同属于它。
+ * engine:* / app:* / session:* 是全局事实（引擎起没起、装到哪一步、最新标题），
+ * 两个引擎都会改，过滤掉就会「切过去看到旧状态」。
+ */
+function isChatScoped(event: string): boolean {
+  return event.startsWith('chat:') || event.startsWith('subagent:') || event.startsWith('agents:')
+}
+
+/** 判断一帧是否属于当前正在看的引擎。
+ *
+ * 两个引擎、以及同一引擎的多个工作目录，共用同一条 SSE。帧上带着
+ * engine_kind，不属于当前引擎的聊天帧必须丢掉——不丢的话，切走之后
+ * 旧实例仍在推的正文会跳进新会话。
+ *
+ * 帧上没带 engine_kind 时一律放过：全局事件（安装进度、引擎状态）没有
+ * 这个字段，而且老后端也不会发它。宁可多处理，不能把正常帧拦掉。
+ */
+function belongsToActive(data: Record<string, unknown>): boolean {
+  const kind = data.engine_kind
+  if (typeof kind !== 'string' || !kind) return true
+  return kind === currentActiveKind
 }
 
 /** 窄化一帧安装进度。action 与 phase 都必须是已知值，其余一律丢弃。 */

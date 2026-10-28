@@ -16,12 +16,14 @@ interface NavItem {
 }
 
 const primary: NavItem[] = [
+  { name: 'overview', icon: 'gauge', key: 'nav.overview' },
   { name: 'chat', icon: 'chat', key: 'nav.chat' },
   { name: 'workspace', icon: 'workspace', key: 'nav.workspace' },
   { name: 'sessions', icon: 'clock', key: 'nav.sessions' },
   { name: 'models', icon: 'cpu', key: 'nav.models' },
   { name: 'skills', icon: 'spark', key: 'nav.skills' },
   { name: 'plugins', icon: 'plug', key: 'nav.plugins' },
+  { name: 'mcp', icon: 'server', key: 'nav.mcp' },
   { name: 'usage', icon: 'chart', key: 'nav.usage' },
 ]
 

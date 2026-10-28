@@ -62,26 +62,22 @@ func New(ring int) *Hub {
 	return &Hub{subs: map[*subscriber]struct{}{}, ringN: ring}
 }
 
-// Emit 广播一帧。sessionID 为空表示全局通道。
+// Emit 广播一帧。sessionID 非空时会附在信封上，前端据此丢弃别的会话的事件。
 //
 // 事件名固定成 `namespace:name` 形态，前端按名字分流；
 // session_id 不进通道名——一个窗口只显示一个会话，按通道分会让重放变复杂。
+//
+// 性能约定：载荷只 marshal 一次。早期实现为了塞 session_id 而做了
+// unmarshal→改字段→再 marshal，而实际所有调用点都传空串，
+// 于是那一次完整的 JSON 往返纯属浪费——在流式帧（每秒几十帧）上是实打实的开销。
+// 现在只有 sessionID 非空时才重编码，且用一次浅层编辑。
 func (h *Hub) Emit(sessionID, event string, data any) {
 	raw, err := json.Marshal(data)
 	if err != nil {
 		raw = []byte(`{"message":"事件编码失败"}`)
 	}
-
-	// 会话 id 塞进信封：前端据此丢弃别的会话的事件。
-	// 只在需要时重编码一次，且发生在加锁之前——持锁做 marshal 会让广播延迟随帧大小线性增长。
 	if sessionID != "" {
-		var probe map[string]any
-		if json.Unmarshal(raw, &probe) == nil && probe != nil {
-			probe["session_id"] = sessionID
-			if merged, err := json.Marshal(probe); err == nil {
-				raw = merged
-			}
-		}
+		raw = withSessionID(raw, sessionID)
 	}
 
 	h.mu.Lock()
@@ -107,6 +103,28 @@ func (h *Hub) Emit(sessionID, event string, data any) {
 	for _, s := range subs {
 		s.push(f)
 	}
+}
+
+// withSessionID 把一个 session_id 字段插进已经序列化好的对象。
+//
+// 用一个 map 做一次浅层解包而不是解成具体结构：载荷形状五花八门，
+// 而这里只需要把多出来的那个字段放进去，其余一个字节都不应该动。
+// 解析失败就原样返回（宁可少一个字段，也不能把整帧弄丢）。
+func withSessionID(raw []byte, sessionID string) []byte {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {
+		return raw
+	}
+	encoded, err := json.Marshal(sessionID)
+	if err != nil {
+		return raw
+	}
+	obj["session_id"] = encoded
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return raw
+	}
+	return merged
 }
 
 // Subscribe 注册一个连接，返回订阅者、重放帧与取消函数。

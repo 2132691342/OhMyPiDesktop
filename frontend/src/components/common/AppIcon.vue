@@ -32,6 +32,10 @@ export type IconName =
   | 'commit'
   | 'workspace'
   | 'box'
+  | 'gauge'
+  | 'server'
+  | 'eye'
+  | 'link'
 
 withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 16 })
 </script>
@@ -167,6 +171,24 @@ withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 16 })
     <template v-else-if="name === 'workspace'">
       <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
       <path d="M3.5 9.5h17M9 9.5v10" />
+    </template>
+    <template v-else-if="name === 'gauge'">
+      <path d="M4 17a8 8 0 1 1 16 0" />
+      <path d="M12 17l4-5" />
+      <circle cx="12" cy="17" r="1.2" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'server'">
+      <rect x="3.5" y="4" width="17" height="6" rx="1.6" />
+      <rect x="3.5" y="14" width="17" height="6" rx="1.6" />
+      <path d="M7 7h.01M7 17h.01" />
+    </template>
+    <template v-else-if="name === 'eye'">
+      <path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="2.6" />
+    </template>
+    <template v-else-if="name === 'link'">
+      <path d="M10 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1.2 1.2" />
+      <path d="M14 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1.2-1.2" />
     </template>
   </svg>
 </template>

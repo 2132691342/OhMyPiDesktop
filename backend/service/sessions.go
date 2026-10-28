@@ -93,6 +93,9 @@ func (a *App) DeleteSession(kind engine.Kind, path string) error {
 	if st, err := os.Stat(base); err == nil && st.IsDir() {
 		_ = os.RemoveAll(base)
 	}
+	// 缓存里那条不主动丢掉的话，列表会一直显示「已经删了」的会话。
+	a.Index(eng).Invalidate(path)
+	a.InvalidateCounts()
 	return nil
 }
 
@@ -109,5 +112,11 @@ func (a *App) RenameSession(ctx context.Context, kind engine.Kind, path, name st
 			return err
 		}
 	}
-	return e.SetSessionName(ctx, name)
+	if err := e.SetSessionName(ctx, name); err != nil {
+		return err
+	}
+	// 成功之后才丢缓存：否则列表里的旧标题会一直显示到被淘汰为止。
+	// 放在成功之后是因为失败时文件根本没变，丢缓存只会多一次重新解析。
+	a.Index(eng).Invalidate(path)
+	return nil
 }

@@ -45,9 +45,37 @@ type Latest struct {
 type latestCache struct {
 	mu   sync.Mutex
 	rows map[Kind]Latest
+	// disk 是落盘回调：把结果存到设置里，下次启动直接用。
+	// 它存在的理由：这个进程内缓存每次启动都是空的，而首屏的 Health
+	// 会同步等它——用户看到的「打开应用卡两秒」大多是在等外网。
+	disk func(kind Kind, row Latest)
 }
 
 var latestStore = &latestCache{rows: map[Kind]Latest{}}
+
+// SetLatestPersister 注入落盘回调（由 service 装配时提供）。
+//
+// 本包不 import repo：它属于 engine 层，而设置存储属于 repo。
+// 只留一个回调，让上层决定存哪里。
+func SetLatestPersister(fn func(kind Kind, row Latest)) {
+	latestStore.mu.Lock()
+	latestStore.disk = fn
+	latestStore.mu.Unlock()
+}
+
+// SeedLatest 用上次落盘的结论填缓存。
+//
+// 只填一条（版本 + 检查时刻）：它代表「上次我们看的时候是多少」，
+// 而不是「现在是多少」。所以它的 TTL 仍然照算——过期的会重新查，
+// 但首屏拿到的是立即值而不是四秒等待。
+func SeedLatest(kind Kind, row Latest) {
+	latestStore.mu.Lock()
+	defer latestStore.mu.Unlock()
+	if _, ok := latestStore.rows[kind]; ok {
+		return
+	}
+	latestStore.rows[kind] = row
+}
 
 // fetchLatestFunc 是查上游最新版的实际动作。
 //
@@ -69,7 +97,19 @@ func SetLatestFetcher(fn func(context.Context, Kind) (string, string)) func() {
 //
 // 返回的 map 一定包含两个键：查不到的引擎对应空版本 + 一句原因，
 // 界面据此区分「已是最新」与「没法判断」。
+//
+// background 为真时：缓存里已有值就直接返回它，同时后台补查。
+// 首屏用这个模式——它不该为「上游发版了没」等四秒。
 func QueryLatest(ctx context.Context, fore bool) map[Kind]Latest {
+	return queryLatest(ctx, fore, false)
+}
+
+// QueryLatestFast 是首屏用的版本：有缓存就用缓存，后台补查。
+func QueryLatestFast(ctx context.Context) map[Kind]Latest {
+	return queryLatest(ctx, false, true)
+}
+
+func queryLatest(ctx context.Context, fore, fast bool) map[Kind]Latest {
 	out := map[Kind]Latest{}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -77,7 +117,7 @@ func QueryLatest(ctx context.Context, fore bool) map[Kind]Latest {
 		wg.Add(1)
 		go func(kind Kind) {
 			defer wg.Done()
-			row := latestOf(ctx, kind, fore)
+			row := latestOf(ctx, kind, fore, fast)
 			mu.Lock()
 			out[kind] = row
 			mu.Unlock()
@@ -88,11 +128,21 @@ func QueryLatest(ctx context.Context, fore bool) map[Kind]Latest {
 }
 
 // latestOf 查一个引擎，优先走缓存。
-func latestOf(ctx context.Context, kind Kind, fore bool) Latest {
+//
+// fast 模式（首屏）的语义：**绝不同步等网络**。
+// 有旧值就用旧值 + 后台补查；没旧值就返回空 + 后台查。
+// 界面那时显示的是「还没查到」而不是「卡住 1.5 秒」——
+// 后者会让用户以为应用挂了。
+func latestOf(ctx context.Context, kind Kind, fore, fast bool) Latest {
 	latestStore.mu.Lock()
 	cached, ok := latestStore.rows[kind]
 	latestStore.mu.Unlock()
 	if ok && !fore && time.Since(time.UnixMilli(cached.CheckedAt)) < latestTTL {
+		return cached
+	}
+	if fast && !fore {
+		// 首屏：无论有没有旧值都不等。有旧值就先交旧的。
+		go refreshLatest(kind)
 		return cached
 	}
 
@@ -100,8 +150,52 @@ func latestOf(ctx context.Context, kind Kind, fore bool) Latest {
 	row := Latest{Version: version, Note: note, CheckedAt: time.Now().UnixMilli()}
 	latestStore.mu.Lock()
 	latestStore.rows[kind] = row
+	disk := latestStore.disk
 	latestStore.mu.Unlock()
+	if disk != nil {
+		disk(kind, row)
+	}
 	return row
+}
+
+// WarmLatest 在后台预热两个引擎的最新版。
+//
+// 装配阶段调用，不等结果：首次启动时磁盘上没有任何结论，
+// 而首屏的快路径不会同步等网络——预热能让用户进概览页时已经有值。
+func WarmLatest() {
+	go func() { QueryLatest(context.Background(), false) }()
+}
+
+// refreshing 标记「这个引擎正在后台查」。
+//
+// 没有它的话，首屏那一批请求（Health + Apps + Bootstrap）会给每个引擎
+// 各发一个外网请求——而它们查的是同一个东西。
+var refreshing sync.Map
+
+// refreshLatest 后台补查一个引擎的最新版。
+//
+// 用独立的 context：调用方那个只在一次请求内有效，而这里的结果要落盘。
+// 同一个引擎同时只允许一个后台查询在跑。
+func refreshLatest(kind Kind) {
+	if _, loaded := refreshing.LoadOrStore(kind, struct{}{}); loaded {
+		return
+	}
+	defer refreshing.Delete(kind)
+
+	ctx, cancel := context.WithTimeout(context.Background(), LatestTimeout*2)
+	defer cancel()
+	version, note := fetchLatestFunc(ctx, kind)
+	if version == "" && note != "" {
+		return // 查不到就保留旧值，不要把「已是最新」变成「未知」
+	}
+	row := Latest{Version: version, Note: note, CheckedAt: time.Now().UnixMilli()}
+	latestStore.mu.Lock()
+	latestStore.rows[kind] = row
+	disk := latestStore.disk
+	latestStore.mu.Unlock()
+	if disk != nil {
+		disk(kind, row)
+	}
 }
 
 // fetchLatest 分派到两条来源。失败只记一句原因，不返回错误。

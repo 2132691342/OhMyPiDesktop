@@ -4,7 +4,8 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/', redirect: '/chat' },
+    { path: '/', redirect: '/overview' },
+    { path: '/overview', name: 'overview', component: () => import('@/views/OverviewView.vue'), meta: { title: '概览' } },
     { path: '/chat', name: 'chat', component: () => import('@/views/ChatView.vue'), meta: { title: '对话' } },
     { path: '/workspace', name: 'workspace', component: () => import('@/views/WorkspaceView.vue'), meta: { title: '工作区' } },
     { path: '/sessions', name: 'sessions', component: () => import('@/views/SessionsView.vue'), meta: { title: '会话' } },
@@ -12,6 +13,7 @@ const router = createRouter({
     { path: '/models', name: 'models', component: () => import('@/views/ModelsView.vue'), meta: { title: '模型' } },
     { path: '/skills', name: 'skills', component: () => import('@/views/SkillsView.vue'), meta: { title: '技能' } },
     { path: '/plugins', name: 'plugins', component: () => import('@/views/PluginsView.vue'), meta: { title: '插件' } },
+    { path: '/mcp', name: 'mcp', component: () => import('@/views/McpView.vue'), meta: { title: 'MCP' } },
     { path: '/usage', name: 'usage', component: () => import('@/views/UsageView.vue'), meta: { title: '用量' } },
     { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { title: '设置' } },
   ],

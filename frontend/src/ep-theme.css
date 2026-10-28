@@ -1,0 +1,593 @@
+/* Element Plus 主题桥：把 EP 的 CSS 变量全量接到 --omp-* 令牌上。
+   这是 EP 令牌的**唯一**映射处——色值与尺寸仍在 themes.css 定义，
+   这里只做「EP 变量 = omp 令牌」的引用，外加少量组件细节对齐
+   （圆角、五态动效、禁用与加载态）。
+
+   为什么单独一个文件：一份映射散在两处会静默互相覆盖，
+   而缺了哪一项在运行时看不出来——组件只是「看起来不太对」。
+
+   五态是硬要求：默认 / 悬停放大 / 按下缩小 / 禁用 / 加载，
+   每一态都要有可辨的视觉差异，且与自绘的 .omp-btn 用同一套刻度，
+   两种按钮并排时点击手感才一致。 */
+
+:root {
+  /* 动作色：靛蓝五档 */
+  --el-color-primary: var(--omp-brand);
+  --el-color-primary-light-3: var(--omp-brand-2);
+  --el-color-primary-light-5: var(--omp-brand-3);
+  --el-color-primary-light-6: var(--omp-brand-2);
+  --el-color-primary-light-7: var(--omp-brand-3);
+  --el-color-primary-light-8: var(--omp-brand-3);
+  --el-color-primary-light-9: var(--omp-brand-tint);
+  --el-color-primary-dark-2: var(--omp-brand-strong);
+
+  /* 状态色只留给通过 / 出错 / 注意 */
+  --el-color-success: var(--omp-ok);
+  --el-color-success-light-9: var(--omp-ok-soft);
+  --el-color-warning: var(--omp-warn);
+  --el-color-warning-light-9: var(--omp-warn-soft);
+  --el-color-danger: var(--omp-bad);
+  --el-color-danger-light-9: var(--omp-bad-soft);
+  --el-color-error: var(--omp-bad);
+  --el-color-error-light-9: var(--omp-bad-soft);
+  --el-color-info: var(--omp-mute);
+  --el-color-info-light-9: var(--omp-hover);
+
+  /* 面与文字：全部走六级表面阶梯 */
+  --el-bg-color: var(--omp-raised);
+  --el-bg-color-overlay: var(--omp-raised);
+  --el-bg-color-page: var(--omp-window);
+  --el-fill-color: var(--omp-hover);
+  --el-fill-color-light: var(--omp-hover);
+  --el-fill-color-lighter: var(--omp-hover);
+  --el-fill-color-extra-light: var(--omp-hover);
+  --el-fill-color-dark: var(--omp-selected);
+  --el-fill-color-darker: var(--omp-selected);
+  --el-fill-color-blank: var(--omp-surface);
+
+  --el-text-color-primary: var(--omp-ink);
+  --el-text-color-regular: var(--omp-ink-5);
+  --el-text-color-secondary: var(--omp-mute);
+  --el-text-color-placeholder: var(--omp-faint);
+  --el-text-color-disabled: var(--omp-faint);
+
+  --el-border-color: var(--omp-line);
+  --el-border-color-light: var(--omp-line);
+  --el-border-color-lighter: var(--omp-line);
+  --el-border-color-extra-light: var(--omp-line);
+  --el-border-color-dark: var(--omp-line-strong);
+  --el-border-color-darker: var(--omp-line-strong);
+  --el-border-color-hover: var(--omp-line-strong);
+
+  --el-border-radius-base: var(--omp-r);
+  --el-border-radius-small: var(--omp-r-sm);
+  --el-border-radius-round: var(--omp-r-full);
+
+  --el-font-family: var(--omp-font-sans);
+  --el-font-size-extra-large: var(--omp-fs-lg);
+  --el-font-size-large: var(--omp-fs-base);
+  --el-font-size-medium: var(--omp-fs-sm);
+  --el-font-size-base: var(--omp-fs-sm);
+  --el-font-size-small: var(--omp-fs-xs);
+  --el-font-size-extra-small: var(--omp-fs-2xs);
+
+  --el-box-shadow-light: var(--omp-shadow-2);
+  --el-box-shadow: var(--omp-shadow-3);
+  --el-box-shadow-dark: var(--omp-shadow-3);
+  --el-box-shadow-lighter: var(--omp-shadow-1);
+
+  --el-disabled-bg-color: var(--omp-hover);
+  --el-disabled-text-color: var(--omp-faint);
+  --el-disabled-border-color: var(--omp-line);
+
+  --el-mask-color: rgba(15, 23, 42, 0.42);
+  --el-overlay-color-lighter: rgba(15, 23, 42, 0.42);
+
+  --el-component-size: var(--omp-ctl);
+  --el-component-size-small: var(--omp-ctl-sm);
+  --el-component-size-large: var(--omp-ctl-lg);
+
+  --el-transition-duration: var(--omp-dur);
+  --el-transition-duration-fast: var(--omp-dur-fast);
+}
+
+:root[data-theme='dark'] {
+  --el-mask-color: rgba(0, 0, 0, 0.66);
+  --el-overlay-color-lighter: rgba(0, 0, 0, 0.66);
+}
+
+/* ============================================================
+   按钮：五态齐全（默认 / 悬停放大 / 按下缩小 / 禁用 / 加载）
+   ============================================================ */
+.el-button {
+  --el-button-border-color: var(--omp-line-strong);
+  --el-button-hover-border-color: var(--omp-brand);
+  --el-button-hover-bg-color: var(--omp-brand-tint);
+  --el-button-hover-text-color: var(--omp-brand);
+  --el-button-active-border-color: var(--omp-brand);
+  --el-button-active-bg-color: var(--omp-brand-soft);
+  font-weight: 600;
+  border-radius: var(--omp-r);
+  transition:
+    transform var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur) var(--omp-ease),
+    border-color var(--omp-dur) var(--omp-ease),
+    color var(--omp-dur) var(--omp-ease),
+    box-shadow var(--omp-dur) var(--omp-ease);
+}
+
+/* 刻度与全站自绘按钮统一（1.04 / 0.95），两种按钮并排时手感才一致。
+   text 与 link 是文字级控件，缩放会带动整行文字抖动，只给颜色反馈。 */
+.el-button:not(.is-disabled):not(.is-text):not(.is-link):not(.is-loading):hover {
+  transform: scale(1.04);
+}
+.el-button:not(.is-disabled):not(.is-text):not(.is-link):not(.is-loading):active {
+  transform: scale(0.95);
+  transition-duration: 60ms;
+}
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-button.is-disabled:active {
+  transform: none;
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* 加载态：锁定尺寸不参与缩放，否则转圈一出现按钮变宽，整排控件跟着跳 */
+.el-button.is-loading,
+.el-button.is-loading:hover,
+.el-button.is-loading:active {
+  transform: none;
+  opacity: 0.85;
+  cursor: progress;
+}
+.el-button.is-loading::before {
+  background: transparent;
+}
+.el-button.is-loading .el-icon.is-loading {
+  color: inherit;
+}
+
+/* 主按钮：全站唯一的大面积强调色，实底靛蓝 + 白字 */
+.el-button--primary {
+  --el-button-bg-color: var(--omp-brand);
+  --el-button-border-color: var(--omp-brand);
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: var(--omp-brand-strong);
+  --el-button-hover-border-color: var(--omp-brand-strong);
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: var(--omp-brand-strong);
+  --el-button-active-border-color: var(--omp-brand-strong);
+  --el-button-active-text-color: #ffffff;
+  box-shadow: var(--omp-btn-shadow);
+}
+.el-button--danger {
+  --el-button-bg-color: var(--omp-bad);
+  --el-button-border-color: var(--omp-bad);
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: var(--omp-bad);
+  --el-button-hover-border-color: var(--omp-bad);
+  --el-button-hover-text-color: #ffffff;
+}
+/* 危险描边钮：中性描边 + 危险色文字，悬停才给淡底。
+   彩色描边违反分层纪律——描边的职责是分界，不是强调。 */
+.el-button--danger.is-plain {
+  --el-button-bg-color: transparent;
+  --el-button-border-color: var(--omp-line-strong);
+  --el-button-text-color: var(--omp-bad);
+  --el-button-hover-bg-color: var(--omp-bad-soft);
+  --el-button-hover-border-color: var(--omp-bad);
+  --el-button-hover-text-color: var(--omp-bad);
+  --el-button-active-bg-color: var(--omp-bad-soft);
+  --el-button-active-border-color: var(--omp-bad);
+  --el-button-active-text-color: var(--omp-bad);
+}
+
+.el-button.is-circle {
+  border-radius: var(--omp-r-full);
+}
+
+/* ============================================================
+   输入 / 选择 / 数值
+   ============================================================ */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: var(--omp-r);
+  background: var(--omp-control-bg);
+  box-shadow: 0 0 0 1px var(--omp-control-border) inset;
+  transition: box-shadow var(--omp-dur) var(--omp-ease);
+}
+.el-input__wrapper:hover,
+.el-textarea__inner:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--omp-control-border-hover) inset;
+}
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--omp-brand) inset;
+}
+.el-input.is-disabled .el-input__wrapper,
+.el-textarea.is-disabled .el-textarea__inner {
+  background: var(--omp-control-bg-disabled);
+  box-shadow: 0 0 0 1px var(--omp-border) inset;
+}
+
+/* 小号控件再降一档圆角：26px 高的框套 8px 圆角就快成胶囊了 */
+.el-input--small .el-input__wrapper,
+.el-input-number--small .el-input__wrapper,
+.el-select--small .el-select__wrapper {
+  border-radius: var(--omp-r-sm);
+}
+.el-textarea__inner {
+  padding: var(--omp-sp-2) var(--omp-sp-3);
+  line-height: var(--omp-lh-base);
+}
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder {
+  color: var(--omp-faint);
+}
+.el-input-group__append,
+.el-input-group__prepend {
+  background: var(--omp-hover);
+  border-radius: var(--omp-r);
+  box-shadow: 0 0 0 1px var(--omp-border) inset;
+  color: var(--omp-mute);
+}
+
+/* ============================================================
+   开关 / 单选 / 复选
+   ============================================================ */
+.el-switch {
+  --el-switch-on-color: var(--omp-brand);
+  --el-switch-off-color: var(--omp-line-strong);
+}
+.el-switch__core {
+  transition:
+    background-color var(--omp-dur) var(--omp-ease),
+    border-color var(--omp-dur) var(--omp-ease);
+}
+/* 开关按下去要缩一下：它是控件不是容器，用户需要「我按到了」的证据 */
+.el-switch:not(.is-disabled):active .el-switch__core {
+  transform: scale(0.94);
+}
+.el-switch.is-checked .el-switch__core .el-switch__action {
+  color: var(--omp-brand);
+}
+
+.el-radio__input.is-checked + .el-radio__label,
+.el-checkbox__input.is-checked + .el-checkbox__label {
+  color: var(--omp-ink);
+}
+
+/* ============================================================
+   卡片 / 弹层 / 抽屉 / 气泡
+   ============================================================ */
+.el-card {
+  --el-card-border-color: var(--omp-border);
+  --el-card-border-radius: var(--omp-r-xl);
+  --el-card-bg-color: var(--omp-raised);
+  border-radius: var(--omp-r-xl);
+  box-shadow: var(--omp-card-shadow) !important;
+}
+.el-card__header {
+  border-bottom: 1px solid var(--omp-border);
+  padding: var(--omp-sp-4) var(--omp-sp-5);
+  font-weight: 700;
+  color: var(--omp-ink);
+}
+.el-card__body {
+  padding: var(--omp-sp-5);
+}
+
+.el-popper,
+.el-popover.el-popper,
+.el-dropdown__popper.el-popper {
+  border-radius: var(--omp-r-lg) !important;
+  border: 1px solid var(--omp-border) !important;
+  box-shadow: var(--omp-shadow-3) !important;
+  background: var(--omp-raised) !important;
+}
+.el-popper__arrow::before {
+  border-color: var(--omp-border) !important;
+  background: var(--omp-raised) !important;
+}
+.el-dropdown-menu {
+  background: transparent;
+  padding: var(--omp-sp-1);
+}
+.el-dropdown-menu__item {
+  border-radius: var(--omp-r-sm);
+  font-size: var(--omp-fs-sm);
+  font-weight: 500;
+  color: var(--omp-ink-5);
+  padding: var(--omp-sp-2) var(--omp-sp-3);
+  transition: background-color var(--omp-dur-fast) var(--omp-ease);
+}
+.el-dropdown-menu__item:not(.is-disabled):hover,
+.el-dropdown-menu__item:not(.is-disabled):focus {
+  background: var(--omp-hover);
+  color: var(--omp-brand);
+}
+.el-dropdown-menu__item.is-danger:not(.is-disabled):hover {
+  background: var(--omp-bad-soft);
+  color: var(--omp-bad);
+}
+
+.el-dialog {
+  --el-dialog-border-radius: var(--omp-r-2xl);
+  border: 1px solid var(--omp-border);
+  box-shadow: var(--omp-shadow-3);
+  padding: 0;
+  overflow: hidden;
+}
+.el-dialog__header {
+  margin: 0;
+  padding: var(--omp-sp-5) var(--omp-sp-6) var(--omp-sp-3);
+  border-bottom: 1px solid var(--omp-border);
+}
+.el-dialog__title {
+  font-size: var(--omp-fs-lg);
+  font-weight: 700;
+  color: var(--omp-ink);
+}
+.el-dialog__body {
+  padding: var(--omp-sp-5) var(--omp-sp-6);
+  color: var(--omp-ink-5);
+}
+.el-dialog__footer {
+  padding: var(--omp-sp-4) var(--omp-sp-6) var(--omp-sp-5);
+  border-top: 1px solid var(--omp-border);
+}
+.el-dialog__headerbtn {
+  top: var(--omp-sp-4);
+  right: var(--omp-sp-4);
+}
+
+.el-drawer {
+  background: var(--omp-window);
+}
+.el-drawer__header {
+  margin: 0;
+  padding: var(--omp-sp-4) var(--omp-sp-5);
+  border-bottom: 1px solid var(--omp-border);
+  color: var(--omp-ink);
+  font-weight: 700;
+}
+.el-drawer__body {
+  padding: var(--omp-sp-5);
+}
+
+.el-overlay {
+  backdrop-filter: blur(1.5px);
+}
+
+/* ============================================================
+   标签 / 分段 / 页签
+   ============================================================ */
+.el-tag {
+  --el-tag-border-radius: var(--omp-r-sm);
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.el-tag--primary {
+  --el-tag-bg-color: var(--omp-brand-soft);
+  --el-tag-border-color: transparent;
+  --el-tag-text-color: var(--omp-brand);
+}
+.el-tag--info {
+  --el-tag-bg-color: var(--omp-hover);
+  --el-tag-border-color: transparent;
+  --el-tag-text-color: var(--omp-mute);
+}
+
+.el-radio-group,
+.el-checkbox-group {
+  gap: var(--omp-sp-2);
+}
+.el-radio-button__inner {
+  border-color: var(--omp-border);
+  color: var(--omp-mute);
+  font-weight: 600;
+  transition:
+    background-color var(--omp-dur) var(--omp-ease),
+    color var(--omp-dur) var(--omp-ease);
+}
+.el-radio-button:first-child .el-radio-button__inner {
+  border-radius: var(--omp-r) 0 0 var(--omp-r);
+}
+.el-radio-button:last-child .el-radio-button__inner {
+  border-radius: 0 var(--omp-r) var(--omp-r) 0;
+}
+.el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: var(--omp-raised);
+  border-color: var(--omp-border-strong);
+  color: var(--omp-brand);
+  box-shadow: var(--omp-card-shadow);
+}
+
+.el-tabs__header {
+  margin: 0 0 var(--omp-sp-4);
+}
+.el-tabs__nav-wrap::after {
+  background: var(--omp-border);
+  height: 1px;
+}
+.el-tabs__item {
+  font-size: var(--omp-fs-sm);
+  font-weight: 600;
+  color: var(--omp-mute);
+  transition: color var(--omp-dur) var(--omp-ease);
+}
+.el-tabs__item.is-active {
+  color: var(--omp-brand);
+}
+.el-tabs__active-bar {
+  background: var(--omp-brand);
+  height: 2px;
+  border-radius: 1px;
+}
+
+/* ============================================================
+   表格 / 折叠 / 空态 / 提示
+   ============================================================ */
+.el-table {
+  --el-table-border-color: var(--omp-border);
+  --el-table-header-bg-color: transparent;
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--omp-hover);
+  --el-table-text-color: var(--omp-ink-5);
+  --el-table-header-text-color: var(--omp-mute);
+  font-size: var(--omp-fs-sm);
+}
+.el-table th.el-table__cell {
+  font-weight: 700;
+  font-size: var(--omp-fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--omp-border);
+}
+.el-table td.el-table__cell {
+  border-bottom: 1px solid var(--omp-line);
+}
+.el-table__inner-wrapper::before {
+  display: none;
+}
+
+.el-collapse {
+  --el-collapse-border-color: var(--omp-border);
+  --el-collapse-header-bg-color: transparent;
+  --el-collapse-content-bg-color: transparent;
+  border: none;
+}
+.el-collapse-item__header,
+.el-collapse-item__wrap {
+  border-bottom: 1px solid var(--omp-border);
+  background: transparent;
+}
+.el-collapse-item__header {
+  font-size: var(--omp-fs-sm);
+  font-weight: 600;
+  color: var(--omp-ink-5);
+}
+
+.el-empty {
+  --el-empty-padding: var(--omp-sp-8) 0;
+}
+.el-empty__description p {
+  color: var(--omp-mute);
+  font-size: var(--omp-fs-sm);
+}
+
+.el-alert {
+  border-radius: var(--omp-r);
+  padding: var(--omp-sp-2) var(--omp-sp-3);
+}
+.el-alert__title {
+  font-size: var(--omp-fs-sm);
+  font-weight: 600;
+}
+
+.el-skeleton {
+  --el-skeleton-color: var(--omp-hover);
+  --el-skeleton-to-color: var(--omp-selected);
+}
+
+.el-scrollbar__bar {
+  opacity: 0.5;
+}
+.el-scrollbar__thumb {
+  background: var(--omp-line-strong);
+}
+
+.el-loading-mask {
+  background: color-mix(in srgb, var(--omp-raised) 72%, transparent);
+}
+
+.el-message-box {
+  border-radius: var(--omp-r-2xl);
+  border: 1px solid var(--omp-border);
+  box-shadow: var(--omp-shadow-3);
+  padding: var(--omp-sp-5);
+}
+.el-message-box__title {
+  font-size: var(--omp-fs-lg);
+  font-weight: 700;
+  color: var(--omp-ink);
+}
+.el-message-box__message {
+  font-size: var(--omp-fs-sm);
+  color: var(--omp-ink-5);
+  line-height: var(--omp-lh-base);
+}
+
+.el-message {
+  border-radius: var(--omp-r);
+  border: 1px solid var(--omp-border);
+  box-shadow: var(--omp-shadow-3);
+  font-size: var(--omp-fs-sm);
+  font-weight: 600;
+}
+
+.el-tooltip__popper,
+.el-popper.is-dark {
+  background: var(--omp-ink) !important;
+  border-color: var(--omp-ink) !important;
+  border-radius: var(--omp-r) !important;
+  font-size: var(--omp-fs-xs);
+  padding: var(--omp-sp-2) var(--omp-sp-3);
+}
+.el-popper.is-dark .el-popper__arrow::before {
+  background: var(--omp-ink) !important;
+  border-color: var(--omp-ink) !important;
+}
+
+.el-segmented {
+  --el-segmented-bg-color: var(--omp-hover);
+  --el-segmented-item-selected-bg-color: var(--omp-raised);
+  --el-segmented-item-selected-color: var(--omp-ink);
+  --el-segmented-item-hover-bg-color: transparent;
+  --el-segmented-item-hover-color: var(--omp-ink);
+  padding: 3px;
+  border-radius: var(--omp-r);
+  border: 1px solid var(--omp-border);
+}
+.el-segmented__item {
+  font-size: var(--omp-fs-xs);
+  font-weight: 700;
+  border-radius: calc(var(--omp-r) - 3px);
+  transition:
+    background-color var(--omp-dur) var(--omp-ease),
+    color var(--omp-dur) var(--omp-ease);
+}
+.el-segmented__item-selected {
+  box-shadow: var(--omp-card-shadow);
+}
+
+.el-progress-bar__outer {
+  background: var(--omp-hover);
+}
+
+.el-form-item__label {
+  font-size: var(--omp-fs-sm);
+  font-weight: 600;
+  color: var(--omp-ink-5);
+}
+.el-form-item {
+  margin-bottom: var(--omp-sp-4);
+}
+.el-divider {
+  border-color: var(--omp-border);
+}
+.el-divider__text {
+  background: var(--omp-raised);
+  color: var(--omp-mute);
+  font-size: var(--omp-fs-xs);
+  font-weight: 600;
+}
+.el-badge__content {
+  font-weight: 700;
+  font-size: var(--omp-fs-2xs);
+  border: none;
+}

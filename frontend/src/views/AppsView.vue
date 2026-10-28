@@ -97,9 +97,8 @@ onMounted(() => {
 
     <div class="page-body">
       <section v-for="group in groups" :key="group.key" v-show="group.rows.length">
-        <div class="omp-section-title">
-          {{ t(`apps.group.${group.key}`) }}
-          <span class="count">{{ group.rows.length }}</span>
+        <div class="omp-sec-head">
+          <span class="omp-sec-title">{{ t(`apps.group.${group.key}`) }} <span class="count">{{ group.rows.length }}</span></span>
         </div>
         <div class="app-list">
           <AppCard

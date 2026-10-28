@@ -99,6 +99,53 @@ export interface RunRow {
   pid: number
   session_id: string
   running: boolean
+  protocol: number
+  started_at: number
+  call_count: number
+  last_error?: string
+  busy: boolean
+}
+
+/** 单个引擎的健康快照：探测 + 进程 + 落盘计数 + 配置现状，一屏要用的全部事实。 */
+export interface EngineHealth {
+  engine_kind: string
+  engine_label: string
+  installed: boolean
+  exe_path: string
+  version: string
+  channel_kind: string
+  channel_label: string
+  latest_version: string
+  outdated: boolean
+  install_hint: string
+  running: boolean
+  busy: boolean
+  pid: number
+  protocol: number
+  started_at: number
+  call_count: number
+  last_error?: string
+  session_count: number
+  skill_count: number
+  plugin_count: number
+  mcp_count: number
+  config_files: ConfigFile[]
+  root_dir: string
+  agent_dir: string
+  dir_exists: boolean
+  caps: Record<string, boolean>
+}
+
+/** 两个引擎的健康快照 + 全局计数。概览页首屏用。 */
+export interface HealthData {
+  engines: EngineHealth[]
+  active_kind: string
+  workspace: string
+  detected_at: number
+  total_sessions: number
+  total_skills: number
+  total_plugins: number
+  total_mcp: number
 }
 
 export interface Bootstrap {
@@ -438,12 +485,53 @@ export interface SkillRow {
   kind: EngineKind
 }
 
+/** 一条已装插件。清单来自引擎自己的登记文件，不是扫 node_modules 的结果。 */
 export interface PluginRow {
-  kind: EngineKind
-  name: string
-  version: string
-  source: string
-  path: string
+  engine_kind: string
+  plugin_name: string
+  plugin_version: string
+  plugin_source: string
+  plugin_path: string
+  plugin_desc?: string
+  resource_kinds: string[]
+  scope_kind: string
+  enabled: boolean
+  /** 包目录是否真的存在：清单里登记了但目录被删掉时是 false */
+  installed: boolean
+}
+
+export interface PluginListData {
+  plugins: PluginRow[]
+  registry_path: string
+  read_error?: string
+}
+
+// ---------------- MCP ----------------
+
+/** 一个 MCP 服务器。两个引擎共用 mcp.json 的 mcpServers 形状。 */
+export interface McpServer {
+  server_name: string
+  transport_kind: string
+  command_line?: string
+  server_url?: string
+  desc?: string
+  enabled: boolean
+  /** 被顶层停用名单压住：界面要说清为什么点不动 */
+  disabled_by_deny: boolean
+  scope_kind: string
+  config_path: string
+  live_status?: string
+  live_error?: string
+  tool_names?: string[]
+}
+
+export interface McpListData {
+  engine_kind: string
+  servers: McpServer[]
+  user_path: string
+  project_path?: string
+  read_errors?: string[]
+  live_checked: boolean
 }
 
 // ---------------- 工作区 ----------------

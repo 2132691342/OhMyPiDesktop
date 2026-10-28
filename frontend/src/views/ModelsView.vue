@@ -212,14 +212,15 @@ onMounted(() => {
     <div class="page-body">
       <!-- 服务商 -->
       <section>
-        <div class="omp-section-title">
-          {{ t('models.providers') }}
-          <span class="count">{{ providers.length }}</span>
+        <div class="omp-sec-head">
+          <span class="omp-sec-title">{{ t('models.providers') }} <span class="count">{{ providers.length }}</span></span>
+          <span v-if="configPath" class="omp-mono registry">{{ configPath }}</span>
         </div>
-        <div v-if="!providers.length && !loadingProviders" class="empty">
-          <div class="empty-mark"><AppIcon name="cpu" :size="22" /></div>
-          <p class="empty-title">{{ t('models.emptyTitle') }}</p>
-          <p class="empty-hint">{{ t('models.emptyHint') }}</p>
+        <div v-if="!providers.length && !loadingProviders" class="omp-empty">
+          <span class="omp-tile omp-tile--lg omp-tile--neutral"><AppIcon name="cpu" :size="22" /></span>
+          <p class="omp-empty-title">{{ t('models.emptyTitle') }}</p>
+          <p class="omp-empty-hint">{{ t('models.emptyHint') }}</p>
+          <button class="omp-btn sm primary" @click="openCreate">{{ t('models.addProvider') }}</button>
         </div>
         <div v-else class="grid">
           <article v-for="view in providers" :key="view.provider_name" class="provider-card card-pad">
@@ -253,16 +254,12 @@ onMounted(() => {
             </div>
           </article>
         </div>
-        <p v-if="configPath" class="path-line">
-          {{ t('models.pathLabel') }}: <span class="mono selectable">{{ configPath }}</span>
-        </p>
       </section>
 
       <!-- 登录：只有支持界面登录的引擎才渲染（pi 的登录在终端里做） -->
       <section v-if="caps?.login">
-        <div class="omp-section-title">
-          {{ t('models.login') }}
-          <span class="count">{{ authenticated }}/{{ logins.length }}</span>
+        <div class="omp-sec-head">
+          <span class="omp-sec-title">{{ t('models.login') }} <span class="count">{{ authenticated }}/{{ logins.length }}</span></span>
         </div>
         <p class="hint">{{ t('models.loginHint') }}</p>
         <div v-if="logins.length" class="login-grid">
@@ -289,79 +286,76 @@ onMounted(() => {
 
       <!-- 可用模型（只读） -->
       <section>
-        <div class="omp-section-title">
-          {{ t('chat.model') }}
-          <span class="count">{{ models.length }}</span>
+        <div class="omp-sec-head">
+          <span class="omp-sec-title">{{ t('chat.model') }} <span class="count">{{ models.length }}</span></span>
         </div>
         <p v-if="engineMissing" class="hint">{{ t('chat.engineDown') }} — {{ t('models.emptyHint') }}</p>
-        <div v-else class="table-wrap">
-          <table class="omp-table">
-            <thead>
-              <tr>
-                <th>{{ t('models.providers') }}</th>
-                <th>{{ t('models.modelId') }}</th>
-                <th class="num">{{ t('models.contextWindow') }}</th>
-                <th class="num">{{ t('models.maxTokens') }}</th>
-                <th class="num">{{ t('models.reasoning') }}</th>
-                <th class="num">{{ t('models.input') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in models" :key="`${row.provider}/${row.id}`">
-                <td>{{ row.provider }}</td>
-                <td class="mono selectable">{{ row.id }}</td>
-                <td class="num">{{ row.context_window ? row.context_window.toLocaleString() : '—' }}</td>
-                <td class="num">{{ row.max_tokens ? row.max_tokens.toLocaleString() : '—' }}</td>
-                <td class="num">{{ row.reasoning ? t('common.yes') : '—' }}</td>
-                <td class="num mono">{{ (row.input ?? []).join(',') || 'text' }}</td>
-              </tr>
-              <tr v-if="!models.length && !loadingModels">
-                <td colspan="6" class="empty-cell">{{ t('common.empty') }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <el-table v-else :data="models" size="small" max-height="420">
+          <el-table-column prop="provider" :label="t('models.providers')" width="130" />
+          <el-table-column :label="t('models.modelId')" min-width="200">
+            <template #default="{ row }">
+              <span class="omp-mono selectable">{{ row.id }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('models.contextWindow')" width="120" align="right">
+            <template #default="{ row }">
+              <span class="omp-mono">{{ row.context_window ? row.context_window.toLocaleString() : '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('models.maxTokens')" width="100" align="right">
+            <template #default="{ row }">
+              <span class="omp-mono">{{ row.max_tokens ? row.max_tokens.toLocaleString() : '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('models.reasoning')" width="92" align="center">
+            <template #default="{ row }">
+              <span v-if="row.reasoning" class="tag ok">{{ t('common.yes') }}</span>
+              <span v-else class="tag">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('models.input')" width="120">
+            <template #default="{ row }">
+              <span class="omp-mono">{{ (row.input ?? []).join(',') || 'text' }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
         <p class="hint">{{ t('models.testHint') }}</p>
       </section>
     </div>
 
     <!-- 服务商编辑 -->
     <el-dialog v-model="dialogOpen" :title="editing ? t('models.editProvider') : t('models.addProvider')" width="560px">
-      <div class="form">
-        <label class="field">
-          <span class="field-label">{{ t('common.name') }}</span>
-          <input v-model="form.name" class="omp-input" :disabled="Boolean(editing)" placeholder="router" />
-        </label>
-        <label class="field">
-          <span class="field-label">{{ t('models.baseUrl') }}</span>
-          <input v-model="form.base_url" class="omp-input" placeholder="https://api.example.com/v1" />
-        </label>
+      <el-form label-position="top" size="small">
+        <el-form-item :label="t('common.name')">
+          <el-input v-model="form.name" :disabled="Boolean(editing)" placeholder="router" />
+        </el-form-item>
+        <el-form-item :label="t('models.baseUrl')">
+          <el-input v-model="form.base_url" placeholder="https://api.example.com/v1" />
+        </el-form-item>
         <div class="field-row">
-          <label class="field">
-            <span class="field-label">{{ t('models.api') }}</span>
+          <el-form-item :label="t('models.api')" class="grow">
             <el-select v-model="form.api" style="width: 100%">
               <el-option v-for="option in apiOptions" :key="option" :label="option" :value="option" />
             </el-select>
-          </label>
-          <label class="field">
-            <span class="field-label">{{ t('models.apiKey') }}</span>
-            <input v-model="form.api_key" class="omp-input" :placeholder="t('models.apiKeyHint')" />
-          </label>
+          </el-form-item>
+          <el-form-item :label="t('models.apiKey')" class="grow">
+            <el-input v-model="form.api_key" :placeholder="t('models.apiKeyHint')" />
+          </el-form-item>
         </div>
+      </el-form>
 
-        <div class="models-head">
-          <span class="field-label">{{ t('models.modelsLabel') }}</span>
-          <button class="omp-btn text sm" @click="addModel">{{ t('models.addModel') }}</button>
-        </div>
-        <div v-for="(model, index) in form.models" :key="index" class="model-row">
-          <input v-model="model.model_id" class="omp-input" :placeholder="t('models.modelId')" />
-          <input v-model="model.model_name" class="omp-input" :placeholder="t('common.name')" />
-          <input v-model.number="model.context_window" class="omp-input num-input" type="number" :placeholder="t('models.contextWindow')" />
-          <input v-model.number="model.max_tokens" class="omp-input num-input" type="number" :placeholder="t('models.maxTokens')" />
-          <button class="omp-btn icon ghost danger" :title="t('common.delete')" @click="removeModel(index)">
-            <AppIcon name="close" :size="13" />
-          </button>
-        </div>
+      <div class="models-head">
+        <span class="field-label">{{ t('models.modelsLabel') }}</span>
+        <button class="omp-btn text sm" @click="addModel">{{ t('models.addModel') }}</button>
+      </div>
+      <div v-for="(model, index) in form.models" :key="index" class="model-row">
+        <input v-model="model.model_id" class="omp-input" :placeholder="t('models.modelId')" />
+        <input v-model="model.model_name" class="omp-input" :placeholder="t('common.name')" />
+        <input v-model.number="model.context_window" class="omp-input num-input" type="number" :placeholder="t('models.contextWindow')" />
+        <input v-model.number="model.max_tokens" class="omp-input num-input" type="number" :placeholder="t('models.maxTokens')" />
+        <button class="omp-btn icon ghost danger" :title="t('common.delete')" @click="removeModel(index)">
+          <AppIcon name="close" :size="13" />
+        </button>
       </div>
       <template #footer>
         <button class="omp-btn" @click="dialogOpen = false">{{ t('common.cancel') }}</button>
@@ -505,10 +499,12 @@ onMounted(() => {
   gap: var(--omp-sp-1);
 }
 
-.path-line {
-  margin: var(--omp-sp-3) 0 0;
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
+.registry {
+  margin-left: auto;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hint {
@@ -556,85 +552,11 @@ onMounted(() => {
   color: var(--omp-faint);
 }
 
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--omp-line);
-  border-radius: var(--omp-r-lg);
-}
-
-.omp-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--omp-fs-xs);
-}
-
-.omp-table th {
-  text-align: left;
-  padding: 7px 10px;
-  font-size: var(--omp-fs-3xs);
-  font-weight: 650;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--omp-faint);
-  border-bottom: 1px solid var(--omp-line);
-  background: var(--omp-hover);
-  position: sticky;
-  top: 0;
-}
-
-.omp-table td {
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--omp-line);
-  color: var(--omp-ink-5);
-}
-
-.omp-table tr:last-child td {
-  border-bottom: none;
-}
-
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.count {
   font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-}
-
-.empty-cell {
-  text-align: center;
   color: var(--omp-faint);
-  padding: var(--omp-sp-6) 0;
-}
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  padding: var(--omp-sp-8);
-  text-align: center;
-}
-
-.empty-mark {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--omp-r-lg);
-  background: var(--omp-brand-soft);
-  color: var(--omp-brand);
-}
-
-.empty-title {
-  margin: 0;
-  font-size: var(--omp-fs-sm);
-  font-weight: 600;
-  color: var(--omp-ink);
-}
-
-.empty-hint {
-  margin: 0;
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-mute);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .form {

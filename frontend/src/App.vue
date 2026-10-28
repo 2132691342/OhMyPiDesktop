@@ -9,9 +9,14 @@ import ToastHost from '@/components/common/ToastHost.vue'
 import StartupError from '@/components/common/StartupError.vue'
 import { notifyReady } from '@/api/wails'
 import { useAppStore } from '@/stores/app'
+import { useViewportScale } from '@/composables/useViewportScale'
 
 const app = useAppStore()
 const { t } = useI18n()
+
+// 整套刻度随窗口宽度等比缩放：写进 --omp-vw-scale 一个值就够，
+// 组件全走令牌，不必为每个断点写媒体查询。
+useViewportScale()
 
 onMounted(() => {
   void app.load()

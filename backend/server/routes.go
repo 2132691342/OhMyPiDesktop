@@ -35,6 +35,8 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.GET("/engines", s.engines)
 	api.POST("/engines/detect", s.detectEngines)
 	api.POST("/engines/restart", s.restartEngines)
+	// 健康度：概览页一屏要用的全部引擎事实（探测 + 进程 + 落盘计数 + 配置现状）
+	api.GET("/health/engines", s.engineHealth)
 
 	api.GET("/apps", s.apps)
 	api.POST("/apps/install", s.installApp)
@@ -89,6 +91,12 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.GET("/plugins", s.plugins)
 	api.POST("/plugins/install", s.installPlugin)
 	api.POST("/plugins/uninstall", s.uninstallPlugin)
+
+	// MCP 服务器
+	api.GET("/mcp", s.mcpList)
+	api.POST("/mcp/save", s.mcpSave)
+	api.POST("/mcp/toggle", s.mcpToggle)
+	api.POST("/mcp/remove", s.mcpRemove)
 
 	// 工作区：文件树与 git
 	api.GET("/files", s.files)

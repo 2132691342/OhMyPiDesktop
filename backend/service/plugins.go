@@ -1,80 +1,114 @@
 package service
 
-// 插件与扩展：列出、安装、卸载。全部走引擎自己的 CLI。
+// 插件与扩展：列、装、卸。
 //
-// 不自己解 node_modules：包的布局是引擎的私有契约，
-// 照着解出来的结果会在引擎下一次改布局时静默错掉。
+// 「列」读引擎自己的登记清单（pi 是 settings.json 的 packages，
+// omp 是 plugins/package.json 的 dependencies），不跑 CLI、不扫
+// node_modules——扫目录会把几百个间接依赖一起当成插件。
+//
+// 「装 / 卸」仍然代跑引擎自己的 CLI：只有引擎知道怎么把包装进它的私有目录、
+// 怎么同步它自己的锁文件。我们自己去改目录会留下「配置说装了、目录里没有」的脏状态。
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
+	"OhMyPiDesktop/backend/env"
 	"OhMyPiDesktop/backend/pkg"
 )
 
 // ---------------- 插件 / 扩展 ----------------
 
-// PluginRow 是一条已装的插件/扩展。
-type PluginRow struct {
-	Kind    engine.Kind `json:"kind"`
-	Name    string      `json:"name"`
-	Version string      `json:"version"`
-	Source  string      `json:"source"`
-	Path    string      `json:"path"`
-}
-
-// Plugins 列出已装的插件。
+// PluginList 列出某引擎（或全部）的插件。
 //
-// 都走引擎自己的 CLI：omp 有 `omp plugin list --json`，pi 有 `pi list --json`。
-// 不自己解 node_modules——包的布局是引擎的私有契约。
-func (a *App) Plugins(ctx context.Context, kind engine.Kind) ([]PluginRow, error) {
-	kinds := engine.AllKinds()
+// 两个引擎一起查时并发执行：各自的清单在不同盘上不同目录里，
+// 串行只是让首屏多等一次文件读取。
+func (a *App) PluginList(kind engine.Kind) (*domain.PluginListVO, error) {
 	if kind.Valid() {
-		kinds = []engine.Kind{kind}
+		return a.pluginsOf(kind)
 	}
-	out := []PluginRow{}
-	for _, k := range kinds {
-		if !a.Identity(k).Caps.Extensions {
+	out := &domain.PluginListVO{Plugins: []domain.PluginRowVO{}}
+	kinds := engine.AllKinds()
+	results := make([]*domain.PluginListVO, len(kinds))
+	errs := make([]error, len(kinds))
+	done := make(chan int, len(kinds))
+	for i, k := range kinds {
+		go func(i int, k engine.Kind) {
+			results[i], errs[i] = a.pluginsOf(k)
+			done <- i
+		}(i, k)
+	}
+	for range kinds {
+		<-done
+	}
+	var readErrs []string
+	for i := range kinds {
+		if errs[i] != nil {
+			readErrs = append(readErrs, string(kinds[i])+": "+pkg.As(errs[i]).Message)
 			continue
 		}
-		list, err := a.pluginsOf(ctx, k)
-		if err != nil {
+		if results[i] == nil {
 			continue
 		}
-		out = append(out, list...)
+		out.Plugins = append(out.Plugins, results[i].Plugins...)
+		if out.RegistryPath == "" {
+			out.RegistryPath = results[i].RegistryPath
+		}
+		if results[i].ReadError != "" {
+			readErrs = append(readErrs, string(kinds[i])+": "+results[i].ReadError)
+		}
+	}
+	if len(readErrs) > 0 {
+		out.ReadError = strings.Join(readErrs, "；")
 	}
 	return out, nil
 }
 
-func (a *App) pluginsOf(ctx context.Context, kind engine.Kind) ([]PluginRow, error) {
-	id := a.Identity(kind)
-	if id.Exe == "" {
-		return nil, engine.ErrMissing(kind)
-	}
-	args := []string{"plugin", "list", "--json"}
-	if kind == engine.KindPi {
-		args = []string{"list", "--json"}
-	}
-	var raw []struct {
-		Name    string `json:"name"`
-		Version string `json:"version"`
-		Source  string `json:"source"`
-		Spec    string `json:"spec"`
-		Path    string `json:"path"`
-	}
-	if err := runJSON(ctx, id.Exe, &raw, args...); err != nil {
+// pluginsOf 列一个引擎的插件：登记清单 + 包目录里的实际内容。
+func (a *App) pluginsOf(kind engine.Kind) (*domain.PluginListVO, error) {
+	layout, err := a.Layout(kind)
+	if err != nil {
 		return nil, err
 	}
-	out := make([]PluginRow, 0, len(raw))
-	for _, p := range raw {
-		source := firstNonEmpty(p.Source, p.Spec, p.Path)
-		out = append(out, PluginRow{
-			Kind: kind, Name: p.Name, Version: p.Version, Source: source, Path: p.Path,
-		})
+	entries, registry, err := env.ReadPluginEntries(string(kind), layout)
+	if err != nil {
+		return nil, err
+	}
+	out := &domain.PluginListVO{Plugins: []domain.PluginRowVO{}, RegistryPath: registry}
+	// pi 把包装进 agent/npm/node_modules；omp 装进 plugins/node_modules
+	modules := packageModulesDir(kind, layout)
+	for _, entry := range entries {
+		detail := env.ReadPluginDetail(modules, entry)
+		row := domain.PluginRowVO{
+			EngineKind:    string(kind),
+			PluginName:    entry.Name,
+			PluginVersion: detail.Version,
+			PluginSource:  entry.Source,
+			PluginPath:    detail.Path,
+			PluginDesc:    detail.Desc,
+			ResourceKinds: detail.Resources,
+			ScopeKind:     entry.Scope,
+			Enabled:       true,
+			Installed:     detail.Path != "",
+		}
+		if row.ResourceKinds == nil {
+			row.ResourceKinds = []string{}
+		}
+		out.Plugins = append(out.Plugins, row)
 	}
 	return out, nil
+}
+
+// packageModulesDir 返回该引擎装包的 node_modules。
+func packageModulesDir(kind engine.Kind, layout env.Layout) string {
+	if kind == engine.KindPi {
+		return filepath.Join(layout.Plugins, "node_modules")
+	}
+	return filepath.Join(layout.Plugins, "node_modules")
 }
 
 // InstallPlugin 装一个插件/扩展（走引擎 CLI）。
@@ -88,31 +122,46 @@ func (a *App) InstallPlugin(ctx context.Context, kind engine.Kind, source string
 	if id.Exe == "" {
 		return "", engine.ErrMissing(k)
 	}
-	args := []string{"plugin", "install", source}
-	if k == engine.KindPi {
-		args = []string{"install", source}
-	}
-	out, err := runText(ctx, id.Exe, 10*time.Minute, args...)
+	out, err := runText(ctx, id.Exe, 10*time.Minute, pluginArgs(k, "install", source)...)
 	if err != nil {
 		return out, pkg.Wrap(pkg.CodePluginFailed, "安装失败", err)
 	}
+	a.InvalidateCounts()
 	return out, nil
 }
 
-// UninstallPlugin 卸一个插件/扩展。
+// UninstallPlugin 卸一个插件/扩展（走引擎 CLI）。
+//
+// 传的是清单里那一行原文而不是裸包名：pi 的 packages 记的是
+// `npm:name@1.2.3`，只给裸名会匹配不到。
 func (a *App) UninstallPlugin(ctx context.Context, kind engine.Kind, source string) (string, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "", pkg.New(pkg.CodeBadRequest, "要卸哪个插件？", "")
+	}
 	k := a.KindOr(string(kind))
 	id := a.Identity(k)
 	if id.Exe == "" {
 		return "", engine.ErrMissing(k)
 	}
-	args := []string{"plugin", "uninstall", source}
-	if k == engine.KindPi {
-		args = []string{"remove", source}
-	}
-	out, err := runText(ctx, id.Exe, 3*time.Minute, args...)
+	out, err := runText(ctx, id.Exe, 3*time.Minute, pluginArgs(k, "uninstall", source)...)
 	if err != nil {
 		return out, pkg.Wrap(pkg.CodePluginFailed, "卸载失败", err)
 	}
+	a.InvalidateCounts()
 	return out, nil
+}
+
+// pluginArgs 把动作翻成该引擎的 CLI 参数。
+//
+// omp 用 `plugin install`，pi 用 `install` / `remove`（`uninstall` 是 remove 的别名，
+// 两个都能用，这里统一发 remove——它与 pi 帮助里列出的第一个名字一致）。
+func pluginArgs(kind engine.Kind, action, source string) []string {
+	if kind == engine.KindPi {
+		if action == "uninstall" {
+			return []string{"remove", source}
+		}
+		return []string{"install", source}
+	}
+	return []string{"plugin", action, source}
 }

@@ -84,7 +84,15 @@ type AppRow struct {
 // 进一次应用页不该起两个子进程、发三次外网请求。
 func (a *App) Apps(ctx context.Context, fore bool) ([]AppRow, error) {
 	a.detectAll(ctx, fore)
-	latest := engine.QueryLatest(ctx, fore)
+	// fore=false（进入页面）：有上次结论就先用它，后台补查，
+	// 不让「进应用页」变成一次四秒的网络等待。
+	// fore=true（用户点了「重新检查」）：同步等真结果。
+	var latest map[engine.Kind]engine.Latest
+	if fore {
+		latest = engine.QueryLatest(ctx, true)
+	} else {
+		latest = engine.QueryLatestFast(ctx)
+	}
 	out := make([]AppRow, 0, 2)
 	for _, kind := range engine.AllKinds() {
 		out = append(out, a.appRow(ctx, kind, latest[kind]))

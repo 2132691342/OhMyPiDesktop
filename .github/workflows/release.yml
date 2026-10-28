@@ -80,7 +80,7 @@ jobs:
         # 只门后端：main 包 //go:embed frontend/dist，而 dist 此刻还不存在（由 wails build 生成）。
         run: |
           # 仓库统一 LF 行尾（.gitattributes），详见 ci.yml 的 gofmt 步骤
-          $bad = gofmt -l backend desktop main.go tools
+          $bad = gofmt -l backend main.go tools
           if ($bad) { throw "gofmt 未通过:`n$bad" }
           go vet ./backend/... ./tools/...
           if ($LASTEXITCODE -ne 0) { throw "go vet 失败" }

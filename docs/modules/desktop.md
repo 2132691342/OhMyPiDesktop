@@ -127,7 +127,7 @@ app.Run()                   → ServiceStartup（装配业务）→ 建窗 → �
 ## 不变量
 
 - 装配阶段绝不碰窗口对象。碰了就是「显示不出来」或者 panic。
-- `desktop` 不被 `backend/` 任何包 import。
+- `backend/desktop` 不被 `backend/` 其他任何包 import。
 - 绑定方法只做系统能力，不承载业务判断。
 - 托盘与界面看到同一份「当前工作目录」：托盘切目录走 `service.SetWorkspace`，
   与界面 HTTP 那条路是同一条。

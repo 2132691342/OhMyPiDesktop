@@ -11,6 +11,7 @@ import (
 
 	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
+	"OhMyPiDesktop/backend/pkg"
 	"OhMyPiDesktop/backend/session"
 )
 
@@ -165,7 +166,11 @@ func (a *App) Send(ctx context.Context, kind engine.Kind, sessionFile string, re
 	e := a.EngineFor(kind, dir)
 	if sessionFile != "" && !samePath(e.CurrentSessionFile(), sessionFile) && !e.Busy() {
 		// 打开的是历史会话：先切过去再发，否则消息会落到另一个会话里。
-		_ = e.Switch(ctx, sessionFile)
+		// 切换失败必须报错：忽略它意味着「用户以为在 A 里聊，实际发到了 B」——
+		// 这是最坏的一类错：内容写对了，位置错了，事后很难发现。
+		if err := e.Switch(ctx, sessionFile); err != nil {
+			return "", pkg.Wrap(pkg.CodeEngineBusy, "切不到这个会话，消息没有发出去", err)
+		}
 	}
 	// 模型信息从这一轮的状态里拿：State 本来就要跑，不额外加一次 RPC。
 	if len(payload.Images) > 0 {

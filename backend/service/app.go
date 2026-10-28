@@ -4,9 +4,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"OhMyPiDesktop/backend/domain"
@@ -41,6 +43,16 @@ type App struct {
 	detectedAt time.Time
 	appDir     string
 
+	// detectMu 是探测的单飞锁：首屏三个请求同时到达时只探测一轮。
+	// 它与 a.mu 分开：探测要起子进程（几秒），持 a.mu 会把读缓存的人也堵住。
+	detectMu sync.Mutex
+	// bgDetecting 保证同一时刻只有一颗后台补验在跑。
+	bgDetecting atomic.Bool
+
+	// countsMu / counts 是「落盘计数」的短 TTL 缓存（概览页首屏用）。
+	countsMu sync.Mutex
+	counts   map[engine.Kind]healthCounts
+
 	Version string
 }
 
@@ -61,6 +73,7 @@ func New(opts Options) (*App, error) {
 		appDir:  opts.DataDir,
 		indexes: map[engine.Kind]*session.Index{},
 		ids:     map[engine.Kind]engine.Identity{},
+		counts:  map[engine.Kind]healthCounts{},
 	}
 	app.profile = app.Store.Get(domain.KeyProfile)
 	app.workspace = app.Store.Get(domain.KeyWorkspace)
@@ -83,6 +96,16 @@ func New(opts Options) (*App, error) {
 		app.newSubagentStore,
 	)
 	app.refreshIndexes()
+	// 先用上次的探测结果填一下：首屏不必为空等一次 Node 启动，
+	// 而真正的判定由第一次 detectAll 覆盖（它的结果比缓存权威）。
+	app.loadCachedIdentities()
+	// 最新版查询同理：它要发外网请求，首屏不该等它。
+	// 先接上落盘回调，再把上次的结论读回来。
+	app.wireLatestPersistence()
+	app.loadCachedLatest()
+	// 首次启动时磁盘上没有任何结论：后台预热一次，
+	// 用户进概览页时通常已经有值了（而这条路径本身不等网络）。
+	engine.WarmLatest()
 	// 探测推迟到第一次 Bootstrap：装配阶段不该等两个子进程，
 	// 而「引擎装在哪」只在界面要显示时才需要。
 	return app, nil
@@ -138,13 +161,83 @@ var detectFunc = env.Detect
 // detectAll 探测所有引擎并把结果记下来。fore 为真时忽略缓存。
 //
 // 两个引擎并发探测：它们互不依赖，串行只是让首屏多等一个 pi 的 Node 启动。
+//
+// 并发去重：首屏会同时打 Bootstrap / Health / EngineStatus，三个请求都
+// 发现缓存过期就各自起一轮探测——机器上就多出六个子进程，而它们查的是同一件事。
+// 用一个「探测中就等它」的锁把它们合成一次。
+//
+// 它**不阻塞首屏**：已经有落盘结果时立即返回，同时在后台补一次真探测。
+// 理由：冷探测要 2.7 秒（pi 的 --help 得起一次 Node），而这 2.7 秒内
+// 界面上什么都显示不出来。用上次的结论先把界面填上，验证结果到了再悄悄更新。
 func (a *App) detectAll(ctx context.Context, fore bool) {
-	a.mu.RLock()
-	fresh := !fore && len(a.ids) == len(engine.AllKinds()) && time.Since(a.detectedAt) < detectTTL
-	a.mu.RUnlock()
-	if fresh {
+	if a.detectFresh(fore) {
 		return
 	}
+	// 手上有上次的落盘结论：先交给界面，后台补验。
+	// 注意这时 detectedAt 还是零——所以首屏之后的第二批请求（Bootstrap → Health）
+	// 会再次走到这里；bgDetecting 保证它们只触发一颗后台探测。
+	if !fore && a.hasCachedIdentity() {
+		a.detectInBackground()
+		return
+	}
+	// 啥都没有（首次运行）：只能等这一轮。
+	a.detectMu.Lock()
+	if a.detectFresh(fore) {
+		a.detectMu.Unlock()
+		return
+	}
+	a.detectOnce(ctx)
+	a.detectMu.Unlock()
+}
+
+// hasCachedIdentity 判断是否已有可展示的探测结果。
+func (a *App) hasCachedIdentity() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	for _, kind := range engine.AllKinds() {
+		if id, ok := a.ids[kind]; ok && id.Exe != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// detectInBackground 在后台补一次真探测，不阻塞调用方。
+//
+// 三个限制：只一颗在跑（bgDetecting）、不重复排队、失败不重试——
+// 失败时界面用已有的落盘结果继续工作，下次请求自然会再试。
+func (a *App) detectInBackground() {
+	if !a.bgDetecting.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer a.bgDetecting.Store(false)
+		a.detectMu.Lock()
+		defer a.detectMu.Unlock()
+		// 后台补验用不带超时的 context：请求自己的 ctx 会随响应结束而取消，
+		// 而探测结果是要落盘的，不该被一个客户端断开打断。
+		a.detectOnce(context.Background())
+	}()
+}
+
+// detectFresh 判断现有结果是否还新。
+//
+// 判据不能用「ids 里有几个引擎」：没装的引擎不会有可执行文件，
+// 用它做判据会让「装了一个、缺一个」的机器永远被判成不新鲜——
+// 于是每次 Health 都重新探测（本机实测 1.6 秒），而缓存其实好好的。
+//
+// 正确判据：上次探测发生过（detectedAt 非零）且未过期。
+func (a *App) detectFresh(fore bool) bool {
+	if fore {
+		return false
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return !a.detectedAt.IsZero() && time.Since(a.detectedAt) < detectTTL
+}
+
+// detectOnce 实际探测一轮并写入结果。调用方持有 detectMu。
+func (a *App) detectOnce(ctx context.Context) {
 	type result struct {
 		kind engine.Kind
 		id   engine.Identity
@@ -155,6 +248,9 @@ func (a *App) detectAll(ctx context.Context, fore bool) {
 		go func(kind engine.Kind) {
 			id, err := detectFunc(a.Store.Get(domain.KeyEngineExePrefix+string(kind)), kind)
 			if err != nil || id.Exe == "" {
+				// 没装不是「不知道」：记下空 Exe 的条目。
+				// 不记的话 detectFresh 永远认为「有引擎还没探过」，
+				// 于是每次请求都重探一遍。
 				id = engine.Identity{Kind: kind, Caps: engine.CapsFor(kind)}
 			}
 			ch <- result{kind: kind, id: id}
@@ -166,7 +262,103 @@ func (a *App) detectAll(ctx context.Context, fore bool) {
 		a.ids[r.kind] = r.id
 	}
 	a.detectedAt = time.Now()
+	snapshot := make(map[engine.Kind]engine.Identity, len(a.ids))
+	for k, v := range a.ids {
+		snapshot[k] = v
+	}
 	a.mu.Unlock()
+	// 探测要起子进程（pi 的 --help 要起一次 Node，约 2.7 秒），
+	// 而结果只会在「用户换了引擎路径或版本」时变。落盘之后，
+	// 下次启动可以直接用上次的结论，首屏不必再等这三秒。
+	a.persistIdentities(snapshot)
+}
+
+// identityCacheKey 是探测结果的落盘键。
+func identityCacheKey(kind engine.Kind) string {
+	return "cache.identity." + string(kind)
+}
+
+// loadCachedIdentities 在启动时用上次的探测结果填满 ids。
+//
+// 只在没有任何结果时填；它只是「首屏先有个显示」，
+// 真正的判定仍是第一次 detectAll（并会被它的结果覆盖）。
+//
+// 没装（可执行文件不在了）的引擎也要留一个空 Exe 的条目：
+// detectFresh 靠「ids 非空」判断「上次探过」，缺条目会被当成没探过而重探。
+func (a *App) loadCachedIdentities() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, kind := range engine.AllKinds() {
+		raw := a.Store.Get(identityCacheKey(kind))
+		if raw == "" {
+			continue
+		}
+		var id engine.Identity
+		if err := json.Unmarshal([]byte(raw), &id); err != nil || id.Exe == "" {
+			continue
+		}
+		// 可执行文件已经不在了就不算数：那是卸载或换机器之后的残留。
+		if !pkg.FileExists(id.Exe) {
+			continue
+		}
+		id.Caps = engine.CapsFor(kind)
+		a.ids[kind] = id
+	}
+}
+
+// persistIdentities 把探测结果写进设置文件。
+//
+// 写不进去不影响使用：它只是为了让下次启动快一点。
+func (a *App) persistIdentities(ids map[engine.Kind]engine.Identity) {
+	for kind, id := range ids {
+		if id.Exe == "" {
+			_ = a.Store.Set(identityCacheKey(kind), "")
+			continue
+		}
+		raw, err := json.Marshal(id)
+		if err != nil {
+			continue
+		}
+		if err := a.Store.Set(identityCacheKey(kind), string(raw)); err != nil {
+			pkg.Warnf("app: 探测结果落盘失败: %v", err)
+		}
+	}
+}
+
+// latestCacheKey 是「上游最新版」的落盘键。
+func latestCacheKey(kind engine.Kind) string {
+	return "cache.latest." + string(kind)
+}
+
+// wireLatestPersistence 把「最新版」的落盘与读回接到 engine 层。
+//
+// engine 层不 import repo（那会让它反向依赖），所以只给两个回调。
+func (a *App) wireLatestPersistence() {
+	engine.SetLatestPersister(func(kind engine.Kind, row engine.Latest) {
+		if row.Version == "" {
+			return // 「查不到」不值得落盘，下次还得再查
+		}
+		raw, err := json.Marshal(row)
+		if err != nil {
+			return
+		}
+		_ = a.Store.Set(latestCacheKey(kind), string(raw))
+	})
+}
+
+// loadCachedLatest 用上次落盘的最新版填缓存，让首屏不必等外网。
+func (a *App) loadCachedLatest() {
+	for _, kind := range engine.AllKinds() {
+		raw := a.Store.Get(latestCacheKey(kind))
+		if raw == "" {
+			continue
+		}
+		var row engine.Latest
+		if err := json.Unmarshal([]byte(raw), &row); err != nil || row.Version == "" {
+			continue
+		}
+		engine.SeedLatest(kind, row)
+	}
 }
 
 // SetDetector 换掉探测引擎的动作，返回恢复用的函数。

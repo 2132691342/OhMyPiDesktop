@@ -98,7 +98,17 @@ func (p *Proc) dispatch(line []byte) {
 	}
 }
 
+// maxChunkBytes 是分片重组的总长上限（64 MB）。
+//
+// 为什么要有：byteLength 是**引擎声明的**值，而分片数据是我们一条条拼起来的。
+// 一个跑飞或恶意的引擎只要声明 byteLength=10GB，这个缓冲就会一直涨到 OOM。
+// 正常的大帧是几 MB 的文件内容或工具输出，64 MB 已经很宽松。
+const maxChunkBytes = 64 << 20
+
 // assemble 处理协议 v2 的超大帧：按 index 拼接，校验 chunkId/count/byteLength。
+//
+// 只在读协程里调用（分片状态不额外加锁：加锁会让每一帧多一次原子操作，
+// 而这一层本来就只有单一消费者）。resetChunks 由 Kill 调用，那时读协程已经停了。
 func (p *Proc) assemble(line []byte) ([]byte, bool) {
 	var chunk struct {
 		ChunkID    string `json:"chunkId"`
@@ -110,6 +120,13 @@ func (p *Proc) assemble(line []byte) ([]byte, bool) {
 	if err := json.Unmarshal(line, &chunk); err != nil {
 		return nil, false
 	}
+	// 声明的总长超限就整段丢弃：继续拼下去只会把内存吃掉，
+	// 而且拼完也永远对不上校验。
+	if chunk.ByteLength < 0 || chunk.ByteLength > maxChunkBytes {
+		pkg.Warnf("%s: 拒绝一个声明长度为 %d 的分片序列", p.opts.Dialect.Kind(), chunk.ByteLength)
+		p.resetChunks()
+		return nil, false
+	}
 	if chunk.Index == 0 {
 		p.chunkID = chunk.ChunkID
 		p.chunkBuf = p.chunkBuf[:0]
@@ -119,12 +136,19 @@ func (p *Proc) assemble(line []byte) ([]byte, bool) {
 	}
 	if chunk.ChunkID != p.chunkID || chunk.Index != p.chunkGot || chunk.Count != p.chunkCnt {
 		pkg.Warnf("%s: 收到交错的分片序列，丢弃 chunkId=%s", p.opts.Dialect.Kind(), chunk.ChunkID)
-		p.chunkID = ""
+		p.resetChunks()
+		return nil, false
+	}
+	// 累计长度也要实时卡：单帧合法但拼起来超限时，同样不能让它越长越大。
+	// base64 是 4/3 膨胀，所以按解码前长度先估一道，避免无谓的分配。
+	if len(p.chunkBuf)+len(chunk.Data)*3/4 > maxChunkBytes {
+		pkg.Warnf("%s: 分片总量超过 %d 字节上限，丢弃", p.opts.Dialect.Kind(), maxChunkBytes)
+		p.resetChunks()
 		return nil, false
 	}
 	data, err := base64.StdEncoding.DecodeString(chunk.Data)
 	if err != nil {
-		p.chunkID = ""
+		p.resetChunks()
 		return nil, false
 	}
 	p.chunkBuf = append(p.chunkBuf, data...)
@@ -134,13 +158,24 @@ func (p *Proc) assemble(line []byte) ([]byte, bool) {
 	}
 	if len(p.chunkBuf) != p.chunkLen {
 		pkg.Warnf("%s: 分片总长不符 expected=%d got=%d", p.opts.Dialect.Kind(), p.chunkLen, len(p.chunkBuf))
-		p.chunkID = ""
+		p.resetChunks()
 		return nil, false
 	}
 	out := append([]byte(nil), p.chunkBuf...)
-	p.chunkID = ""
-	p.chunkBuf = p.chunkBuf[:0]
+	p.resetChunks()
 	return out, true
+}
+
+// resetChunks 清掉分片状态并交还缓冲区。
+//
+// 把 capacity 也一起放掉：一个 64 MB 的缓冲留在 Proc 上等于永久占着内存，
+// 而下一个大帧可能几个小时后才来。
+func (p *Proc) resetChunks() {
+	p.chunkID = ""
+	p.chunkGot = 0
+	p.chunkCnt = 0
+	p.chunkLen = 0
+	p.chunkBuf = nil
 }
 
 func (p *Proc) shutdown(cause error) {
