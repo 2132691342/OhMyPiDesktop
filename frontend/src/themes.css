@@ -65,8 +65,10 @@
 
   /* --- 布局 --- */
   --omp-topbar: 44px;
+  /* 侧栏宽度。窄窗口下由下面的容器查询收窄，默认值留给 1000px 以上的窗口。 */
   --omp-rail: 60px;
   --omp-side: 244px;
+  --omp-side-narrow: 196px;
   --omp-col: 880px;
   --omp-icon-stroke: 1.7;
 

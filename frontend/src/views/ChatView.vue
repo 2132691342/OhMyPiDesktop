@@ -314,6 +314,15 @@ async function openLink(url: string) {
   min-height: 0;
 }
 
+/* 窄窗口（800×600 的默认尺寸）下侧栏收窄：244px 在 800px 的窗口里会把
+   主区压到放不下一行代码。用容器查询而不是媒体查询——窗口是最外层容器，
+   两者的断点在这里恰好一致，但以后嵌进别的布局时容器查询仍然正确。 */
+@container app (max-width: 960px) {
+  .chat-side {
+    width: var(--omp-side-narrow);
+  }
+}
+
 .chat-main {
   position: relative;
   flex: 1;

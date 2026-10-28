@@ -6,7 +6,9 @@ package server
 // 「这个会话属于哪个引擎」由 service 解析，handler 不重复判断。
 
 import (
+	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -68,17 +70,30 @@ func (s *Server) chatState(c *gin.Context) {
 	s.run(c, func(ctx *gin.Context) (any, error) { return s.svc.ChatState(ctx, kind(c), file) })
 }
 
+// chatBody 是发送类接口共用的入参：引擎 / 会话 / 正文 / 附件。
+//
+// 三个接口（send / steer / followup）形状一致，共用一份：
+// 分开写三份的后果是某天只在其中一个加了附件字段，而用户看不出为什么
+// 「插话能带图、发送不能」。
+type chatBody struct {
+	Engine      string                     `json:"engine"`
+	Session     string                     `json:"session"`
+	Message     string                     `json:"message"`
+	Attachments []domain.ChatAttachmentREQ `json:"attachments,omitempty"`
+}
+
+// toREQ 转成用例层的入参。
+func (b chatBody) toREQ() domain.ChatSendREQ {
+	return domain.ChatSendREQ{Message: b.Message, Attachments: b.Attachments}
+}
+
 func (s *Server) send(c *gin.Context) {
-	var body struct {
-		Engine  string `json:"engine"`
-		Session string `json:"session"`
-		Message string `json:"message"`
-	}
+	var body chatBody
 	if !bind(c, &body) {
 		return
 	}
 	s.run(c, func(ctx *gin.Context) (any, error) {
-		runID, err := s.svc.Send(ctx, s2kind(body.Engine), body.Session, body.Message)
+		runID, err := s.svc.Send(ctx, s2kind(body.Engine), body.Session, body.toREQ())
 		if err != nil {
 			return nil, err
 		}
@@ -103,16 +118,12 @@ func (s *Server) stop(c *gin.Context) {
 }
 
 func (s *Server) steer(c *gin.Context) {
-	var body struct {
-		Engine  string `json:"engine"`
-		Session string `json:"session"`
-		Message string `json:"message"`
-	}
+	var body chatBody
 	if !bind(c, &body) {
 		return
 	}
 	s.run(c, func(ctx *gin.Context) (any, error) {
-		if err := s.svc.Steer(ctx, s2kind(body.Engine), body.Session, body.Message); err != nil {
+		if err := s.svc.Steer(ctx, s2kind(body.Engine), body.Session, body.toREQ()); err != nil {
 			return nil, err
 		}
 		return gin.H{"ok": true}, nil
@@ -120,16 +131,12 @@ func (s *Server) steer(c *gin.Context) {
 }
 
 func (s *Server) followUp(c *gin.Context) {
-	var body struct {
-		Engine  string `json:"engine"`
-		Session string `json:"session"`
-		Message string `json:"message"`
-	}
+	var body chatBody
 	if !bind(c, &body) {
 		return
 	}
 	s.run(c, func(ctx *gin.Context) (any, error) {
-		if err := s.svc.FollowUp(ctx, s2kind(body.Engine), body.Session, body.Message); err != nil {
+		if err := s.svc.FollowUp(ctx, s2kind(body.Engine), body.Session, body.toREQ()); err != nil {
 			return nil, err
 		}
 		return gin.H{"ok": true}, nil

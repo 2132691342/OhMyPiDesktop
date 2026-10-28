@@ -25,14 +25,24 @@ import * as $models from "./models.js";
  * 然后把「后端没有启动起来」当成永久失败。
  */
 export function Endpoint(): $CancellablePromise<$models.Endpoint> {
-    return $Call.ByID(1820156324);
+    return $Call.ByID(279391074);
 }
 
 /**
  * OpenExternal 用系统默认浏览器打开链接。
  */
 export function OpenExternal(url: string): $CancellablePromise<void> {
-    return $Call.ByID(4238767710, url);
+    return $Call.ByID(2717283392, url);
+}
+
+/**
+ * PickFiles 打开文件选择框，可多选。返回绝对路径列表。
+ * 
+ * 对话框在应用层调（与 PickFolder 同理），因为只有这里能拿到系统原生对话框。
+ * 取消时返回空列表，不是错误。
+ */
+export function PickFiles(title: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(871414725, title);
 }
 
 /**
@@ -42,47 +52,46 @@ export function OpenExternal(url: string): $CancellablePromise<void> {
  * 取消时返回空串而不是错误（空串就是用户没选，不是失败）。
  */
 export function PickFolder(defaultDir: string): $CancellablePromise<string> {
-    return $Call.ByID(1618095492, defaultDir);
+    return $Call.ByID(2717136730, defaultDir);
 }
 
 /**
  * Quit 退出应用。
  */
 export function Quit(): $CancellablePromise<void> {
-    return $Call.ByID(3181047470);
+    return $Call.ByID(3576424264);
 }
 
 /**
- * RevealInExplorer 在资源管理器里定位一个文件。
+ * Ready 由前端在首屏渲染完后调用，用来把隐藏的窗口显示出来。
+ * 
+ * 为什么显示窗口的时机在这里而不是装配完成时：v3 把建窗推迟到主循环的
+ * pendingRun，ServiceStartup 执行时窗口还不存在。此刻调 Show() 只会走
+ * 「先建窗、再 return」那条分支——窗口建好了却仍然隐藏；紧随其后的 Focus()
+ * 还会踩到尚未初始化的 WebView2 controller，直接 panic。
+ * 等前端把首屏画完再显示：两个问题一起消失，顺带没有白屏。
  */
-export function RevealInExplorer(path: string): $CancellablePromise<void> {
-    return $Call.ByID(4223801352, path);
-}
-
-/**
- * Settings 直接把设置 KV 交给前端首屏（避免前端连不上时白屏）。
- */
-export function Settings(): $CancellablePromise<{ [_ in string]?: string } | null> {
-    return $Call.ByID(163798416);
+export function Ready(): $CancellablePromise<void> {
+    return $Call.ByID(3692690702);
 }
 
 /**
  * WindowClose 关窗（收托盘，不退出）。
  */
 export function WindowClose(): $CancellablePromise<void> {
-    return $Call.ByID(1474073651);
+    return $Call.ByID(2619206981);
 }
 
 /**
  * WindowMinimize 最小化。
  */
 export function WindowMinimize(): $CancellablePromise<void> {
-    return $Call.ByID(1846147565);
+    return $Call.ByID(252424399);
 }
 
 /**
  * WindowToggleMaximize 最大化 / 还原。
  */
 export function WindowToggleMaximize(): $CancellablePromise<void> {
-    return $Call.ByID(3361853791);
+    return $Call.ByID(3656774713);
 }

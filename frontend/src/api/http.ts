@@ -9,6 +9,7 @@ import type {
   AppRow,
   AskRequest,
   Bootstrap,
+  ChatAttachment,
   ChatState,
   ConfigFileList,
   ConfigText,
@@ -140,13 +141,15 @@ export const api = {
 
   chatState: (engine: EngineKind, session?: string) =>
     get<ChatState>('/chat/state', { session, engine }),
-  send: (engine: EngineKind, session: string, message: string) =>
-    post<{ run_id: string }>('/chat/send', { engine, session, message }),
+  // 三个发送类接口共用一份形状（含附件）：分开写的后果是
+  // 「插话能带图、发送不能」这种说不通的不一致。
+  send: (engine: EngineKind, session: string, message: string, attachments: ChatAttachment[] = []) =>
+    post<{ run_id: string }>('/chat/send', { engine, session, message, attachments }),
   stop: (engine: EngineKind, session: string) => post<{ ok: boolean }>('/chat/stop', { engine, session }),
-  steer: (engine: EngineKind, session: string, message: string) =>
-    post<{ ok: boolean }>('/chat/steer', { engine, session, message }),
-  followUp: (engine: EngineKind, session: string, message: string) =>
-    post<{ ok: boolean }>('/chat/followup', { engine, session, message }),
+  steer: (engine: EngineKind, session: string, message: string, attachments: ChatAttachment[] = []) =>
+    post<{ ok: boolean }>('/chat/steer', { engine, session, message, attachments }),
+  followUp: (engine: EngineKind, session: string, message: string, attachments: ChatAttachment[] = []) =>
+    post<{ ok: boolean }>('/chat/followup', { engine, session, message, attachments }),
   clearQueue: (engine: EngineKind, session: string) =>
     post<{ ok: boolean }>('/chat/clear-queue', { engine, session }),
   removeQueued: (engine: EngineKind, session: string, message: string, queue: string) =>

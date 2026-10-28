@@ -294,6 +294,19 @@ export interface QueuedMessages {
   liveSteered: number
 }
 
+/**
+ * 一个附件。两类走两条完全不同的路：
+ * - file：只把路径拼进 prompt，引擎用自己的读文件工具去看；
+ * - image：走引擎 prompt 的 images 字段（唯一能传二进制的通道）。
+ */
+export interface ChatAttachment {
+  kind: 'file' | 'image'
+  file_path?: string
+  file_name?: string
+  image_base64?: string
+  image_mime?: string
+}
+
 export interface SlashCommand {
   name: string
   source: string

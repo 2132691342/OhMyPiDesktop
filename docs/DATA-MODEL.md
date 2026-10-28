@@ -58,7 +58,8 @@
 | 内容 | 位置 | 用途 |
 |---|---|---|
 | 界面设置 | `%LOCALAPPDATA%\OhMyPiDesktop\settings.json` | 主题 / 语言 / 字号 / 减少动效 / 上次工作目录 / **当前引擎** / 各引擎显式路径 |
-| 日志 | 进程内环形缓冲（最近 500 行） | 设置页「日志」，进程重启即清 |
+| 日志 | `%LOCALAPPDATA%\OhMyPiDesktop\logs\desktop-<日期>.log` | 按天切；同时进环形缓冲（最近 500 行）供设置页「日志」读取 |
+| WebView2 缓存 | `%LOCALAPPDATA%\OhMyPiDesktop\webview\` | 浏览器缓存。放在这里是为了卸载时能一次清干净 |
 
 **设置就是一个 JSON 对象**：
 
@@ -78,9 +79,6 @@
 键排序后序列化，让文件对人可读、对 diff 友好。空值等于删除。
 文件损坏时**改名留档为 `settings.json.broken` 并用空设置继续**——绝不能因为
 设置坏了就让应用起不来。
-
-设置文件损坏时会被改名为 `settings.json.broken` 留档，应用用空设置继续启动——
-设置坏了不该让应用起不来。
 
 `key` 常量集中在 `backend/domain/model.go` 的 `Key*`。当前用到的：
 

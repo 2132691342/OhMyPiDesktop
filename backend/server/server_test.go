@@ -1,8 +1,7 @@
 package server
 
-// 这一层是安全边界：令牌、来源、方法三件事任何一件漏了，
-// 本机上任何一个网页都能拿到引擎的控制权。所以只测这三件，
-// 加上应用页那条路由的契约形态。
+// 这一层是安全边界：令牌、来源、方法三件事漏一件，本机任意网页就能拿到引擎控制权，
+// 所以只测令牌闸门、来源拦截、方法限制，外加应用页与附件契约形态。
 
 import (
 	"context"
@@ -279,5 +278,51 @@ func TestAppsRejectsDelete(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("DELETE 状态 = %d，期望 405", rec.Code)
+	}
+}
+
+// 附件契约：前端发来的 attachments 必须被解析、并透传到用例层。
+//
+// 这条链路错了不会有编译错误，表现是「图发出去了，模型说没看到」。
+// 只验到「坏输入被拦住」这一层：真正到达引擎由 tools 里的手工验证覆盖，
+// 因为那需要起一个真引擎。
+func TestChatSendRejectsBadAttachments(t *testing.T) {
+	_, h := testServer(t)
+
+	cases := []struct {
+		what string
+		body string
+	}{
+		{
+			what: "不认识的附件类型",
+			body: `{"message":"hi","attachments":[{"kind":"video"}]}`,
+		},
+		{
+			what: "图片内容不是 base64",
+			body: `{"message":"hi","attachments":[{"kind":"image","image_base64":"@@@"}]}`,
+		},
+		{
+			what: "图片内容是纯文本",
+			body: `{"message":"hi","attachments":[{"kind":"image","image_base64":"aGVsbG8gd29ybGQ="}]}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.what, func(t *testing.T) {
+			rec := post(t, h, "/api/v1/chat/send", tc.body)
+			var out struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+				t.Fatalf("响应不是 JSON：%v", err)
+			}
+			// 这些都必须在「发给引擎之前」被拦下：code 非 0 且话说得清楚。
+			if out.Code == "0" {
+				t.Fatalf("坏附件不该成功：%s", rec.Body.String())
+			}
+			if out.Message == "" {
+				t.Fatalf("错误必须带一句人话：%s", rec.Body.String())
+			}
+		})
 	}
 }

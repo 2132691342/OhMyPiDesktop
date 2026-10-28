@@ -7,6 +7,7 @@ import { ref, computed } from 'vue'
 import { api } from '@/api/http'
 import type {
   AskRequest,
+  ChatAttachment,
   EngineCaps,
   EngineKind,
   HistoryTurn,
@@ -227,9 +228,11 @@ export const useChatStore = defineStore('chat', () => {
     if (!streaming.value) turn.value = null
   }
 
-  async function send(message: string) {
+  async function send(message: string, attachments: ChatAttachment[] = []) {
     promptError.value = ''
-    const runID = await api.send(kind.value, sessionFile.value, message).then((r) => r.run_id)
+    const runID = await api
+      .send(kind.value, sessionFile.value, message, attachments)
+      .then((r) => r.run_id)
     turn.value = { run_id: runID, user_message: message, blocks: [] }
     streaming.value = true
     return runID
@@ -240,12 +243,12 @@ export const useChatStore = defineStore('chat', () => {
     streaming.value = false
   }
 
-  async function steer(message: string) {
-    await api.steer(kind.value, sessionFile.value, message)
+  async function steer(message: string, attachments: ChatAttachment[] = []) {
+    await api.steer(kind.value, sessionFile.value, message, attachments)
   }
 
-  async function followUp(message: string) {
-    await api.followUp(kind.value, sessionFile.value, message)
+  async function followUp(message: string, attachments: ChatAttachment[] = []) {
+    await api.followUp(kind.value, sessionFile.value, message, attachments)
     queue.value.followUp = [...queue.value.followUp, message]
   }
 

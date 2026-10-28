@@ -87,7 +87,7 @@ func main() {
 		}
 	}()
 
-	runID, err := svc.Send(ctx, kind, "", msgText)
+	runID, err := svc.Send(ctx, kind, "", domain.ChatSendREQ{Message: msgText})
 	fmt.Println("send ->", runID, "err:", errText(err))
 	if err != nil {
 		os.Exit(1)

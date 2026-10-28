@@ -12,8 +12,8 @@ import (
 type Paths struct {
 	DataDir      string // %LOCALAPPDATA%\OhMyPiDesktop
 	SettingsFile string // 界面设置（一个 JSON 文件）
-	ConfigDir    string // viper 配置
-	LogDir       string
+	LogDir       string // 按天切的日志
+	WebViewDir   string // WebView2 缓存，放在数据目录里卸载才能一次清干净
 }
 
 // Resolve 解析应用数据目录。纯 Windows 目标，LOCALAPPDATA 一定存在；
@@ -31,10 +31,12 @@ func Resolve() (Paths, error) {
 	p := Paths{
 		DataDir:      dataDir,
 		SettingsFile: filepath.Join(dataDir, "settings.json"),
-		ConfigDir:    dataDir,
 		LogDir:       filepath.Join(dataDir, "logs"),
+		WebViewDir:   filepath.Join(dataDir, "webview"),
 	}
-	for _, dir := range []string{p.DataDir, p.LogDir} {
+	// WebView2 的缓存目录也在这里建好：Wails 拿到不存在的路径会弹错误框然后退出，
+	// 而「先由安装器建目录」是靠不住的前提。
+	for _, dir := range []string{p.DataDir, p.LogDir, p.WebViewDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return Paths{}, pkg.Wrap(pkg.CodeStartup, "应用目录不可写："+dir, err)
 		}

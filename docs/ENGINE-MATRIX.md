@@ -47,7 +47,7 @@
 | `live_steer_count` | ✅ | — | 不读 `queue_update.liveSteered` |
 | `skill_toggle` | ✅ | — | 技能行不显示开关（pi 走另一条路，见 §6） |
 | `extensions` | ✅ | ✅ | 插件页可管理 |
-| `export_html` | ✅ | ✅ | 会话可导出 |
+| `export_html` | ✅ | ✅ | 会话可导出（界面导出为 Markdown，不调引擎的 HTML 导出） |
 | `slash_commands` | ✅ | — | pi 只能主动拉 `get_commands`，不订阅推送帧 |
 
 ## 3. 事件差分表（只列不一致的）
@@ -173,7 +173,7 @@ Node（约 3.5 秒）。所以探测结果缓存一分钟，两个引擎并发�
 | pi 的排队条目只能整批清空 | 只能 `clear_queue`，不能移除单条 | omp 反过来：只有 `remove_queued_message`，没有 `clear_queue` |
 | pi 的命令清单只能拉取 | 引擎不推送更新 | omp 推 `available_commands_update` |
 | omp 的 profile 切换要重启进程 | 设置里可填 profile，但换 profile 要重开进程 | profile 隔离了设置、凭据、会话、缓存 |
-| 会话导出 HTML | 引擎支持，界面未接入 | 使用频率低 |
+| 会话导出 | 界面导出为 Markdown（`/session/export`，前端拼内容），不调引擎的 HTML 导出 | 引擎的 HTML 导出频率低，未接入 |
 
 ## 9. 不做的三件事（明确写死）
 

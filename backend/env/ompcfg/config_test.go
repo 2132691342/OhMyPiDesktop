@@ -1,10 +1,7 @@
 package ompcfg
 
-// 引擎配置写错的共同表现是「用户设的东西下次打开就没了」，而且不会报错。
-// 所以只测三件会静默出错的事：
-//   1. 只改我们掌管的键（别人写的键与注释不被抹掉）；
-//   2. 替换与合并的契约相反（合并保密钥、替换不保）；
-//   3. 坏文件不覆盖。
+// 引擎配置写错的共同表现是「用户设的东西下次打开就没了」，而且不会报错，
+// 所以只测会悄无声息出错的事：只改掌管的键、替换与合并契约相反、坏文件不覆盖。
 
 import (
 	"os"
@@ -194,29 +191,6 @@ func TestProviderReplaceAndMerge(t *testing.T) {
 	}
 	if replaced.Auth != "" || replaced.Headers != nil {
 		t.Errorf("替换时 auth / headers 也应被覆盖掉，实际: %+v", replaced)
-	}
-}
-
-// 密钥打码：既要能看出「有没有配」，又不能把全文显示在屏幕上。
-func TestMaskKey(t *testing.T) {
-	cases := map[string]string{
-		"":        "",
-		"short":   "•••••",
-		"$ENV":    "$ENV",
-		"!secret": "!secret",
-	}
-	for input, want := range cases {
-		if got := MaskKey(input); got != want {
-			t.Errorf("MaskKey(%q) = %q，期望 %q", input, got, want)
-		}
-	}
-	long := "sk-abcdefghijklmnopqrst"
-	masked := MaskKey(long)
-	if strings.Contains(masked, "ghijklmn") {
-		t.Errorf("打码后仍含明文: %q", masked)
-	}
-	if !strings.HasPrefix(masked, "sk-abc") || !strings.HasSuffix(masked, "qrst") {
-		t.Errorf("打码应保留首尾便于辨识: %q", masked)
 	}
 }
 

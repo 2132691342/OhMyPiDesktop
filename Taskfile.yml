@@ -47,14 +47,14 @@ tasks:
   fmt:
     summary: Formats all Go code (gofmt -w)
     cmds:
-      - gofmt -w backend main.go assets.go tray.go tools
+      - gofmt -w backend desktop main.go tools
 
   fmt:check:
     summary: Verifies gofmt formatting; used by CI
     shell: pwsh
     cmds:
       - |
-        $bad = gofmt -l backend main.go assets.go tray.go tools
+        $bad = gofmt -l backend desktop main.go tools
         if ($bad) { Write-Host "未格式化:"; Write-Host $bad; exit 1 }
 
   vet:

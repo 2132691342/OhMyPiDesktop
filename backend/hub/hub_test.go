@@ -5,11 +5,8 @@ import (
 	"testing"
 )
 
-// 这条测试锁的是曾经的真实故障：Emit 查完 dead 之后订阅者被 close，
-// 广播写进已关闭的 channel，整个后端进程 panic。
-//
-// 断言只有一条：并发 Emit 与退订不 panic。丢多少帧不重要——丢帧由 seq 跳号
-// 与 chat:gap 兜住，崩溃没人兜。
+// 锁住「退订后被 close 的 channel 仍被写入导致 panic」这一真实故障：
+// 断言只有一条——并发 Emit 与退订不 panic（丢帧由 seq 跳号与 chat:gap 兜住）。
 func TestEmitAndUnsubscribeConcurrently(t *testing.T) {
 	h := New(64)
 

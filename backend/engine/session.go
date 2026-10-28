@@ -120,7 +120,10 @@ func (e *Engine) SetSessionName(ctx context.Context, name string) error {
 }
 
 // Prompt 发一轮提问。返回 runID，界面据此把事件归到这一轮。
-func (e *Engine) Prompt(ctx context.Context, message string) (string, error) {
+//
+// payload 里的图片直接进引擎的 images 字段：这是唯一能传二进制的通道，
+// 模型不支持图片时由 service 提前拦住，不靠引擎报错。
+func (e *Engine) Prompt(ctx context.Context, payload PromptPayload) (string, error) {
 	p, err := e.Client(ctx)
 	if err != nil {
 		return "", err
@@ -132,14 +135,15 @@ func (e *Engine) Prompt(ctx context.Context, message string) (string, error) {
 	if st, err := e.State(ctx); err == nil && st.Model != nil {
 		model = st.Model.Provider + "/" + st.Model.ID
 	}
-	turn := e.tr.BeginTurn(runID, message, model)
+	turn := e.tr.BeginTurn(runID, payload.Message, model)
 
 	e.send("", "chat:start", map[string]any{
-		"run_id": runID, "kind": kind, "work_dir": dir, "session_id": sessionID, "user_message": message,
+		"run_id": runID, "kind": kind, "work_dir": dir, "session_id": sessionID,
+		"user_message": payload.Message, "image_count": len(payload.Images),
 	})
 	e.send("", "chat:turn", turn)
 
-	if err := p.Call(ctx, "prompt", map[string]any{"message": message}, nil, 120*time.Second); err != nil {
+	if err := p.Call(ctx, "prompt", payload, nil, 120*time.Second); err != nil {
 		e.mu.Lock()
 		e.runID = ""
 		e.mu.Unlock()
@@ -168,13 +172,13 @@ func (e *Engine) Abort(ctx context.Context) error {
 }
 
 // Steer 插话（当前轮正在跑时补一句）。
-func (e *Engine) Steer(ctx context.Context, message string) error {
-	return e.Call(ctx, "steer", map[string]any{"message": message}, nil, 30*time.Second)
+func (e *Engine) Steer(ctx context.Context, payload PromptPayload) error {
+	return e.Call(ctx, "steer", payload, nil, 30*time.Second)
 }
 
 // FollowUp 排队（这一轮结束后再说）。
-func (e *Engine) FollowUp(ctx context.Context, message string) error {
-	return e.Call(ctx, "follow_up", map[string]any{"message": message}, nil, 30*time.Second)
+func (e *Engine) FollowUp(ctx context.Context, payload PromptPayload) error {
+	return e.Call(ctx, "follow_up", payload, nil, 30*time.Second)
 }
 
 // ClearQueue 一次性清空排队消息。

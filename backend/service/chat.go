@@ -8,10 +8,9 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"strings"
 
+	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
-	"OhMyPiDesktop/backend/pkg"
 	"OhMyPiDesktop/backend/session"
 )
 
@@ -144,10 +143,13 @@ func itemsToRaw(items []session.Item) []json.RawMessage {
 }
 
 // Send 发一轮提问。kind 为空时用会话所属引擎。
-func (a *App) Send(ctx context.Context, kind engine.Kind, sessionFile, message string) (string, error) {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return "", pkg.New(pkg.CodeBadRequest, "说点什么再发送", "")
+//
+// 附件在 buildPrompt 里装配：工作区文件只拼路径清单，图片进 images 字段。
+// 图片还要过一道模型能力判断——模型不收图时提前拒绝，别让引擎静默丢掉。
+func (a *App) Send(ctx context.Context, kind engine.Kind, sessionFile string, req domain.ChatSendREQ) (string, error) {
+	payload, err := buildPrompt(req.Message, req.Attachments)
+	if err != nil {
+		return "", err
 	}
 	if !kind.Valid() {
 		kind = a.kindOfSession(kind, sessionFile)
@@ -165,7 +167,17 @@ func (a *App) Send(ctx context.Context, kind engine.Kind, sessionFile, message s
 		// 打开的是历史会话：先切过去再发，否则消息会落到另一个会话里。
 		_ = e.Switch(ctx, sessionFile)
 	}
-	return e.Prompt(ctx, message)
+	// 模型信息从这一轮的状态里拿：State 本来就要跑，不额外加一次 RPC。
+	if len(payload.Images) > 0 {
+		var model *engine.Model
+		if st, stateErr := e.State(ctx); stateErr == nil {
+			model = st.Model
+		}
+		if err := ensureImagesAllowed(model, len(payload.Images)); err != nil {
+			return "", err
+		}
+	}
+	return e.Prompt(ctx, payload)
 }
 
 // engineForSession 按会话解析出引擎（省略引擎参数时用）。
@@ -193,21 +205,47 @@ func (a *App) Stop(ctx context.Context, kind engine.Kind, sessionFile string) er
 }
 
 // Steer 插话（当前轮正在跑时补一句）。
-func (a *App) Steer(ctx context.Context, kind engine.Kind, sessionFile, message string) error {
+func (a *App) Steer(ctx context.Context, kind engine.Kind, sessionFile string, req domain.ChatSendREQ) error {
+	payload, err := buildPrompt(req.Message, req.Attachments)
+	if err != nil {
+		return err
+	}
 	e, err := a.engineForSession(kind, sessionFile)
 	if err != nil {
 		return err
 	}
-	return e.Steer(ctx, message)
+	if len(payload.Images) > 0 {
+		var model *engine.Model
+		if st, stateErr := e.State(ctx); stateErr == nil {
+			model = st.Model
+		}
+		if err := ensureImagesAllowed(model, len(payload.Images)); err != nil {
+			return err
+		}
+	}
+	return e.Steer(ctx, payload)
 }
 
 // FollowUp 排队（这一轮结束后再说）。
-func (a *App) FollowUp(ctx context.Context, kind engine.Kind, sessionFile, message string) error {
+func (a *App) FollowUp(ctx context.Context, kind engine.Kind, sessionFile string, req domain.ChatSendREQ) error {
+	payload, err := buildPrompt(req.Message, req.Attachments)
+	if err != nil {
+		return err
+	}
 	e, err := a.engineForSession(kind, sessionFile)
 	if err != nil {
 		return err
 	}
-	return e.FollowUp(ctx, message)
+	if len(payload.Images) > 0 {
+		var model *engine.Model
+		if st, stateErr := e.State(ctx); stateErr == nil {
+			model = st.Model
+		}
+		if err := ensureImagesAllowed(model, len(payload.Images)); err != nil {
+			return err
+		}
+	}
+	return e.FollowUp(ctx, payload)
 }
 
 // ClearQueue 一次性清空排队（仅 Caps.QueueClear 的引擎提供）。

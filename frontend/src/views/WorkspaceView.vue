@@ -452,6 +452,15 @@ onMounted(refresh)
   padding: var(--omp-sp-4) var(--omp-sp-6) var(--omp-sp-5);
   overflow: hidden;
 }
+
+/* 窄窗口下三栏放不下：文件树压到最小，diff 让出宽度。
+   低于 820px 时中间栏允许收缩到 200px，否则 diff 会被挤成一条。 */
+@container app (max-width: 980px) {
+  .split {
+    grid-template-columns: 176px minmax(200px, 1fr) minmax(240px, 1fr);
+    padding: var(--omp-sp-3) var(--omp-sp-4);
+  }
+}
 .pane-files,
 .pane-diff {
   min-height: 0;

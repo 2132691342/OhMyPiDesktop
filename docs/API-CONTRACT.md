@@ -109,13 +109,44 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/chat/state?engine=&session=` | 对话页快照：模型 / 思考档 / 上下文 / 用量 / 历史轮 / 命令 / 队列 / **caps** |
-| POST | `/chat/send` | 发一轮 `{engine, session, message}`，返回 `run_id` |
+| POST | `/chat/send` | 发一轮 `{engine, session, message, attachments?}`，返回 `run_id` |
 | POST | `/chat/stop` | 停止 `{engine, session}` |
-| POST | `/chat/steer` | 插话 `{engine, session, message}` |
-| POST | `/chat/followup` | 排队 `{engine, session, message}` |
+| POST | `/chat/steer` | 插话 `{engine, session, message, attachments?}` |
+| POST | `/chat/followup` | 排队 `{engine, session, message, attachments?}` |
 | POST | `/chat/clear-queue` | 清空排队 `{engine, session}`（仅 `caps.queue_clear`） |
 | POST | `/chat/remove-queued` | 移除单条排队 `{engine, session, message, queue}` → `{removed}`（仅 `caps.queue_edit`） |
 | POST | `/chat/compact` | 压缩上下文 `{engine, session, instructions?}` |
+
+### 附件
+
+三个发送类接口共用同一份 `attachments` 形状：
+
+```json
+{"kind": "file",  "file_path": "src/a.ts", "file_name": "a.ts"}
+{"kind": "image", "image_base64": "...", "image_mime": "image/png"}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `kind` | `file` 或 `image`，决定走哪条路 |
+| `file_path` | `kind=file` 时必填；工作区内用相对路径，区外用绝对路径 |
+| `image_base64` | `kind=image` 时必填；不含 `data:` 前缀（带了也能识别） |
+| `image_mime` | 可为空，空则按字节头识别（png / jpeg / gif / webp） |
+
+服务端处置：
+
+- `file` → **只把路径清单拼进正文**，不读内容。引擎用自己的读文件工具去看。
+- `image` → 走引擎 `prompt` 的 `images` 字段。这是协议里唯一能传二进制的通道。
+
+发出去之前的三道闸（都是 200 + 非 0 code，不抛 HTTP 错）：
+
+| 判据 | 错误话术 |
+|---|---|
+| 附件数量 | 一次最多 8 张图 / 40 个文件 |
+| 图片合法性 | 不是 base64 / 不是图片 / 超过 4MB |
+| 模型能力 | 当前模型不收图片（模型 `input` 里没有 `image`） |
+
+模型信息读不到（引擎没起、或没报 `input` 字段）时**不拦**：读不到状态不等于不支持。
 | POST | `/chat/answer` | 回答提问 `{engine, session, request}` |
 | POST | `/chat/new` | 在当前目录开新会话 `{engine}` |
 | POST | `/chat/model` | 换模型 `{engine, session, provider, model}` |

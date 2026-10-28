@@ -27,6 +27,32 @@ type Model struct {
 	} `json:"thinking,omitempty"`
 }
 
+// PromptPayload 是一轮对话要发给引擎的全部内容。
+//
+// 两个引擎的 prompt 命令形状相同：message 是正文，images 是图片数组，
+// 每张图片是 {type,data,mimeType}。图片只能走这条路——没有别的字段能传二进制。
+type PromptPayload struct {
+	// Message 正文（@ 引用的文件清单也拼在这里）
+	Message string `json:"message"`
+	// Images 图片附件；为空时整个字段不发，避免引擎收到一个空数组
+	Images []ImageContent `json:"images,omitempty"`
+}
+
+// ImageContent 是一张图。type 恒为 image，写在构造处而不是字段上。
+type ImageContent struct {
+	// Type 固定为 "image"，两个引擎的判别字段
+	Type string `json:"type"`
+	// Data base64 编码的图片字节（不含 data: 前缀）
+	Data string `json:"data"`
+	// MimeType 如 image/png / image/jpeg
+	MimeType string `json:"mimeType"`
+}
+
+// NewImage 造一张图。是否该发由调用方判断（模型的 input 里有没有 image）。
+func NewImage(mimeType, data string) ImageContent {
+	return ImageContent{Type: "image", Data: data, MimeType: mimeType}
+}
+
 // ModelCost 是每百万 token 的价格。
 type ModelCost struct {
 	Input      float64 `json:"input"`

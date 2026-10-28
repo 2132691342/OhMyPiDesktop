@@ -43,15 +43,35 @@ pi ：主动发一次 get_state（25s 上限）→ 有回包就证明读循环�
 **不要按 `--version` 输出决定走哪条路**，也不要按文件名判断——
 探测结论只用来决定「启动参数」与「界面能力」，握手必须**看行为**。
 
+## 图片附件
+
+`prompt` / `steer` / `follow_up` 三条命令都带 `images` 字段，形状两边一致：
+
+```json
+{"message": "这张图是什么颜色？",
+ "images": [{"type": "image", "data": "<base64>", "mimeType": "image/png"}]}
+```
+
+- `type` 恒为 `"image"`，是引擎侧的判别字段。
+- `data` 是**不带 `data:` 前缀**的 base64。
+- 图片为空时整个字段不发（`omitempty`），避免引擎收到一个空数组。
+
+这是协议里唯一能传二进制的通道。**文件附件不走这里**——它们只把路径清单
+拼进 `message`，由引擎自己的读文件工具去看。两条路的理由见
+[API-CONTRACT.md 的附件一节](API-CONTRACT.md#附件)。
+
+模型收不收图片由模型的 `input` 数组决定（含 `"image"` 才收）。
+我们提前拦一道，见 `service/attachment.go`。
+
 ## 我们发的命令
 
 只列跨引擎共有的；分叉的单独标。
 
 | 场景 | 命令 | 参数差异 |
 |---|---|---|
-| 发一轮 | `prompt` | 共有。omp 返回 `{agentInvoked}`，pi 返回 `{disposition}` |
-| 插话（当前轮补一句） | `steer` | 共有 |
-| 排队（这一轮结束后再说） | `follow_up` | 共有 |
+| 发一轮 | `prompt` | 共有。omp 返回 `{agentInvoked}`，pi 返回 `{disposition}`；参数字段两边完全一致 |
+| 插话（当前轮补一句） | `steer` | 共有，参数同 `prompt` |
+| 排队（这一轮结束后再说） | `follow_up` | 共有，参数同 `prompt` |
 | 停止 | `abort` | 共有 |
 | 会话快照 | `get_state` | 共有，但 **pi 缺 `contextUsage` / `queuedMessages` / `todoPhases` / `tokensPerSecond`**；上下文水位 pi 只能从 `get_session_stats.contextUsage` 取 |
 | 会话用量 | `get_session_stats` | 共有 |

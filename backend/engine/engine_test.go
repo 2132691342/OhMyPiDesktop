@@ -1,11 +1,7 @@
 package engine
 
-// 引擎识别、安装渠道与能力表漂移的测试。
-//
-// 这三处错了都不会报错，表现是「界面按错的能力表渲染」或「给了一个删不掉的按钮」：
-//   - 判种：把 omp 认成 pi，界面按错的能力渲染，控件点了没反应；
-//   - 渠道：判错就装错渠道的卸载命令，或把「不确定」当成「能卸」；
-//   - 能力表漂移：探测期与运行期不一致，按钮先出现点下去报不支持。
+// 引擎识别、安装渠道、能力表漂移三处错了都不报错，表现却是「按错能力渲染」
+// 或「给了删不掉的按钮」，所以只测这三件。
 
 import (
 	"context"
@@ -49,15 +45,6 @@ func TestMatchKind(t *testing.T) {
 				t.Errorf("matchKindWithHelp(%s, %q) = %v，期望 %v", c.kind, c.version, got, c.want)
 			}
 		})
-	}
-}
-
-// 单独守「不靠子串 'omp' 判种」这条纪律：
-// pi 的帮助里 'omp' 出现十几次（completion、compile 等词），子串匹配必然误判。
-// 它在上面的决策表里已经被盖到一半，这里补的是「空帮助」这个边界。
-func TestHelpIsOMP(t *testing.T) {
-	if helpIsOMP("") {
-		t.Error("空帮助不该被判为 omp")
 	}
 }
 

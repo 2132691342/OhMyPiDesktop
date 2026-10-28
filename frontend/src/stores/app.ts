@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, streamURL } from '@/api/http'
-import { getEndpoint, onStartupError, pickFolder } from '@/api/wails'
+import { getEndpoint, pickFolder } from '@/api/wails'
 import type {
   AppProgress,
   AppRow,
@@ -177,6 +177,18 @@ export const useAppStore = defineStore('app', () => {
     } finally {
       detecting.value = false
     }
+  }
+
+  /**
+   * 刷新全部状态：重新探测引擎、重拉会话与用量。
+   *
+   * 这是 /reload 那条内置命令的实现。它不做增量：用户点它的场景就是
+   * 「我怀疑界面上有什么是旧的」，这时候只刷一半等于没刷。
+   */
+  async function reloadAll() {
+    await detectEngines()
+    await Promise.all([refreshSessions(), chat.loadModels()])
+    if (chat.sessionFile) await chat.refresh(chat.sessionFile)
   }
 
   // 切当前引擎：写设置 + 换对话通道。切引擎不切目录、不切会话。
@@ -424,11 +436,6 @@ export const useAppStore = defineStore('app', () => {
     source = null
   }
 
-  function watchStartupFatal() {
-    onStartupError((message) => {
-      fatal.value = message
-    })
-  }
 
   return {
     boot,
@@ -457,6 +464,7 @@ export const useAppStore = defineStore('app', () => {
     rememberSession,
     refreshEngines,
     detectEngines,
+    reloadAll,
     loadApps,
     setEngine,
     saveSettings,
@@ -465,7 +473,6 @@ export const useAppStore = defineStore('app', () => {
     openSettings,
     openApps,
     disconnect,
-    watchStartupFatal,
   }
 })
 

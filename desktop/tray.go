@@ -2,7 +2,7 @@
 //
 // 菜单项由后端定，文案不进前端——语言切换时后端菜单不会跟着变，
 // 前后端各准备一份文案只会让它们不同步。这里是唯一一份。
-package main
+package desktop
 
 import (
 	"path/filepath"
@@ -13,7 +13,8 @@ import (
 	"OhMyPiDesktop/backend/pkg"
 )
 
-// 托盘菜单里「最近工作目录」最多铺几条：
+// trayRecentMax 是托盘菜单里「最近工作目录」最多铺几条。
+//
 // 托盘菜单是一个弹出层，长到要滚动就不再是快捷方式了。
 const trayRecentMax = 5
 
@@ -22,20 +23,14 @@ const trayRecentMax = 5
 // 菜单是树，但「最近工作目录」这一支会随设置变化，所以整棵树可重建：
 // 直接换掉菜单比就地改某几项更省心（v3 的菜单项没有稳定的可变句柄）。
 func (a *App) buildTrayMenu(app *application.App, win *application.WebviewWindow) {
-	show := func(*application.Context) {
-		win.Show()
-		win.Restore()
-		win.Focus()
-	}
 	menu := app.NewMenu()
-	menu.Add("显示窗口").OnClick(show)
+	menu.Add("显示窗口").OnClick(func(*application.Context) { a.showWindow() })
 
 	// 最近工作目录：点一条就切过去并把窗口带出来。
 	recent := menu.AddSubmenu("最近工作目录")
 	a.fillRecentWorkspaces(recent, win)
 
-	openData := menu.Add("打开数据目录")
-	openData.OnClick(func(*application.Context) {
+	menu.Add("打开数据目录").OnClick(func(*application.Context) {
 		if err := a.svc.OpenDataDir(); err != nil {
 			pkg.Warnf("app: 打不开数据目录：%v", err)
 		}
@@ -49,7 +44,7 @@ func (a *App) buildTrayMenu(app *application.App, win *application.WebviewWindow
 	a.tray.SetMenu(menu)
 	a.tray.SetTooltip("OhMyPiDesktop")
 	// 单击图标 = 把窗口带出来；菜单用右键。
-	a.tray.OnClick(func() { a.toggleWindow() })
+	a.tray.OnClick(func() { a.showWindow() })
 }
 
 // fillRecentWorkspaces 往子菜单里铺最近用过的目录。
@@ -78,9 +73,7 @@ func (a *App) fillRecentWorkspaces(sub *application.Menu, win *application.Webvi
 				pkg.Warnf("app: 托盘切工作目录失败：%v", err)
 				return
 			}
-			win.Show()
-			win.Restore()
-			win.Focus()
+			a.showWindow()
 			// 目录变了要重铺菜单：下一次右键看到的第一条就是刚切过去的那个。
 			a.refreshTrayMenu()
 		})

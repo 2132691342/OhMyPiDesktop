@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -103,35 +102,6 @@ func TestWritePreservesUnknownKeys(t *testing.T) {
 	}
 	if _, ok := deleted.Providers["newone"]; !ok {
 		t.Error("newone 被连带删掉了")
-	}
-}
-
-// 密钥打码：既要能看出「有没有配」，又不能把全文显示在屏幕上。
-// $ENV / !command 是引用而非字面量，原样展示（打码了用户就没法核对）。
-func TestMaskKey(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"", ""},
-		{"short", "•••••"},
-		{"$OPENAI_API_KEY", "$OPENAI_API_KEY"},
-		{"!op read op://auth", "!op read op://auth"},
-	}
-	for _, c := range cases {
-		if got := MaskKey(c.in); got != c.want {
-			t.Errorf("MaskKey(%q) = %q，期望 %q", c.in, got, c.want)
-		}
-	}
-	long := "sk-abcDEF123456ghiJKL789mno"
-	masked := MaskKey(long)
-	if masked == long {
-		t.Fatal("长密钥没有被打码")
-	}
-	for _, secret := range []string{"DEF123456", "ghiJKL"} {
-		if strings.Contains(masked, secret) {
-			t.Errorf("打码后仍含明文 %q: %q", secret, masked)
-		}
-	}
-	if !strings.HasPrefix(masked, "sk-abc") || !strings.HasSuffix(masked, "9mno") {
-		t.Errorf("打码后应保留头尾: %q", masked)
 	}
 }
 

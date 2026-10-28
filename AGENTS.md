@@ -30,13 +30,18 @@
 ## 1. 分层与依赖方向
 
 ```
-main.go ──→ service ──→ engine ──→ omp / pi
-   │           │           │
-   │           │           └──→ pkg
-   │           ├──→ env / session / skill / git
-   │           └──→ repo / domain / hub / pkg
-   └──→ server ──→ service
+main.go ──→ desktop ──→ server ──→ service ──→ engine ──→ omp / pi
+     │         │            │           │           │
+     │         │            │           │           └──→ pkg
+     │         │            │           ├──→ env / session / skill / git
+     │         │            │           └──→ repo / domain / hub / pkg
+     │         │            └──→ service / hub / pkg
+     │         └──→ repo / runtime / hub / pkg + wails
+     └──→ pkg
 ```
+
+`desktop` 是唯一 import `wails` 的包：窗口、托盘、单实例、绑定给前端的
+系统能力全在那里。`main.go` 只做装配（内嵌资源 + 版本号）。
 
 硬规则：
 
@@ -52,13 +57,14 @@ main.go ──→ service ──→ engine ──→ omp / pi
 | `backend/env` | `pkg` / `engine`（只读 `Identity` 等结果类型） | `omp` / `pi` 的具体实现 |
 | `backend/env/ompcfg` / `picfg` | `pkg` | `env` / `engine` / `service` |
 | `backend/git` | `domain` / `pkg` | `service` / `engine` / `env` |
-| `backend/platform` | `pkg` | `service` / `engine` / `env` / `domain`（只给 `main.go` 与 service 用） |
+| `backend/platform` | `pkg` | `service` / `engine` / `env` / `domain`（只给 `desktop` 与 service 用） |
 | `backend/session` / `skill` | `pkg` / `domain` | `service` / `server` / `engine` 实现 |
-| `backend/service` | 以上全部 | `server` / `main` / 任何 `wails` |
+| `backend/service` | 以上全部 | `server` / `desktop` / 任何 `wails` |
 | `backend/server` | `service` / `hub` / `pkg` | `wails` |
-| `main.go` | 全部 + `wails` | — |
+| `desktop` | `backend/*` + `wails` | 被 `backend/*` 反向依赖 |
+| `main.go` | `desktop` / `pkg` | 堆积启动逻辑 |
 
-- **`wails` 只能出现在 `package main`**（`main.go` 与 `tray.go`）。业务层一旦 import
+- **`wails` 只能出现在 `desktop` 与 `package main` 两个地方**。业务层一旦 import
   它就再也测不了——业务层要能在没有 WebView 的情况下跑测试。
 - 依赖方向单向，不出现环。新增包先问：它该在哪一层，会不会造成反向依赖。
 - `engine/omp` 与 `engine/pi` **互不 import**。需要共用的东西上提到 `engine`。
@@ -226,6 +232,7 @@ json tag 同步用 snake_case（`branch_name`）。
 
 | 文档 | 覆盖的包 |
 |---|---|
+| `docs/modules/desktop.md` | `desktop`（Wails 外壳：窗口 / 托盘 / 单实例 / 绑定） |
 | `docs/modules/apps.md` | 引擎分发事实 + 应用管理的用例（跨 `engine` 与 `service`） |
 | `docs/modules/env.md` | `env`（探测与落盘布局）+ `env/ompcfg` + `env/picfg` |
 | `docs/modules/session.md` | `session`（会话文件读取与投影） |
@@ -236,4 +243,5 @@ json tag 同步用 snake_case（`branch_name`）。
 | `docs/modules/repo.md` | `repo`（设置存储）+ `platform`（注册表与系统调用） |
 
 没有单独文档的包：`domain`（纯结构体，字段即文档）、`pkg`（叶子工具）、
-`server`（见 API-CONTRACT.md）、`service`（见各模块文档的「用例」一节）。
+`server`（见 API-CONTRACT.md）、`service`（见各模块文档的「用例」一节）、
+`main.go`（只做装配）。

@@ -54,7 +54,7 @@ jobs:
         shell: pwsh
         # 仓库统一 LF 行尾（.gitattributes），本地与 CI 的 gofmt -l 表现一致。
         run: |
-          $bad = gofmt -l backend main.go assets.go tray.go tools
+          $bad = gofmt -l backend desktop main.go tools
           if ($bad) { Write-Host "未格式化（gofmt -w 后重提）："; Write-Host $bad; exit 1 }
 
       - name: vet

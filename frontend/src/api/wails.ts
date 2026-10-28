@@ -3,45 +3,69 @@
 // v3 的绑定由 `wails3 generate bindings` 静态生成（见 frontend/bindings/），
 // 这里只做两件事：把生成的调用包成 Promise，以及保留「纯浏览器调后端」的兜底。
 // 业务一律走 HTTP，所以这个文件保持很小。
-import * as App from '@wails/OhMyPiDesktop/app'
-import { Events } from '@wailsio/runtime'
-import type { Endpoint } from '@wails/OhMyPiDesktop/models'
+import * as App from '@wails/OhMyPiDesktop/desktop/app'
+import type { Endpoint } from '@wails/OhMyPiDesktop/desktop/models'
 
 export type { Endpoint }
 
-// 纯浏览器调试时检测不到绑定：wails3 dev 之外（比如只用 vite）走这条。
-// 生成代码在 WebView 里总是存在，所以「有没有绑定」= 能不能调到 Endpoint。
-let devFallback = false
-
-async function call<T>(fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn()
-  } catch {
-    devFallback = true
-    throw new Error('没有拿到 Wails 绑定。请在桌面应用中运行，或先设置 localStorage 的 omp.dev.port / omp.dev.token。')
-  }
-}
-
-export async function getEndpoint(): Promise<Endpoint> {
-  if (devFallback) return devEndpoint()
-  try {
-    return await App.Endpoint()
-  } catch {
-    devFallback = true
-    return devEndpoint()
-  }
-}
-
-// 只调后端时不必开 Wails：go run ./tools/devserver -token dev 会打印这一行里的端口与令牌。
-function devEndpoint(): Endpoint {
+/**
+ * 纯浏览器调试的地址覆盖。用 localStorage 显式打开，不靠「调用失败」去猜。
+ *
+ * 为什么不用异常来判断：后端装配失败时绑定调用也会抛错，两者混在一起就只能
+ * 猜。猜错的表现是把「引擎配置读不了」写成「没有 Wails 绑定」——用户拿着
+ * 错误的提示去排查，永远修不好。
+ */
+function devOverride(): Endpoint | null {
   const port = Number(localStorage.getItem('omp.dev.port') ?? 0)
+  if (!port) return null
   const token = localStorage.getItem('omp.dev.token') ?? ''
-  if (!port) throw new Error('没有拿到 Wails 绑定，也没有设置 omp.dev.port / omp.dev.token。')
   return { port, token, version: 'dev', contract: 0, base_url: `http://127.0.0.1:${port}/api/v1` }
 }
 
+/**
+ * 取本地服务地址。后端装配失败时把它的原话抛上去，不吞不换。
+ *
+ * 装配失败的原因（数据目录不可写、端口占用、设置文件读不了）只有后端知道，
+ * 前端唯一的职责是把它完整显示出来。
+ */
+export async function getEndpoint(): Promise<Endpoint> {
+  return devOverride() ?? App.Endpoint()
+}
+
+/**
+ * 打开文件选择框，可多选。返回绝对路径；取消返回空数组。
+ *
+ * 纯浏览器调试时没有对话框：返回空数组等于「用户没选」，调用方本来就这么处理。
+ */
+export async function pickFiles(title = ''): Promise<string[]> {
+  try {
+    return (await App.PickFiles(title)) ?? []
+  } catch {
+    return []
+  }
+}
+
 export async function pickFolder(defaultDir: string): Promise<string> {
-  return call(() => App.PickFolder(defaultDir))
+  try {
+    return await App.PickFolder(defaultDir)
+  } catch {
+    // 纯浏览器调试时没有对话框：返回空串等于「用户没选」，调用方本来就这么处理。
+    return ''
+  }
+}
+
+/**
+ * 告诉后端「首屏画完了，可以把窗口显出来」。
+ *
+ * 窗口在后端装配阶段就建好了，但那时还是隐藏的：v3 的 Show() 在窗口尚未
+ * 创建完时只会建窗而不显形。等这里调用再显示，用户第一眼看到的就是画好的界面。
+ */
+export async function notifyReady(): Promise<void> {
+  try {
+    await App.Ready()
+  } catch {
+    // 纯浏览器调试时没有绑定，窗口本来就已经可见，忽略即可。
+  }
 }
 
 export async function openExternal(url: string): Promise<void> {
@@ -56,12 +80,4 @@ export const windowCtl = {
   minimize: () => void App.WindowMinimize(),
   toggleMaximize: () => void App.WindowToggleMaximize(),
   close: () => void App.WindowClose(),
-}
-
-// 启动失败由后端经事件推来：装配没完成时窗口已经起来了，前端要能显示原因。
-export function onStartupError(cb: (message: string) => void): void {
-  void Events.On('app:startup-error', (data: unknown) => {
-    const payload = data as { message?: string }
-    cb(payload?.message ?? '后端没有启动起来')
-  })
 }

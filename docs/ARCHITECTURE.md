@@ -2,8 +2,9 @@
 
 ## 一句话
 
-`main.go` 是 Wails 壳；壳里起一个回环 HTTP 服务；前端只跟这个服务说话；
-服务后面是一个**引擎抽象层**，它按用户选中的引擎（omp 或 pi）拉起子进程并翻译其协议。
+`desktop` 是 Wails 壳（`main.go` 只装配资源与版本号）；壳里起一个回环 HTTP 服务；
+前端只跟这个服务说话；服务后面是一个**引擎抽象层**，它按用户选中的引擎
+（omp 或 pi）拉起子进程并翻译其协议。
 
 ```
 ┌──────────────────── Wails 窗口（WebView2）────────────────────┐
@@ -92,16 +93,19 @@ omp 是 pi 的 fork，两者协议家族相同（同一套 JSONL 信封、同一
 
 ## 启动时序
 
-application.New（第二次启动在这里就转交并退出，走不到建窗）
-  └─ Window.NewWithOptions  → 窗口以 Hidden 建好，装配完成前不显示
+desktop.Run
+  ├─ runtime.Resolve        → 数据目录（含 WebView2 缓存路径，要交给 application.New）
+  └─ application.New（第二次启动在这里就转交并退出，走不到建窗）
+  └─ Window.NewWithOptions  → 只登记窗口参数，Hidden=true；此时窗口还没真正创建
   └─ SystemTray.New         → 托盘与菜单
   └─ ServiceStartup         → 读数据目录 / 打开设置 / 装 hub / 建 service / 建 server
      （失败写 startErr，但一定关闭 startDone，让后面有确定的等待点）
      启动末尾：对齐开机自启的镜象值（以注册表为准）
      **不探测引擎**：探测要起子进程（pi 要起 Node），装配阶段不该等它
-  └─ 装配完成后按 --hidden 决定是否显示窗口，并重铺一次托盘菜单
-  └─ app.Run()              → 事件循环
+  └─ 装配完成只记一个结果（成功 / 失败），不管窗口
+  └─ app.Run()              → 事件循环（此刻才真正建窗、跑消息循环）
      前端 mount  → getEndpoint()（生成绑定）→ 触发 server.Start() → GET /bootstrap
+                  → notifyReady()：调绑定方法 Ready()，窗口在这一刻显示
                   → 打开 EventSource → 拉会话与引擎状态
                   → GET /prefs，恢复上次会话（若开了那个开关且 URL 没指定会话）
   └─ OnShutdown  → 停引擎（进程树）→ 停 HTTP → 关设置存储
@@ -111,11 +115,18 @@ application.New（第二次启动在这里就转交并退出，走不到建窗�
 顺手把服务起起来，`Start()` 直接返回端口。前端仍要等 `startDone`，
 因为 `ServiceStartup` 与前端 mount 之间没有顺序保证。
 
+**窗口为什么等前端 Ready() 才显示**：v3 把建窗推迟到主循环的 `pendingRun`，
+`ServiceStartup` 执行时窗口还不存在。那一刻调 `Show()` 只会走「先建窗、再
+return」的分支——窗口建出来了但仍是隐藏的；紧随其后的 `Focus()` 会踩到尚未
+初始化的 WebView2 controller 并 panic。所以装配阶段一律不碰窗口：前端画完
+首屏再调 `Ready()`，一次 `Show + Restore + Focus` 解决三个状态，顺带没有白屏。
+
 关窗不等于退出：`WindowClosing` 钩子里 `e.Cancel()` 把窗口收进托盘，
 真正退出只有托盘菜单的「退出」一条路。
 
-开机自启（`--hidden`）时窗口建好也不显示；但**装配失败一定把窗口弹出来**——
-启动失败的信息只能由界面说，此时还藏在托盘后面等于双击没反应。
+开机自启（`--hidden`）时窗口建好也不显示，重铺托盘菜单即可；
+装配失败也不弹窗——前端照样起来，把 `startErr` 显示在启动失败页上。
+启动失败的信息只能由界面解释，界面上没有比这更早的观测点。
 
 ## 引擎探测与装（分层分得开）
 
@@ -260,7 +271,7 @@ Supervisor                      // 按 (Kind, WorkDir) 管理 Engine
 | 数据目录 | `%LOCALAPPDATA%\OhMyPiDesktop` | 用户报「设置不对」时最快的排障路径是直接看到那个 JSON 文件 |
 
 这三件事的唯一落点是 `backend/service/prefs.go`，系统调用收在 `backend/platform`
-（它只被 `main.go` 与 service 使用，业务层不该 import 它）。
+（它只被 `desktop` 与 service 使用，业务层不该 import 它）。
 开机自启写入的值带 `--hidden`：登录后只拉起托盘，不往屏幕上弹一个空窗口。
 
 **托盘菜单**因此不是一张固定菜单：它包含「最近工作目录」这一支，

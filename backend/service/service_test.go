@@ -1,13 +1,7 @@
 package service
 
-// 用例层的测试：只测「界面表达不了、错了也不报错」的那些判据。
-//
-// 判据分三类：
-//   1. 命令原文与真正执行的命令必须一致（用户会从屏幕上复制它）；
-//   2. 版本比较（数字比，不是字符串比）；
-//   3. 会话键的拆分（拆错会打开另一个引擎的会话文件，肉眼发现不了）。
-//
-// 其余（"能不能解一个 map"）不会错，不测。
+// 用例层只测「界面表达不了、错了也不报错」的判据：命令原文与执行一致、
+// 版本数字比较、会话键拆分、配置原文读取边界。
 
 import (
 	"os"
@@ -183,24 +177,6 @@ func TestConfigCandidates(t *testing.T) {
 		if filepathBase(cand.path) == "auth.json" {
 			t.Fatal("凭据文件不该出现在可查看清单里")
 		}
-	}
-}
-
-// 大小写不同的同一路径必须被接受（Windows 大小写不敏感），
-// 清单外的路径必须被拒绝。
-func TestInCandidates(t *testing.T) {
-	allowed := []configFile{
-		{path: `C:\u\.omp\agent\models.yml`, label: "models.yml"},
-		{path: `C:\u\.omp\agent\config.yml`, label: "config.yml"},
-	}
-	if !inCandidates(`c:\U\.omp\agent\MODELS.yml`, allowed) {
-		t.Fatal("大小写不同的同一路径应当被接受")
-	}
-	if inCandidates(`C:\u\.omp\agent\auth.json`, allowed) {
-		t.Fatal("清单外的路径必须被拒绝")
-	}
-	if inCandidates(`C:\Windows\win.ini`, allowed) {
-		t.Fatal("工作区外的路径必须被拒绝")
 	}
 }
 

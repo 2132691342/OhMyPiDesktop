@@ -1,12 +1,23 @@
 <script setup lang="ts">
-// 输入区：Enter 发送；正在回答时 Enter 变插话、Shift+Enter 排队。
-// 斜杠菜单只列引擎报上来的命令——内置动作（压缩/新建）另行做成按钮，不混进同一张表。
-import { computed, nextTick, ref, watch } from 'vue'
+// 输入区：多行输入 + 待发送附件 + @ 文件引用 + / 命令菜单 + 模型与思考档 + 发送/停止。
+//
+// 菜单有两组来源，界面上合成一张表但分开标注：
+//   - 界面内置命令（新建 / 换模型 / 压缩 / 导出…）——这些不依赖引擎；
+//   - 引擎报上来的命令（扩展、提示模板、技能）——只有引擎知道有哪些。
+// 两组都走同一条「选中即填进输入框」的路，因为引擎那组要靠 prompt 才生效。
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppIcon from '@/components/common/AppIcon.vue'
+import MentionBrowser from '@/components/chat/MentionBrowser.vue'
+import AttachStrip from '@/components/chat/AttachStrip.vue'
+import ComposerBar from '@/components/chat/ComposerBar.vue'
+import ComposerStatus from '@/components/chat/ComposerStatus.vue'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
-import type { EngineKind, SlashCommand } from '@/types/api'
+import { useComposerDraft } from '@/composables/useComposerDraft'
+import { useAttachments, baseName, toWorkspaceRelative } from '@/composables/useAttachments'
+import { useComposerMenu } from '@/composables/useComposerMenu'
+import { pickFiles } from '@/api/wails'
+import type { EngineKind } from '@/types/api'
 
 const chat = useChatStore()
 const app = useAppStore()
@@ -17,66 +28,136 @@ const pickingEngine = ref(false)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const sending = ref(false)
 const queueing = ref(false)
-const slashIndex = ref(0)
 
-const slashOpen = computed(() => draft.value.startsWith('/') && !draft.value.includes(' ') && commands.value.length > 0)
+// 草稿按会话存：切走再切回来还在，关掉窗口也不丢。
+const draftStore = useComposerDraft(computed(() => chat.sessionFile), draft)
 
-const commands = computed<SlashCommand[]>(() => {
-  const query = draft.value.slice(1).toLowerCase()
-  if (!query) return chat.commands.slice(0, 40)
-  return chat.commands.filter((c) => c.name.toLowerCase().includes(query)).slice(0, 40)
+// 附件：粘贴图片 / 回形针选文件 / @ 引用工作区文件，三种来源一个列表。
+const attachments = useAttachments()
+const attachError = ref('')
+
+// 菜单：/ 命令 与 @ 引用。开关时机与选中后的动作都在 composable 里。
+const composerMenu = useComposerMenu(draft, (name) => {
+  draft.value = `/${name} `
+  void nextTick(() => textarea.value?.focus())
 })
+const { menuIndex, busyCmd, mentionOpen, slashOpen, slashItems, applyItem } = composerMenu
 
-watch(slashOpen, (open) => {
-  if (open) slashIndex.value = 0
-})
-
-// 引擎要求回填输入框（set_editor_text）：只消费一次，用完就清，
-// 否则用户手改之后又会被下一次刷新覆盖。
-watch(
-  () => chat.draftOverride,
-  (text) => {
-    if (!text) return
-    draft.value = text
-    chat.draftOverride = ''
-    void nextTick(() => {
-      autosize()
-      textarea.value?.focus()
-    })
-  },
-)
-
-function applySlash(command: SlashCommand) {
-  draft.value = `/${command.name} `
+// ── @ 引用 ──
+function pickMention(relPath: string, name: string): void {
+  const err = attachments.addWorkspaceFile(relPath, name)
+  if (err) {
+    attachError.value = err
+    return
+  }
+  // 把触发菜单的那段 @xxx 从输入里去掉：引用已经变成附件条目了。
+  draft.value = draft.value.replace(/@\S*$/, '').trimEnd()
+  composerMenu.close()
   void nextTick(() => textarea.value?.focus())
 }
 
-function autosize() {
+// ── 附件 ──
+async function onPaste(event: ClipboardEvent): Promise<void> {
+  const errors = await attachments.addFromClipboard(event.clipboardData)
+  if (errors.length) {
+    attachError.value = errors.join('；')
+    return
+  }
+  // 有图片时吃掉这次粘贴，避免同一张图既进附件又变成一段二进制文本；
+  // 没有图片就放行——普通文本粘进输入框是正常操作。
+  if (attachments.images.value.length) event.preventDefault()
+}
+
+/** 回形针：选文件。工作区内的变成相对路径引用，工作区外的给绝对路径。 */
+async function browseFiles(): Promise<void> {
+  const picked = await pickFiles(t('chat.attachPick'))
+  if (!picked.length) return
+  const errors: string[] = []
+  for (const path of picked) {
+    const rel = toWorkspaceRelative(path, app.workspace)
+    const err = attachments.addWorkspaceFile(rel ?? path, baseName(path))
+    if (err) errors.push(err)
+  }
+  if (errors.length) attachError.value = errors.join('；')
+  void nextTick(() => textarea.value?.focus())
+}
+
+// ── 输入与键盘 ──
+function autosize(): void {
   const el = textarea.value
   if (!el) return
   el.style.height = 'auto'
-  el.style.height = `${Math.min(260, el.scrollHeight)}px`
+  el.style.height = `${Math.min(220, el.scrollHeight)}px`
 }
 
-async function submit() {
+/** 回车发送、Shift+回车换行。输入法组合中的回车不算发送。 */
+function onKeydown(event: KeyboardEvent): void {
+  if (event.isComposing) return
+
+  if (slashOpen.value) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      composerMenu.move(1)
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      composerMenu.move(-1)
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault()
+      const item = slashItems.value[menuIndex.value]
+      if (item) applyItem(item)
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      composerMenu.close()
+      return
+    }
+  }
+
+  if (mentionOpen.value && event.key === 'Escape') {
+    event.preventDefault()
+    composerMenu.close()
+    return
+  }
+
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    void submit()
+  }
+}
+
+const canSend = computed(
+  () => (draft.value.trim().length > 0 || !attachments.isEmpty.value) && !sending.value,
+)
+
+async function submit(): Promise<void> {
+  if (!canSend.value || !app.hasEngine) return
   const text = draft.value.trim()
-  if (!text || sending.value) return
-  if (text.startsWith('/') && !text.includes(' ')) {
-    const exact = chat.commands.find((c) => `/${c.name}` === text)
+  // 只有 `/xxx` 这种完整命令时，回车应当是「执行它」而不是把它当成一句话发出去。
+  if (!attachments.isEmpty.value && text.startsWith('/') && !text.includes(' ')) {
+    const exact = slashItems.value.find((item) => `/${item.name}` === text)
     if (exact) {
-      applySlash(exact)
+      applyItem(exact)
       return
     }
   }
   sending.value = true
+  attachError.value = ''
   try {
+    const payload = attachments.payloads()
     if (chat.streaming) {
-      await chat.steer(text)
+      await chat.steer(text, payload)
       chat.pushNotice('info', t('chat.queueSteer'))
     } else {
-      await chat.send(text)
+      await chat.send(text, payload)
     }
     draft.value = ''
+    attachments.clear()
+    draftStore.flush()
     await nextTick(autosize)
   } catch (err) {
     chat.promptError = err instanceof Error ? err.message : String(err)
@@ -85,13 +166,14 @@ async function submit() {
   }
 }
 
-async function queue() {
-  const text = draft.value.trim()
-  if (!text || !chat.streaming) return
+async function queue(): Promise<void> {
+  if (!canSend.value || !chat.streaming) return
   queueing.value = true
   try {
-    await chat.followUp(text)
+    await chat.followUp(draft.value.trim(), attachments.payloads())
     draft.value = ''
+    attachments.clear()
+    draftStore.flush()
     await nextTick(autosize)
     chat.pushNotice('info', t('chat.queueAdded'))
   } catch (err) {
@@ -102,7 +184,7 @@ async function queue() {
 }
 
 const stopping = ref(false)
-async function stopTurn() {
+async function stopTurn(): Promise<void> {
   stopping.value = true
   try {
     await chat.stop()
@@ -113,7 +195,7 @@ async function stopTurn() {
   }
 }
 
-async function startNewChat() {
+async function startNewChat(): Promise<void> {
   try {
     await chat.newChat()
     chat.pushNotice('info', t('chat.newChatStarted'))
@@ -123,7 +205,7 @@ async function startNewChat() {
 }
 
 // 切引擎：只换「这句话发给谁」。不切目录、不切会话。
-async function pickEngine(kind: EngineKind) {
+async function pickEngine(kind: EngineKind): Promise<void> {
   if (kind === chat.kind) return
   pickingEngine.value = true
   try {
@@ -138,26 +220,7 @@ async function pickEngine(kind: EngineKind) {
   }
 }
 
-async function clearQueued() {
-  try {
-    await chat.clearQueue()
-    chat.pushNotice('info', t('chat.queueCleared'))
-  } catch (err) {
-    chat.promptError = err instanceof Error ? err.message : String(err)
-  }
-}
-
-async function dropQueued(message: string, queueName: 'steering' | 'followUp') {
-  try {
-    if (!(await chat.removeQueued(message, queueName))) {
-      chat.pushNotice('info', t('chat.queueGone'))
-    }
-  } catch (err) {
-    chat.promptError = err instanceof Error ? err.message : String(err)
-  }
-}
-
-async function pickModel(provider: string, id: string) {
+async function pickModel(provider: string, id: string): Promise<void> {
   try {
     await chat.setModel(provider, id)
   } catch (err) {
@@ -165,7 +228,7 @@ async function pickModel(provider: string, id: string) {
   }
 }
 
-async function pickThinking(level: string) {
+async function pickThinking(level: string): Promise<void> {
   try {
     await chat.setThinking(level)
   } catch (err) {
@@ -173,45 +236,12 @@ async function pickThinking(level: string) {
   }
 }
 
-async function pickAutoCompactionToolbar(enabled: boolean) {
+async function pickAutoCompactionToolbar(enabled: boolean): Promise<void> {
   try {
     await chat.setAutoCompaction(enabled)
     chat.pushNotice('info', enabled ? t('chat.autoCompactOn') : t('chat.autoCompactOff'))
   } catch (err) {
     chat.promptError = err instanceof Error ? err.message : String(err)
-  }
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (slashOpen.value) {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      slashIndex.value = (slashIndex.value + 1) % commands.value.length
-      return
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      slashIndex.value = (slashIndex.value - 1 + commands.value.length) % commands.value.length
-      return
-    }
-    if (event.key === 'Enter' || event.key === 'Tab') {
-      event.preventDefault()
-      const command = commands.value[slashIndex.value]
-      if (command) applySlash(command)
-      return
-    }
-    if (event.key === 'Escape') {
-      draft.value = ''
-      return
-    }
-  }
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault()
-    if (event.altKey && chat.streaming) {
-      void queue()
-      return
-    }
-    void submit()
   }
 }
 
@@ -221,8 +251,16 @@ const hint = computed(() => {
   return t('chat.placeholder')
 })
 
-/** 把光标放回输入框（全局 Ctrl+K 用）。 */
-function focus() {
+/** 当前模型收不收图片：收才让用户粘图，否则那条提示会一直失败。 */
+const imagesAllowed = computed(() => {
+  const input = chat.model?.input
+  if (!input || input.length === 0) return true
+  return input.includes('image')
+})
+
+onMounted(() => void nextTick(autosize))
+
+function focus(): void {
   textarea.value?.focus()
 }
 
@@ -231,395 +269,208 @@ defineExpose({ focus })
 
 <template>
   <div class="composer">
-    <!-- 引擎选择：只列探测到的引擎，只有一个时不显示（不占位置） -->
-    <div v-if="app.showEnginePicker" class="engine-strip">
-      <div class="seg" role="tablist">
-        <button
-          v-for="item in app.installed"
-          :key="item.kind"
-          class="seg-btn"
-          :class="{ active: chat.kind === item.kind }"
-          :disabled="pickingEngine || Boolean(chat.switching)"
-          :title="item.exe"
-          @click="pickEngine(item.kind)"
-        >
-          <span class="dot" :class="item.kind === chat.kind ? 'ok' : ''" />
-          {{ item.kind }}
-        </button>
-      </div>
-      <span v-if="pickingEngine" class="engine-switching">
-        <span class="dot busy" />
-        {{ t('chat.switchingEngine') }}
-      </span>
-    </div>
-
-    <div v-if="!app.hasEngine" class="no-engine">
-      <span class="dot warn" />
-      <span>{{ t('chat.noEngine') }}</span>
-      <code class="install-cmd selectable">{{ app.installHint(chat.kind) }}</code>
-      <button class="omp-btn text sm" :class="{ 'is-loading': app.detecting }" :disabled="app.detecting" @click="app.detectEngines()">
-        {{ t('chat.redetect') }}
-      </button>
-      <!-- 命令原文解决「我知道该跑什么」，应用页解决「我不想开终端」——两条路都给 -->
-      <button class="omp-btn text sm" @click="app.openApps()">
-        {{ t('chat.openApps') }}
-      </button>
-    </div>
-
-    <div v-if="chat.widgets.length || chat.statusText" class="status-strip">
-      <span v-if="chat.statusText" class="status-chip">{{ chat.statusText }}</span>
-      <span v-for="widget in chat.widgets" :key="widget.key" class="status-chip">
-        {{ widget.lines.join(' · ') }}
-      </span>
-    </div>
-
-    <div v-if="chat.queue.steering.length || chat.queue.followUp.length" class="queue-strip">
-      <span class="dot busy" />
-      {{ t('chat.queuedCount', { n: chat.queue.steering.length + chat.queue.followUp.length }) }}
-      <template v-if="chat.caps?.queue_edit">
-        <button
-          v-for="(m, i) in chat.queue.steering"
-          :key="'s' + i"
-          class="queue-chip omp-pressable"
-          :title="t('chat.removeQueued')"
-          @click="dropQueued(m, 'steering')"
-        >
-          {{ m }}<span class="x">×</span>
-        </button>
-        <button
-          v-for="(m, i) in chat.queue.followUp"
-          :key="'f' + i"
-          class="queue-chip omp-pressable"
-          :title="t('chat.removeQueued')"
-          @click="dropQueued(m, 'followUp')"
-        >
-          {{ m }}<span class="x">×</span>
-        </button>
-      </template>
-      <button
-        v-if="chat.caps?.queue_clear"
-        class="omp-btn text sm"
-        :title="t('chat.clearQueue')"
-        @click="clearQueued"
-      >
-        {{ t('chat.clearQueue') }}
-      </button>
-    </div>
-
-    <div v-if="chat.retry" class="retry-strip">
-      <span class="dot warn" />
-      {{ t('chat.retrying') }} {{ chat.retry.attempt }}/{{ chat.retry.max }}
-    </div>
-
-    <!-- 错误必须把原话说出来：只把面板染红等于没告诉用户发生了什么 -->
-    <div v-if="chat.promptError" class="error-strip">
-      <span class="dot warn" />
-      <span class="error-text selectable">{{ chat.promptError }}</span>
-      <button class="omp-btn text sm" @click="chat.promptError = ''">
-        {{ t('common.close') }}
-      </button>
-    </div>
+    <ComposerStatus
+      :picking-engine="pickingEngine"
+      :attach-error="attachError"
+      @pick-engine="pickEngine"
+      @clear-attach-error="attachError = ''"
+    />
 
     <div class="composer-inner">
-      <el-popover v-if="slashOpen" placement="top-start" :width="420" trigger="manual" :visible="true" popper-class="slash-pop">
-        <div class="slash">
-          <div
-            v-for="(command, index) in commands"
-            :key="command.name"
-            class="slash-item"
-            :class="{ active: index === slashIndex }"
-            @mouseenter="slashIndex = index"
-            @click="applySlash(command)"
+      <div class="composer-box">
+        <AttachStrip :items="attachments.items.value" @remove="attachments.remove" />
+
+        <textarea
+          ref="textarea"
+          v-model="draft"
+          :placeholder="hint"
+          :disabled="!app.hasEngine"
+          rows="1"
+          @input="autosize"
+          @keydown="onKeydown"
+          @paste="onPaste"
+        />
+
+        <ComposerBar
+          :can-send="canSend"
+          :sending="sending"
+          :queueing="queueing"
+          :stopping="stopping"
+          :busy-cmd="busyCmd"
+          :images-allowed="imagesAllowed"
+          :count="draft.length"
+          @new-chat="startNewChat"
+          @browse-files="browseFiles"
+          @pick-model="pickModel"
+          @pick-thinking="pickThinking"
+          @queue="queue"
+          @toggle-compact="pickAutoCompactionToolbar"
+          @stop="stopTurn"
+          @submit="submit"
+        />
+      </div>
+
+      <!-- / 命令菜单：贴着输入框上沿，不是跟着输入框左侧 -->
+      <div v-if="slashOpen" class="pop menu-pop" @pointerdown.prevent>
+        <div class="pop-list">
+          <button
+            v-for="(item, index) in slashItems"
+            :key="item.source + item.key"
+            type="button"
+            class="pop-row"
+            :class="{ 'is-hi': index === menuIndex }"
+            @mouseenter="menuIndex = index"
+            @click="applyItem(item)"
           >
-            <span class="slash-name">/{{ command.name }}</span>
-            <span class="slash-desc">{{ command.description || command.input?.hint || '' }}</span>
-          </div>
-          <p class="slash-hint">{{ t('chat.slashHint') }}</p>
+            <span class="pop-grow">
+              <b class="pop-t">/{{ item.name }}</b>
+              <span class="pop-d">{{ item.desc }}</span>
+            </span>
+            <span v-if="item.source === 'builtin'" class="pop-tag">{{ t('chat.slashBuiltin') }}</span>
+          </button>
         </div>
-        <template #reference>
-          <div class="slash-anchor" />
-        </template>
-      </el-popover>
+        <p class="pop-hint">{{ t('chat.slashHint') }}</p>
+      </div>
 
-      <textarea
-        ref="textarea"
-        v-model="draft"
-        :placeholder="hint"
-        :disabled="!app.hasEngine"
-        rows="1"
-        @input="autosize"
-        @keydown="onKeydown"
-      />
-      <div class="composer-bar">
-        <button
-          class="omp-btn icon ghost"
-          :class="{ 'is-loading': chat.switching === 'new' }"
-          :disabled="Boolean(chat.switching)"
-          :title="t('chat.newChat')"
-          @click="startNewChat"
-        >
-          <AppIcon name="plus" :size="15" />
-        </button>
-
-        <el-dropdown trigger="click" max-height="360px" :disabled="!chat.models.length">
-          <button
-            class="omp-btn sm ghost"
-            :class="{ 'is-loading': chat.switching === 'model' }"
-            :disabled="!chat.model || Boolean(chat.switching)"
-          >
-            <AppIcon name="cpu" :size="13" />
-            <span class="model-label">{{ chat.model?.id || t('common.unknown') }}</span>
-          </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item
-                v-for="m in chat.models"
-                :key="`${m.provider}/${m.id}`"
-                @click="pickModel(m.provider, m.id)"
-              >
-                <span class="drop-row">
-                  <span class="drop-id">{{ m.id }}</span>
-                  <span class="drop-prov">{{ m.provider }}</span>
-                  <span v-if="m.provider === chat.model?.provider && m.id === chat.model?.id" class="tag brand">
-                    {{ t('chat.current') }}
-                  </span>
-                </span>
-              </el-dropdown-item>
-              <el-dropdown-item v-if="!chat.models.length" disabled>
-                {{ t('chat.noModels') }}
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-
-        <el-dropdown trigger="click" max-height="320px" :disabled="!chat.levels.length">
-          <button
-            class="omp-btn sm ghost"
-            :class="{ 'is-loading': chat.switching === 'thinking' }"
-            :disabled="!chat.levels.length || Boolean(chat.switching)"
-          >
-            <AppIcon name="spark" :size="13" />
-            <span class="model-label">{{ chat.thinkingLevel || t('chat.thinkingDefault') }}</span>
-          </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item v-for="level in chat.levels" :key="level" @click="pickThinking(level)">
-                <span class="drop-row">
-                  <span>{{ level }}</span>
-                  <span v-if="level === chat.thinkingLevel" class="tag brand">{{ t('chat.current') }}</span>
-                </span>
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-
-        <button
-          v-if="chat.streaming"
-          class="omp-btn sm ghost"
-          :class="{ 'is-loading': queueing }"
-          :disabled="!draft.trim() || queueing"
-          :title="t('chat.queueHint')"
-          @click="queue"
-        >
-          <AppIcon name="clock" :size="13" />
-          {{ t('chat.queue') }}
-        </button>
-
-        <button
-          class="omp-btn sm ghost"
-          :class="{ on: chat.autoCompaction, 'is-loading': chat.switching === 'compaction' }"
-          :disabled="chat.busy || Boolean(chat.switching) || !app.hasEngine"
-          :title="t('chat.autoCompact')"
-          @click="pickAutoCompactionToolbar(!chat.autoCompaction)"
-        >
-          <AppIcon name="refresh" :size="13" />
-          {{ t('chat.autoCompact') }}
-        </button>
-
-        <button
-          v-if="chat.streaming"
-          class="omp-btn sm"
-          :class="{ 'is-loading': stopping }"
-          :disabled="stopping"
-          :title="t('chat.stop')"
-          @click="stopTurn"
-        >
-          <AppIcon name="stop" :size="13" />
-          {{ t('chat.stop') }}
-        </button>
-
-        <span class="composer-hint">{{ draft.length ? `${draft.length}` : '' }}</span>
-        <button
-          class="omp-btn primary sm"
-          :class="{ 'is-loading': sending }"
-          :disabled="!draft.trim() || sending || !app.hasEngine"
-          @click="submit"
-        >
-          <AppIcon name="send" :size="13" />
-          {{ chat.streaming ? t('chat.sendSteer') : t('chat.send') }}
-        </button>
+      <!-- @ 引用：工作区文件逐级浏览 -->
+      <div v-else-if="mentionOpen" class="pop menu-pop is-mention" @pointerdown.prevent>
+        <MentionBrowser @pick="pickMention" />
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.engine-strip {
+/* 输入区根：它自己在页面底部，菜单要从它内部往上弹。
+   这里不需要 position —— composer-inner 才是定位上下文，
+   把定位放在根上会让菜单相对整块（含状态条）定位，往上弹时盖住更多东西。 */
+.composer {
+  flex: none;
+  padding: var(--omp-sp-3) var(--omp-sp-5) var(--omp-sp-4);
+}
+
+/* 菜单的定位上下文：菜单贴着输入框上沿往上弹，必须相对「输入框那一块」定位。
+   少了这一行 position，绝对定位的子元素会往上找第一个已定位的祖先，
+   菜单就跑到左上角（或者整页的某个角落）去了。 */
+.composer-inner {
+  position: relative;
+  width: 100%;
   max-width: var(--omp-col);
-  margin: 0 auto var(--omp-sp-2);
+  margin: 0 auto;
+}
+
+/* 菜单面板：贴着输入框上沿往上弹，左右各留一点边距。
+   bottom: calc(100% - sp-2) 让它压在输入框边框上 2px，视觉上像从框里长出来的。
+   不用 el-popover：那是给「相对某个小控件弹出」用的，这里要的是
+   「贴着整块输入区、宽度跟着走」——与输入框同宽的清单更像它的延伸部分。 */
+.pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% - var(--omp-sp-2));
+  max-height: 340px;
   display: flex;
-  align-items: center;
-  gap: var(--omp-sp-3);
-}
-
-.engine-switching {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-mute);
-}
-
-.no-engine {
-  max-width: var(--omp-col);
-  margin: 0 auto var(--omp-sp-2);
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-3);
-  flex-wrap: wrap;
-  padding: var(--omp-sp-2) var(--omp-sp-3);
-  border: 1px solid var(--omp-warn);
-  border-radius: var(--omp-r);
-  background: var(--omp-warn-soft);
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-ink);
-}
-
-.install-cmd {
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  padding: 2px 6px;
-  border-radius: var(--omp-r-xs);
-  background: var(--omp-surface);
-  border: 1px solid var(--omp-line);
-  user-select: all;
-}
-
-.queue-strip {
-  max-width: var(--omp-col);
-  margin: 0 auto var(--omp-sp-2);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-mute);
-}
-
-/* 排队条目：点一下移除这一条。截断到 18em，长句子不把整行撑开。 */
-.queue-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 18em;
-  padding: 2px 7px;
-  border: 1px solid var(--omp-line);
-  border-radius: var(--omp-r-full);
-  background: var(--omp-surface);
-  color: var(--omp-ink-2);
-  font: inherit;
-  line-height: 1.5;
-  cursor: pointer;
+  flex-direction: column;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  padding: var(--omp-sp-1);
+  border: 1px solid var(--omp-line-strong);
+  border-radius: var(--omp-r-lg);
+  background: var(--omp-surface);
+  /* 用 lift 而不是普通 shadow：菜单浮在内容之上，阴影要能说明层级。 */
+  box-shadow: var(--omp-shadow-lift);
+  animation: pop-in var(--omp-dur-fast) var(--omp-ease);
+  z-index: 20;
 }
 
-.queue-chip:hover {
-  background: var(--omp-hover);
-  border-color: var(--omp-line-strong);
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
-.queue-chip .x {
-  color: var(--omp-mute);
-  font-size: 1.05em;
-  line-height: 1;
+/* 滚动在列表层而不是弹层上：键盘高亮要靠它自己的 scrollTop 算可视区 */
+.pop-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.queue-chip:hover .x {
-  color: var(--omp-brand);
-}
-
-.retry-strip {
-  max-width: var(--omp-col);
-  margin: 0 auto var(--omp-sp-2);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-warn);
-}
-
-/* 错误条：原话 + 关闭。面板染色只是提示，不代替具体原因 */
-.error-strip {
-  max-width: var(--omp-col);
-  margin: 0 auto var(--omp-sp-2);
+.pop-row {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
-  padding: var(--omp-sp-2) var(--omp-sp-3);
-  border: 1px solid var(--omp-bad);
-  border-radius: var(--omp-r);
-  background: var(--omp-bad-soft);
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-bad);
+  width: 100%;
+  padding: 5px var(--omp-sp-2);
+  border: 0;
+  border-radius: var(--omp-r-sm);
+  background: transparent;
+  color: var(--omp-ink-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--omp-dur-fast) var(--omp-ease);
 }
 
-.error-text {
-  flex: 1;
+.pop-row:hover,
+.pop-row.is-hi {
+  background: var(--omp-brand-soft);
+}
+
+.pop-grow {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
-  overflow-wrap: anywhere;
+  flex: 1;
 }
 
-.slash-anchor {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 1px;
-  height: 1px;
-  pointer-events: none;
-}
-
-.slash-hint {
-  margin: var(--omp-sp-2) 0 0;
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
+.pop-t {
   font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-xs);
+  font-weight: 650;
+  color: var(--omp-brand);
 }
 
-.model-label {
-  max-width: 220px;
+.pop-d {
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-mute);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--omp-font-mono);
 }
 
-.drop-id {
-  font-family: var(--omp-font-mono);
+.pop-tag {
+  flex: none;
+  font-size: var(--omp-fs-3xs);
+  padding: 0 5px;
+  border-radius: var(--omp-r-full);
+  background: var(--omp-brand-soft);
+  color: var(--omp-brand);
 }
 
-.drop-prov {
+.pop-hint {
+  margin: var(--omp-sp-1) 0 0;
+  padding: 2px var(--omp-sp-2) 0;
+  border-top: 1px solid var(--omp-line);
   font-size: var(--omp-fs-3xs);
   color: var(--omp-faint);
   font-family: var(--omp-font-mono);
 }
 
-.drop-row {
+/* 输入框容器：工具条与附件条都挂在里面，所以它只管外壳。 */
+.composer-box {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--omp-sp-4);
-  min-width: 120px;
+  flex-direction: column;
+  gap: var(--omp-sp-2);
+  padding: var(--omp-sp-2) var(--omp-sp-3);
+  border: 1px solid var(--omp-line-strong);
+  border-radius: var(--omp-r-lg);
+  background: var(--omp-surface);
+  transition: border-color var(--omp-dur-fast) var(--omp-ease);
+}
+
+.composer-box:focus-within {
+  border-color: var(--omp-brand-2);
 }
 </style>

@@ -34,6 +34,7 @@
 | 领域 | 内容 |
 |---|---|
 | 对话 | 流式正文、思考段、工具卡（参数 / 输出 / 耗时）按引擎吐出的**原始顺序**内联；插话、排队、停止、自动重试提示、提问卡片、上下文水位 |
+| 输入区 | `/` 命令（内置 7 条 + 引擎命令合成一张表）、`@` 工作区文件引用、粘贴截图、选择文件；草稿按会话保存 |
 | 工作区 | 文件树（只读）、改动清单、逐文件 diff、暂存 / 提交、分支切换、冲突处置、**提交详情与文件时间线** |
 | 引擎 | 自动探测 `omp` / `pi`（版本 + 种类 + 安装渠道 + 能力表）；一个工作目录一个进程；界面上切引擎；配置原文只读查看 |
 | 应用 | 装 / 升级 / 卸载两个引擎：**代跑引擎自己的官方安装器与包管理器命令**，输出逐行推到界面；版本对比与渠道识别；管不了的只给手动路径 |
@@ -73,6 +74,7 @@
 | 存储 | 一个 JSON 文件：只存界面设置 |
 | 工作区 | 调系统 `git`（不引入 Go 的 git 实现，行为与终端一致） |
 | 协议 | 一行一条 JSON 走 stdio；omp 有 `ready` 握手与 v2 分片，pi 无握手且不接受 `--cwd` |
+| 附件 | 文件只拼路径清单（引擎自己读），图片走 `prompt.images`（唯一能传二进制的通道） |
 | 前端 | Vue 3 + TypeScript + Vite + Pinia + Vue Router（hash） |
 | UI | Element Plus（基元）+ UnoCSS（原子类，刻度接 `--omp-*`） |
 | 编辑 | CodeMirror 6（技能正文与引擎配置原文；按扩展名给 markdown / json / yaml） |
@@ -84,7 +86,8 @@
 
 ```
 OhMyPiDesktop/
-├── main.go                 入口：embed + wails.Run + 装配
+├── main.go                 入口：embed 前端产物 + 版本号，交给 desktop
+├── desktop/                Wails 外壳：窗口 / 托盘 / 单实例 / 绑定给前端的系统能力
 ├── backend/
 │   ├── engine/             引擎抽象：Kind / Caps / Proc / Translator / Supervisor / Probe
 │   │   │                   + 分发事实（dist.go / channel.go / latest.go）
@@ -151,7 +154,25 @@ task smoke -- -engine omp -msg "Reply with exactly: OK"
 task smoke -- -engine pi  -msg "Reply with exactly: OK"
 ```
 
-构建需要 Go 1.26+、Node 18+、Wails v3 CLI（`wails3`）。
+构建需要 Go 1.26+、Node 18+、Wails v3 CLI（`wails3`），打安装器还要 `makensis`。
+
+### 安装器与数据
+
+安装器是 NSIS，装到 `%LOCALAPPDATA%\Programs\OhMyPiDesktop`（`INSTALL_SCOPE=user`）
+或 `Program Files`（`machine`，默认，需 UAC）。安装与卸载都带一个**默认不勾**的
+「删除本机数据」勾选框：
+
+| 场景 | 行为和结果 |
+|---|---|
+| 图形界面安装 / 卸载 | 勾了才删 `%LOCALAPPDATA%\OhMyPiDesktop`（设置、日志、WebView2 缓存） |
+| 静默（`/S`） | 永远不删数据——无人值守不能删别人的东西 |
+| 静默要删 | `installer.exe /S /CLEANDATA` / `uninstall.exe /S /CLEANDATA` |
+
+引擎自己的会话与配置（`~/.omp/agent/`、`~/.pi/agent/`）**永远不删**：那是引擎的账本，
+删了等于把用户的对话抹掉。
+
+覆盖安装前安装器会先 `taskkill` 掉运行中的实例（托盘常驻让「窗口关了」不等于
+「进程退了」，exe 会被句柄占住，覆写报错对用户是莫名其妙的失败）。
 
 ## 文档
 
@@ -167,6 +188,7 @@ task smoke -- -engine pi  -msg "Reply with exactly: OK"
 | [docs/PAGE-STRUCTURE.md](docs/PAGE-STRUCTURE.md) | 九个页面的骨架与引擎差异 |
 | [docs/ERROR-CODES.md](docs/ERROR-CODES.md) | 错误码段位与**前端处置表** |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 环境、命令、调试真实引擎、改代码时改什么 |
+| [docs/modules/desktop.md](docs/modules/desktop.md) | 桌面壳：窗口为什么等前端 Ready()、托盘、单实例、绑定面 |
 | [docs/modules/env.md](docs/modules/env.md) | 环境层：探测、落盘布局、两套配置读写 |
 | [docs/modules/apps.md](docs/modules/apps.md) | 应用管理：分发事实、渠道判定、代跑安装器、最新版查询 |
 | [docs/modules/hub.md](docs/modules/hub.md) | 事件总线：序号、环形重放、非阻塞投递 |
