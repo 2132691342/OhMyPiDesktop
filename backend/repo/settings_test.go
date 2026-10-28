@@ -1,5 +1,12 @@
 package repo
 
+// 设置存储的三条不变量：
+//   1. 写下去的键读得回来（含进程重启——设置的全部意义就在这往返上）；
+//   2. 删掉的键不再出现（空值等于删除）；
+//   3. 文件坏了不能让应用起不来。
+//
+// 其余（"能不能 Unmarshal 一个 map"）不会错，不测。
+
 import (
 	"encoding/json"
 	"os"
@@ -7,16 +14,8 @@ import (
 	"testing"
 )
 
-// 设置存储只有三条会出错的不变量：
-//   1. 写下去的键读得回来（含进程重启——设置的全部意义就在这）
-//   2. 删掉的键不再出现（空值等于删除）
-//   3. 文件坏了不能让应用起不来
-//
-// 其余（"能不能 Unmarshal 一个 map"）不会错，不测。
-
 func TestSetThenReopen(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "settings.json")
+	path := filepath.Join(t.TempDir(), "settings.json")
 
 	s, err := Open(path)
 	if err != nil {
@@ -39,7 +38,7 @@ func TestSetThenReopen(t *testing.T) {
 		t.Errorf("All 必须返回副本，实际读到了 %q", got)
 	}
 
-	// 重新打开：模拟下次启动。设置的全部价值就在这条往返上。
+	// 重新打开：模拟下次启动。
 	again, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -101,5 +100,3 @@ func TestOpenBrokenFileDoesNotFail(t *testing.T) {
 		t.Errorf("坏文件应改名留档：%v", err)
 	}
 }
-
-// 首次启动没有文件是正常状态，不是错误。

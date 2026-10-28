@@ -128,6 +128,13 @@ func (a *App) newSubagentStore(kind engine.Kind) engine.SubagentStore {
 // 一分钟内不会变。所以默认走缓存，只有显式「重新检测」才强制。
 const detectTTL = time.Minute
 
+// detectFunc 是探测一个引擎的实际动作。
+//
+// 抽成变量是为了让测试不必依赖「这台机器上装了什么」：
+// 探测要起子进程（pi 的 --help 要起一次 Node，几秒），而单元测试
+// 断言的是「响应形态对不对」，不是「机器上有没有装 pi」。
+var detectFunc = env.Detect
+
 // detectAll 探测所有引擎并把结果记下来。fore 为真时忽略缓存。
 //
 // 两个引擎并发探测：它们互不依赖，串行只是让首屏多等一个 pi 的 Node 启动。
@@ -146,7 +153,7 @@ func (a *App) detectAll(ctx context.Context, fore bool) {
 	ch := make(chan result, len(kinds))
 	for _, kind := range kinds {
 		go func(kind engine.Kind) {
-			id, err := env.Detect(a.Store.Get(domain.KeyEngineExePrefix+string(kind)), kind)
+			id, err := detectFunc(a.Store.Get(domain.KeyEngineExePrefix+string(kind)), kind)
 			if err != nil || id.Exe == "" {
 				id = engine.Identity{Kind: kind, Caps: engine.CapsFor(kind)}
 			}
@@ -160,6 +167,15 @@ func (a *App) detectAll(ctx context.Context, fore bool) {
 	}
 	a.detectedAt = time.Now()
 	a.mu.Unlock()
+}
+
+// SetDetector 换掉探测引擎的动作，返回恢复用的函数。
+//
+// 只有测试用。生产代码走默认的 env.Detect。
+func SetDetector(fn func(string, engine.Kind) (engine.Identity, error)) func() {
+	prev := detectFunc
+	detectFunc = fn
+	return func() { detectFunc = prev }
 }
 
 // refreshIndexes 按每个引擎的会话目录重建索引。

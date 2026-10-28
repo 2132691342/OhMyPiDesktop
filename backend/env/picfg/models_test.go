@@ -1,5 +1,10 @@
 package picfg
 
+// pi 的 models.json 是 JSONC：允许注释与尾逗号。解析器写错的表现有两个方向：
+// 要么把 baseUrl 里的 `//` 当注释吃掉（配置全废），要么尾逗号让它整份读不出来。
+//
+// 写入侧与 omp 同理：只改我们掌管的键，用户与引擎写的其它键原样保留。
+
 import (
 	"encoding/json"
 	"os"
@@ -8,31 +13,25 @@ import (
 	"testing"
 )
 
-// jsonUnmarshal 是测试里的薄封装：StripJSONC 的输出必须是合法 JSON。
-func jsonUnmarshal(raw []byte, out any) error { return json.Unmarshal(raw, out) }
-
-// pi 的 models.json 是 JSONC：允许注释与尾逗号。解析器写错的表现是两个方向：
-// 要么把 baseUrl 里的 `//` 当注释吃掉（配置全废），要么尾逗号让它整份读不出来。
-
+// StripJSONC 的输出必须是合法 JSON：四个方向都要守住。
 func TestStripJSONC(t *testing.T) {
-	// 三个方向都要守住：URL 里的 // 不能被当注释、尾逗号要剥、块注释要剥。
-	// 任意一个错了，整份 models.json 都读不出来——界面表现为「模型列表空了」。
 	cases := []struct {
 		name string
 		raw  string
-		want string // 解析后应得到的顶层键（值为字符串时比对）
-		arr  int    // 数组长度，0 表示不比
+		key  string
+		want string
+		arr  int // 数组长度，0 表示不比
 	}{
-		{"URL 里的双斜杠", `{"baseUrl":"https://api.example.com/v1"}`, "https://api.example.com/v1", 0},
-		{"尾逗号", `{"a":[1,2,3,],"b":{"c":1,},}`, "", 3},
-		{"块注释", "{/* 块\n注释 */ \"a\": \"x\"}", "x", 0},
-		{"行注释", "{\n// 顶层\n\"a\": \"x\" // 行尾\n}", "x", 0},
+		{"URL 里的双斜杠", `{"baseUrl":"https://api.example.com/v1"}`, "baseUrl", "https://api.example.com/v1", 0},
+		{"尾逗号", `{"a":[1,2,3,],"b":{"c":1,},}`, "", "", 3},
+		{"块注释", "{/* 块\n注释 */ \"a\": \"x\"}", "a", "x", 0},
+		{"行注释", "{\n// 顶层\n\"a\": \"x\" // 行尾\n}", "a", "x", 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			out := StripJSONC([]byte(c.raw))
 			var v map[string]any
-			if err := jsonUnmarshal(out, &v); err != nil {
+			if err := json.Unmarshal(out, &v); err != nil {
 				t.Fatalf("剥离后不是合法 JSON: %v\n%s", err, out)
 			}
 			if c.arr > 0 {
@@ -42,15 +41,8 @@ func TestStripJSONC(t *testing.T) {
 				}
 				return
 			}
-			if c.want == "" {
-				return
-			}
-			key := "baseUrl"
-			if _, ok := v[key]; !ok {
-				key = "a"
-			}
-			if got, _ := v[key].(string); got != c.want {
-				t.Errorf("%s = %q，期望 %q", key, got, c.want)
+			if got, _ := v[c.key].(string); got != c.want {
+				t.Errorf("%s = %q，期望 %q", c.key, got, c.want)
 			}
 		})
 	}
@@ -114,7 +106,6 @@ func TestWritePreservesUnknownKeys(t *testing.T) {
 	}
 }
 
-// 空密钥不能当成「删除」：界面上密钥是打码的，用户只点保存时传回来必然是空。
 // 密钥打码：既要能看出「有没有配」，又不能把全文显示在屏幕上。
 // $ENV / !command 是引用而非字面量，原样展示（打码了用户就没法核对）。
 func TestMaskKey(t *testing.T) {
@@ -129,7 +120,6 @@ func TestMaskKey(t *testing.T) {
 			t.Errorf("MaskKey(%q) = %q，期望 %q", c.in, got, c.want)
 		}
 	}
-	// 长密钥：只露头尾，中间不能出现明文
 	long := "sk-abcDEF123456ghiJKL789mno"
 	masked := MaskKey(long)
 	if masked == long {
@@ -145,6 +135,8 @@ func TestMaskKey(t *testing.T) {
 	}
 }
 
+// 空密钥不能当成「删除」：界面上密钥是打码的，用户只点保存时传回来必然是空。
+// 空即删除会把用户能用的凭据毁掉，而且界面上看不出发生过。
 func TestMergeKeepsKeyWhenEmpty(t *testing.T) {
 	prev := Provider{APIKey: "sk-real", OAuth: "radius", Headers: map[string]string{"x": "1"}}
 	next := Merge(prev, Provider{BaseURL: "https://new/v1"})

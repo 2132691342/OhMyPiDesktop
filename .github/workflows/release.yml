@@ -50,8 +50,8 @@ jobs:
         # 再跑一遍全量测试是重复劳动，wails build 自己会构建前端。
         # 只门后端：main 包 //go:embed frontend/dist，而 dist 此刻还不存在（由 wails build 生成）。
         run: |
-          # runner checkout 是 LF，gofmt -l 直接可用。详见 ci.yml 的 gofmt 步骤
-          $bad = gofmt -l backend main.go assets.go tools
+          # 仓库统一 LF 行尾（.gitattributes），详见 ci.yml 的 gofmt 步骤
+          $bad = gofmt -l backend main.go assets.go tray.go tools
           if ($bad) { throw "gofmt 未通过:`n$bad" }
           go vet ./backend/... ./tools/...
           if ($LASTEXITCODE -ne 0) { throw "go vet 失败" }
@@ -62,7 +62,8 @@ jobs:
         shell: pwsh
         # v3 用 Taskfile 驱动，产物落在仓库根的 bin/（不是 build/bin/）。
         # 不出安装器：本项目只发便携 exe。
-        run: wails3 build -clean
+        # 不加 -clean：v3 的 build 没有这个标志（那是 v2 的），加了会直接报错退出。
+        run: wails3 build
 
       - name: Verify artifacts
         shell: pwsh
@@ -77,7 +78,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ohmypidesktop-windows-debug
-          path: build/bin/
+          # v3 的产物在仓库根的 bin/（build/bin/ 是 v2 的位置，已经不用了）。
+          path: bin/
           retention-days: 7
 
       - name: Create GitHub Release

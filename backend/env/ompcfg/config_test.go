@@ -1,5 +1,11 @@
 package ompcfg
 
+// 引擎配置写错的共同表现是「用户设的东西下次打开就没了」，而且不会报错。
+// 所以只测三件会静默出错的事：
+//   1. 只改我们掌管的键（别人写的键与注释不被抹掉）；
+//   2. 替换与合并的契约相反（合并保密钥、替换不保）；
+//   3. 坏文件不覆盖。
+
 import (
 	"os"
 	"path/filepath"
@@ -7,9 +13,7 @@ import (
 	"testing"
 )
 
-// 配置写错的表现是「用户设的东西下次打开就没了」，而且不会报错。
-// 所以这里只测三件事：只改自己掌管的键、密钥打码、坏文件不覆盖。
-
+// sampleModels 是一份真实的 models.yml 形状。
 const sampleModels = `# 我自己的服务商
 providers:
   router:
@@ -23,8 +27,8 @@ providers:
       maxTokens: 8000
 `
 
-// 缺文件是正常状态（用户还没配过），不该报错。
-
+// 写一个服务商不能抹掉别的服务商、别的键与注释。
+// 删一个服务商不能连带删掉别的，也不能报错说「删了不存在的」。
 func TestUpsertProviderPreservesOtherKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.yml")
@@ -41,19 +45,11 @@ func TestUpsertProviderPreservesOtherKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(raw)
-	if !strings.Contains(body, "router") {
-		t.Error("原有服务商被抹掉了")
-	}
-	if !strings.Contains(body, "modelRoles") {
-		t.Error("文件里别的键被抹掉了")
-	}
-	if !strings.Contains(body, "我自己的服务商") {
-		t.Error("注释被抹掉了")
+	body := string(mustRead(t, path))
+	for _, want := range []string{"router", "modelRoles", "我自己的服务商"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%q 被抹掉了：\n%s", want, body)
+		}
 	}
 
 	mf, err := ReadModels(path)
@@ -86,6 +82,8 @@ func TestUpsertProviderPreservesOtherKeys(t *testing.T) {
 	}
 }
 
+// 坏文件不能被改写：解析失败就报错，原文一个字都不动。
+// 改写了它，用户在终端里手写的配置就没了，而且界面上看不出发生过。
 func TestEditRefusesBrokenYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.yml")
@@ -93,36 +91,11 @@ func TestEditRefusesBrokenYAML(t *testing.T) {
 	if err := os.WriteFile(path, []byte(broken), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := UpsertProvider(path, "x", Provider{BaseURL: "http://x"})
-	if err == nil {
+	if err := UpsertProvider(path, "x", Provider{BaseURL: "http://x"}); err == nil {
 		t.Fatal("坏文件应当报错")
 	}
-	raw, _ := os.ReadFile(path)
-	if string(raw) != broken {
-		t.Errorf("坏文件被改写了: %q", string(raw))
-	}
-}
-
-// 密钥打码：既要能看出「有没有配」，又不能把全文显示在屏幕上。
-func TestMaskKey(t *testing.T) {
-	cases := map[string]string{
-		"":        "",
-		"short":   "•••••",
-		"$ENV":    "$ENV",
-		"!secret": "!secret",
-	}
-	for input, want := range cases {
-		if got := MaskKey(input); got != want {
-			t.Errorf("MaskKey(%q) = %q，期望 %q", input, got, want)
-		}
-	}
-	long := "sk-abcdefghijklmnopqrst"
-	masked := MaskKey(long)
-	if strings.Contains(masked, "ghijklmn") {
-		t.Errorf("打码后仍含明文: %q", masked)
-	}
-	if !strings.HasPrefix(masked, "sk-abc") || !strings.HasSuffix(masked, "qrst") {
-		t.Errorf("打码应保留首尾便于辨识: %q", masked)
+	if got := string(mustRead(t, path)); got != broken {
+		t.Errorf("坏文件被改写了: %q", got)
 	}
 }
 
@@ -224,4 +197,35 @@ func TestProviderReplaceAndMerge(t *testing.T) {
 	}
 }
 
-// service 层靠 MergeProvider 兜住「界面表达不了的字段」。
+// 密钥打码：既要能看出「有没有配」，又不能把全文显示在屏幕上。
+func TestMaskKey(t *testing.T) {
+	cases := map[string]string{
+		"":        "",
+		"short":   "•••••",
+		"$ENV":    "$ENV",
+		"!secret": "!secret",
+	}
+	for input, want := range cases {
+		if got := MaskKey(input); got != want {
+			t.Errorf("MaskKey(%q) = %q，期望 %q", input, got, want)
+		}
+	}
+	long := "sk-abcdefghijklmnopqrst"
+	masked := MaskKey(long)
+	if strings.Contains(masked, "ghijklmn") {
+		t.Errorf("打码后仍含明文: %q", masked)
+	}
+	if !strings.HasPrefix(masked, "sk-abc") || !strings.HasSuffix(masked, "qrst") {
+		t.Errorf("打码应保留首尾便于辨识: %q", masked)
+	}
+}
+
+// mustRead 读文件，失败就让测试失败。
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}

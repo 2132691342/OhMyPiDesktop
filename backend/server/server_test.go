@@ -1,22 +1,47 @@
 package server
 
+// 这一层是安全边界：令牌、来源、方法三件事任何一件漏了，
+// 本机上任何一个网页都能拿到引擎的控制权。所以只测这三件，
+// 加上应用页那条路由的契约形态。
+
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"OhMyPiDesktop/backend/engine"
 	"OhMyPiDesktop/backend/hub"
 	"OhMyPiDesktop/backend/repo"
 	"OhMyPiDesktop/backend/service"
 )
 
-// 这一层是安全边界：令牌、来源、方法三件事任何一件漏了，
-// 本机上任何一个网页都能拿到引擎的控制权。所以只测这三件。
-
+// testServer 造一个带令牌的服务。
+//
+// 探测与查最新版都被换掉：前者要起子进程（pi 的 --help 要起一次 Node，几秒），
+// 后者要连 npm registry 与引擎的构建服务。让单元测试真去干这两件事，
+// 它就变成「测这台机器装了什么、网通不通」——一慢就慢、一断就红。
 func testServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
+	restoreDetect := service.SetDetector(func(_ string, kind engine.Kind) (engine.Identity, error) {
+		return engine.Identity{
+			Kind:    kind,
+			Exe:     `C:\fake\` + string(kind) + `.exe`,
+			Version: "1.0.0",
+			Source:  "custom",
+			Channel: engine.ChannelNPM,
+			Caps:    engine.CapsFor(kind),
+		}, nil
+	})
+	t.Cleanup(restoreDetect)
+
+	restoreLatest := engine.SetLatestFetcher(func(_ context.Context, _ engine.Kind) (string, string) {
+		return "9.9.9", ""
+	})
+	t.Cleanup(restoreLatest)
+
 	dir := t.TempDir()
 	store, err := repo.Open(dir + "/settings.json")
 	if err != nil {
@@ -40,6 +65,27 @@ func testServer(t *testing.T) (*Server, http.Handler) {
 func loopback(req *http.Request) *http.Request {
 	req.RemoteAddr = "127.0.0.1:51234"
 	return req
+}
+
+// get 造一个带令牌的 GET。
+func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := loopback(httptest.NewRequest(http.MethodGet, path, nil))
+	req.Header.Set("X-Desktop-Token", "secret-token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// post 造一个带令牌的 POST。
+func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := loopback(httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
+	req.Header.Set("X-Desktop-Token", "secret-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
 }
 
 // 令牌闸门有四个状态，一个都不能错：
@@ -80,17 +126,13 @@ func TestTokenGate(t *testing.T) {
 	}
 
 	// 查询令牌
-	req = loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings?token=secret-token", nil))
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	rec = get(t, h, "/api/v1/settings?token=secret-token")
 	if rec.Code != http.StatusOK {
 		t.Errorf("查询令牌状态 = %d，期望 200", rec.Code)
 	}
 
 	// 健康探测
-	req = loopback(httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	rec = get(t, h, "/api/v1/health")
 	if rec.Code != http.StatusOK {
 		t.Errorf("health 状态 = %d，期望 200", rec.Code)
 	}
@@ -113,15 +155,10 @@ func TestRejectsOtherMethods(t *testing.T) {
 	}
 }
 
-// 健康探测不需要令牌（只用来看服务在不在），但它不该泄漏任何业务数据。
-
+// HTTP 恒回 200，错误在 body 的 code 里；message 要能直接显示给用户。
 func TestErrorUsesEnvelope(t *testing.T) {
 	_, h := testServer(t)
-	req := loopback(httptest.NewRequest(http.MethodPost, "/api/v1/settings/workspace", strings.NewReader(`{"path":"Z:\\definitely\\missing\\dir"}`)))
-	req.Header.Set("X-Desktop-Token", "secret-token")
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	rec := post(t, h, "/api/v1/settings/workspace", `{"path":"Z:\\definitely\\missing\\dir"}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("状态 = %d，期望 200（错误在 code 里）", rec.Code)
@@ -147,7 +184,7 @@ func TestErrorUsesEnvelope(t *testing.T) {
 // 来源闸门：别的机器 / 别的网卡地址打进来一律拒绝，哪怕令牌对。
 func TestRejectsNonLoopback(t *testing.T) {
 	_, h := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
 	req.RemoteAddr = "192.0.2.10:5000"
 	req.Header.Set("X-Desktop-Token", "secret-token")
 	rec := httptest.NewRecorder()
@@ -160,16 +197,13 @@ func TestRejectsNonLoopback(t *testing.T) {
 	}
 }
 
-// /apps 的契约：两个引擎各一行、字段齐全、动作开关与「命令存在」一致。
+// 应用页的契约：两个引擎各一行、字段齐全、动作开关与「命令存在」一致。
 //
 // 测的是形态而不是这台机器装了什么：CI 上可能一个引擎都没有，
 // 那时 Installed 为假正好是另一种要覆盖的状态。
 func TestAppsContract(t *testing.T) {
 	_, h := testServer(t)
-	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/apps", nil))
-	req.Header.Set("X-Desktop-Token", "secret-token")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	rec := get(t, h, "/api/v1/apps")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("状态 = %d；body=%s", rec.Code, rec.Body.String())
 	}
@@ -216,14 +250,10 @@ func TestAppsContract(t *testing.T) {
 	}
 }
 
-// 动作入口只接受 GET / POST，且写操作必须带引擎名。
+// 动作入口必须带引擎名，否则后端不知道该装谁。
 func TestAppsActionRequiresEngine(t *testing.T) {
 	_, h := testServer(t)
-	req := loopback(httptest.NewRequest(http.MethodPost, "/api/v1/apps/install", strings.NewReader(`{}`)))
-	req.Header.Set("X-Desktop-Token", "secret-token")
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	rec := post(t, h, "/api/v1/apps/install", `{}`)
 
 	var envelope struct {
 		Code    string `json:"code"`

@@ -1,9 +1,11 @@
 version: '3'
 
+# 项目级任务入口。开发期的日常命令都收口到这里，
+# 不再散落在文档里的裸 `go run ./tools/...` 或本地临时脚本。
+
 vars:
   APP_NAME: "OhMyPiDesktop"
   BIN_DIR: "bin"
-  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
   # 只面向 Windows：不做 GOOS 派发，也没有 darwin/linux/android/ios 的 include。
   GOOS: "windows"
@@ -17,11 +19,6 @@ tasks:
     summary: Builds the application
     cmds:
       - task: "{{.GOOS}}:build"
-
-  package:
-    summary: Packages a production build of the application
-    cmds:
-      - task: "{{.GOOS}}:package"
 
   run:
     summary: Runs the application
@@ -38,8 +35,6 @@ tasks:
     cmds:
       - task: common:generate:bindings
 
-  # 开发期统一入口：fmt / vet / test / smoke / dev:server 都收口到 Task，
-  # 不再散落在文档里的裸 `go run ./tools/...` 或本地临时脚本。
   fmt:
     summary: Formats all Go code (gofmt -w)
     cmds:
@@ -63,11 +58,14 @@ tasks:
     cmds:
       - go test ./backend/... -count=1
 
+  # 真起一个引擎跑一轮。改了协议翻译或会话投影后必做——
+  # 单元测试测不到「引擎真的这么吐帧」。
   smoke:
     summary: Runs a one-round manual smoke test against a real engine
     cmds:
       - go run ./tools/smoke
 
+  # 只起后端，供浏览器直连调试（前端另开 Vite）。
   dev:server:
     summary: Runs the backend HTTP server only (no GUI) for browser debugging
     cmds:

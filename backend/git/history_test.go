@@ -1,5 +1,12 @@
 package git
 
+// 文件历史与单文件提交差异是「点一个文件就能看它改过几次」的全部依据。
+//
+// 它们的可靠性在于路径翻译：界面给的是工作区相对路径，git 认的是仓库根相对路径，
+// 两者在「工作区是仓库子目录」时不同——错了就查不到历史，而界面只会显示「没有记录」。
+//
+// 所以这两件事放在一条用例里：它们共享同一个仓库，拆成两条只会多起一次 git。
+
 import (
 	"os"
 	"os/exec"
@@ -8,9 +15,6 @@ import (
 	"testing"
 )
 
-// 文件历史与单文件提交差异是「点一个文件就能看它改过几次」的全部依据。
-// 它们的可靠性在于路径翻译：界面给的是工作区相对路径，git 认的是仓库根相对路径，
-// 两者在「工作区是仓库子目录」时不同——错了就查不到历史，而界面只会显示「没有记录」。
 func TestFileHistoryAndDiff(t *testing.T) {
 	if !Available() {
 		t.Skip("这台机器上没有 git")
@@ -63,16 +67,10 @@ func TestFileHistoryAndDiff(t *testing.T) {
 	if added != 1 {
 		t.Fatalf("期望差异里有一行新增的 two，得到 %d（%+v）", added, diff.DiffLines)
 	}
-}
 
-// 提交号不合法时必须拒绝，而不是把它当选项传给 git。
-func TestFileDiffInCommitRejectsBadHash(t *testing.T) {
-	if !Available() {
-		t.Skip("这台机器上没有 git")
-	}
-	repo := t.TempDir()
-	gitCmd(t, repo, "init", "-b", "main")
-	if _, err := FileDiffInCommit(repo, "--upload-pack=evil", "a.txt"); err == nil {
+	// 提交号不合法时必须拒绝，而不是把它当选项传给 git。
+	// （`--upload-pack=evil` 会被 git 当成参数注入，这条守住白名单。）
+	if _, err := FileDiffInCommit(ws, "--upload-pack=evil", "a.txt"); err == nil {
 		t.Fatal("非法提交号应当被拒绝")
 	}
 }

@@ -52,10 +52,9 @@ jobs:
 
       - name: gofmt
         shell: pwsh
-        # runner checkout 是 LF，所以 gofmt -l 直接可用。
-        # （本地仓库里多数文件是 CRLF，本地 gofmt -l 会误报，见 DEVELOPMENT.md）
+        # 仓库统一 LF 行尾（.gitattributes），本地与 CI 的 gofmt -l 表现一致。
         run: |
-          $bad = gofmt -l backend main.go assets.go tools
+          $bad = gofmt -l backend main.go assets.go tray.go tools
           if ($bad) { Write-Host "未格式化（gofmt -w 后重提）："; Write-Host $bad; exit 1 }
 
       - name: vet

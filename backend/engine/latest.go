@@ -49,6 +49,22 @@ type latestCache struct {
 
 var latestStore = &latestCache{rows: map[Kind]Latest{}}
 
+// fetchLatestFunc 是查上游最新版的实际动作。
+//
+// 抽成变量是为了让测试不必联网：这条路径在应用页首屏上，
+// 真去问 npm registry 与构建服务会让单元测试变成「测网络通不通」——
+// 网络一慢测试就变慢、一断测试就红。
+var fetchLatestFunc = fetchLatest
+
+// SetLatestFetcher 换掉查最新版的动作，返回恢复用的函数。
+//
+// 只有测试用。生产代码走默认的 fetchLatest。
+func SetLatestFetcher(fn func(context.Context, Kind) (string, string)) func() {
+	prev := fetchLatestFunc
+	fetchLatestFunc = fn
+	return func() { fetchLatestFunc = prev }
+}
+
 // QueryLatest 并发查两个引擎的最新版。fore 为真时忽略缓存。
 //
 // 返回的 map 一定包含两个键：查不到的引擎对应空版本 + 一句原因，
@@ -80,7 +96,7 @@ func latestOf(ctx context.Context, kind Kind, fore bool) Latest {
 		return cached
 	}
 
-	version, note := fetchLatest(ctx, kind)
+	version, note := fetchLatestFunc(ctx, kind)
 	row := Latest{Version: version, Note: note, CheckedAt: time.Now().UnixMilli()}
 	latestStore.mu.Lock()
 	latestStore.rows[kind] = row
