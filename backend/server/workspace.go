@@ -184,11 +184,14 @@ func (s *Server) gitAddRemote(c *gin.Context) {
 	s.run(c, func(*gin.Context) (any, error) { return s.svc.GitAddRemote(body.Name, body.URL) })
 }
 
-// pushBody 是推送入参（分级由 mode 表达）。
+// pushBody 是推送入参（分级由 force 表达）。
 type pushBody struct {
-	RemoteName string `json:"remote_name"`
-	BranchName string `json:"branch_name"`
-	Force      string `json:"force"`
+	RemoteName  string `json:"remote_name"`
+	BranchName  string `json:"branch_name"`
+	Force       string `json:"force"`
+	SetUpstream bool   `json:"set_upstream"`
+	// Confirm 强制推送时用户输入的分支名，必须与 BranchName 完全一致
+	Confirm string `json:"confirm"`
 }
 
 func (s *Server) gitPush(c *gin.Context) {
@@ -197,7 +200,13 @@ func (s *Server) gitPush(c *gin.Context) {
 		return
 	}
 	s.run(c, func(*gin.Context) (any, error) {
-		return s.svc.GitPush(domain.GitPushREQ{RemoteName: body.RemoteName, BranchName: body.BranchName, Force: body.Force})
+		return s.svc.GitPush(domain.GitPushREQ{
+			RemoteName:  body.RemoteName,
+			BranchName:  body.BranchName,
+			Force:       body.Force,
+			SetUpstream: body.SetUpstream,
+			Confirm:     body.Confirm,
+		})
 	})
 }
 

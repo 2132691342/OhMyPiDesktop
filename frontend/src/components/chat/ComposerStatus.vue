@@ -71,8 +71,8 @@ async function dropQueued(message: string, queueName: 'steering' | 'followUp'): 
     <code class="install-cmd selectable">{{ app.installHint(chat.kind) }}</code>
     <button
       class="omp-btn text sm"
-      :class="{ 'is-loading': app.detecting }"
-      :disabled="app.detecting"
+      :class="{ 'is-loading': app.reDetecting }"
+      :disabled="app.reDetecting"
       @click="app.detectEngines()"
     >
       {{ t('chat.redetect') }}

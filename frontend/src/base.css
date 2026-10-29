@@ -149,16 +149,18 @@ button {
   }
 }
 
-/* 主按钮：全站唯一的大面积强调色，实底 + 白字 */
+/* 主按钮：全站唯一的大面积强调色，实底 + 白字。
+   悬停用 --omp-brand-strong 而不是写死色值：暗色主题下
+   --omp-brand 是一支浅靛蓝，写死深靛蓝会让按钮在悬停时反而变暗。 */
 .omp-btn.primary {
   --btn-bg: var(--omp-brand);
   --btn-fg: #fff;
   --btn-line: var(--omp-brand);
-  --btn-bg-hover: #4f46e5;
+  --btn-bg-hover: var(--omp-brand-strong);
 }
 .omp-btn.primary:hover:not(:disabled):not(.is-loading) {
   color: #fff;
-  border-color: #4f46e5;
+  border-color: var(--omp-brand-strong);
   box-shadow: 0 4px 14px var(--omp-brand-ring);
 }
 
@@ -503,6 +505,11 @@ textarea.omp-input {
 .seg-btn:active:not(:disabled) {
   transform: scale(0.95);
   transition-duration: 60ms;
+}
+/* 焦点环：键盘用户要知道自己在哪。缺了它，Tab 走过分段控件时没有任何反馈。 */
+.seg-btn:focus-visible {
+  outline: 2px solid var(--omp-brand-ring);
+  outline-offset: 2px;
 }
 .seg-btn.active {
   background: var(--omp-surface);

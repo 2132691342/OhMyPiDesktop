@@ -7,11 +7,11 @@
 .msg-col {
   display: flex;
   flex-direction: column;
-  gap: var(--omp-sp-6);
+  gap: var(--omp-sp-5);
   width: 100%;
   max-width: var(--omp-col);
   margin: 0 auto;
-  padding: var(--omp-sp-6) var(--omp-sp-6) var(--omp-sp-10);
+  padding: var(--omp-sp-5) var(--omp-sp-6) var(--omp-sp-10);
 }
 
 /* 屏幕外消息不参与 layout/paint：长会话的硬约束。
@@ -24,7 +24,7 @@
 .msg {
   display: flex;
   flex-direction: column;
-  gap: var(--omp-sp-2);
+  gap: var(--omp-sp-1);
 }
 
 .msg-head {
@@ -73,10 +73,21 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* 用户那一侧走右对齐气泡：与助手的左脊线形成明确的左右分栏。
+   之前两边都用同一种面板，于是长会话里「哪段是我说的、哪段是它答的」
+   要靠徽章去找——那是一个每轮都要做的额外动作。 */
+.msg.user {
+  align-items: flex-end;
+}
+.msg.user .msg-head {
+  justify-content: flex-end;
+}
 .msg.user .msg-body {
+  max-width: min(78%, 640px);
   background: var(--omp-brand-soft);
   border-color: var(--omp-brand-3);
   border-left-color: var(--omp-brand-3);
+  border-top-right-radius: var(--omp-r-xs);
 }
 .msg-error .msg-body {
   border-left-color: var(--omp-bad);

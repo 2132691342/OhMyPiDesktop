@@ -90,6 +90,7 @@ main.go ──→ backend/desktop ──→ server ──→ service ──→ e
 | MCP 配置读写与启用优先级 | `backend/env/mcpcfg` | 在 service 或前端里排 `disabledServers` / `enabled` 的顺序 |
 | 引擎健康快照（一屏的全部事实） | `backend/service/engines.go` 的 `Health` | 前端为概览页连打四五个接口再自己拼 |
 | 会话文件格式 | `backend/session` | 在 service 里解 JSONL |
+| 工具差异的提取与归一 | `backend/engine/diff.go` | 在前端或 service 里解析引擎的差异格式（两个引擎格式不同） |
 | 技能发现规则 | `backend/skill` | 在 service 里扫目录 |
 | 事件出口 | `backend/hub` | 在 handler 里直接写 SSE 帧 |
 | HTTP 响应外壳 | `backend/server` | 在 service 里构造 gin 对象 |

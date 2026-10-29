@@ -11,11 +11,12 @@ const app = useAppStore()
 const route = useRoute()
 const { t } = useI18n()
 
-const title = computed(() => String(route.meta.title ?? '对话'))
+const title = computed(() => String(route.meta.title ?? t('nav.chat')))
 const connection = computed(() => {
-  if (!app.ready) return { cls: 'warn', text: '启动中' }
-  if (!app.hasEngine) return { cls: 'bad', text: '引擎未安装' }
-  return { cls: 'ok', text: '已连接' }
+  if (!app.ready) return { cls: 'warn', text: t('titlebar.starting') }
+  if (app.detecting) return { cls: 'warn', text: t('titlebar.detecting') }
+  if (!app.hasEngine) return { cls: 'bad', text: t('titlebar.noEngine') }
+  return { cls: 'ok', text: t('titlebar.connected') }
 })
 </script>
 

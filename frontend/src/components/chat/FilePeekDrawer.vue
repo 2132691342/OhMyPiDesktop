@@ -1,0 +1,97 @@
+<script setup lang="ts">
+// 差异抽屉：从工具卡点进来，看这个文件在工作区里的真实差异。
+//
+// 为什么是「真实差异」而不是引擎给的那份：引擎给的是它当时的改动，
+// 真实差异是现在工作区的状态——用户可能又改过了，也可能已经提交了。
+// 两者对不上的时候，真实差异才是用户要的。
+import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import DiffView from '@/components/workspace/DiffView.vue'
+import { api } from '@/api/http'
+import { useAppStore } from '@/stores/app'
+import { useFilePeek } from '@/composables/useFilePeek'
+import type { GitDiff } from '@/types/api'
+
+const { t } = useI18n()
+const app = useAppStore()
+const peek = useFilePeek()
+
+const diff = ref<GitDiff | null>(null)
+const loading = ref(false)
+const error = ref('')
+
+/** 工作区相对路径。绝对路径要折成相对的：git 只认仓库内的路径。 */
+function toRel(target: string): string | null {
+  const root = (app.workspace || '').replace(/[\\/]+$/, '')
+  if (!root) return target
+  const key = (s: string) => s.replace(/\//g, '\\').toLowerCase()
+  if (!key(target).startsWith(key(root) + '\\')) {
+    return key(target) === key(root) ? '' : null
+  }
+  return target.slice(root.length + 1)
+}
+
+const relPath = computed(() => (peek.path.value ? toRel(peek.path.value) : null))
+
+async function load() {
+  const rel = relPath.value
+  if (rel === null) {
+    error.value = t('chat.peekOutside')
+    diff.value = null
+    return
+  }
+  loading.value = true
+  error.value = ''
+  try {
+    diff.value = await api.gitDiff(rel)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+    diff.value = null
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(peek.path, () => {
+  if (peek.path.value) void load()
+  else diff.value = null
+}, { immediate: true })
+
+/** 抽屉标题：文件名优先，路径太长时只留末两段。 */
+const heading = computed(() => {
+  if (peek.title.value) return peek.title.value
+  const p = peek.path.value
+  if (!p) return ''
+  const parts = p.split(/[\\/]/).filter(Boolean)
+  return parts.length > 2 ? '…/' + parts.slice(-2).join('/') : p
+})
+</script>
+
+<template>
+  <el-drawer
+    :model-value="Boolean(peek.path.value)"
+    direction="rtl"
+    size="46%"
+    :title="heading"
+    class="peek-drawer"
+    @update:model-value="(v: boolean) => { if (!v) peek.close() }"
+  >
+    <p v-if="error" class="peek-err">{{ error }}</p>
+    <DiffView
+      v-else
+      :diff="diff"
+      :path="relPath ?? ''"
+      :loading="loading"
+    />
+  </el-drawer>
+</template>
+
+<style scoped>
+.peek-err {
+  margin: 0;
+  padding: var(--omp-sp-4);
+  font-size: var(--omp-fs-sm);
+  color: var(--omp-bad);
+  line-height: 1.7;
+}
+</style>

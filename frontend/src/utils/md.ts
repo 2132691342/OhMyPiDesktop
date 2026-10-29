@@ -4,6 +4,7 @@
 // 为什么按块切分：全量重解析是 O(字数²)。流式回答里只有最后一块在长，
 // 已稳定的块原样复用 HTML，成本降到 O(字数)。
 import { marked } from 'marked'
+import i18n from '@/i18n'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -61,7 +62,8 @@ function renderCode(block: string): string {
   if (!match) return marked.parse(block, { async: false }) as string
   const lang = match[1] || 'text'
   const code = escapeHTML(match[2])
-  return `<div class="code-wrap"><div class="code-head"><span class="code-lang">${lang}</span><button class="omp-btn text sm" data-copy="1" type="button">复制</button></div><pre><code>${code}</code></pre></div>`
+  const label = escapeHTML(i18n.global.t('common.copy'))
+  return `<div class="code-wrap"><div class="code-head"><span class="code-lang">${lang}</span><button class="omp-btn text sm" data-copy="1" type="button">${label}</button></div><pre><code>${code}</code></pre></div>`
 }
 
 /** 按空行切顶层块；围栏代码块内部不切。 */
@@ -92,9 +94,19 @@ function escapeHTML(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** 清掉某个渲染缓存的位（一轮结束后调用，避免长会话累积）。 */
+/**
+ * 清掉某个渲染缓存的位（一轮结束后调用，避免长会话累积）。
+ *
+ * 不调用的话缓存只增不减：长会话里每轮都会留下一个 key，
+ * 而每个 key 存着这一轮的全部正文与 HTML——聊几百轮就是几百份全文。
+ */
 export function dropCache(cacheKey: string): void {
   caches.delete(cacheKey)
+}
+
+/** 清掉所有渲染缓存（切换会话时调用）。 */
+export function dropAllCaches(): void {
+  caches.clear()
 }
 
 /** 复制按钮的统一处理：在容器上挂一次委托即可。 */
@@ -107,9 +119,9 @@ export function handleCopyClick(event: MouseEvent): boolean {
   const code = wrap?.querySelector('pre code')?.textContent
   if (!code) return false
   void navigator.clipboard.writeText(code)
-  button.textContent = '已复制'
+  button.textContent = i18n.global.t('common.copied')
   window.setTimeout(() => {
-    button.textContent = '复制'
+    button.textContent = i18n.global.t('common.copy')
   }, 1400)
   return true
 }

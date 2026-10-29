@@ -120,12 +120,22 @@ func main() {
 	if len(st.History) > 0 {
 		last := st.History[len(st.History)-1]
 		fmt.Printf("最后一轮: role=%s blocks=%d\n", last.Role, len(last.Blocks))
-		for _, b := range last.Blocks {
-			preview := b.Text
-			if b.Kind == engine.BlockTool {
-				preview = b.ToolName + " " + b.Status
+	}
+	// 工具块可能落在任何一轮（模型可能先调工具再补一句正文），
+	// 所以扫全部轮次，而不是只看最后一轮。
+	for i, turn := range st.History {
+		for _, b := range turn.Blocks {
+			if b.Kind != engine.BlockTool {
+				continue
 			}
-			fmt.Printf("  - %-8s %s\n", b.Kind, truncate(preview, 120))
+			fmt.Printf("轮 %d 工具 %s 状态=%s 耗时=%dms\n", i, b.ToolName, b.Status, b.DurationMS)
+			// 差异是这一版要验的东西：引擎改了什么，界面要看得见。
+			if len(b.Diff) > 0 {
+				fmt.Printf("  差异 %d 行  文件=%s\n", len(b.Diff), b.FilePath)
+				for _, l := range b.Diff {
+					fmt.Printf("    [%s] %s\n", l.LineKind, truncate(l.LineText, 100))
+				}
+			}
 		}
 	}
 	svc.Engine.StopAll()

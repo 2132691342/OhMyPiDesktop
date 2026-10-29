@@ -378,6 +378,7 @@ GET /events?since=41
 | `chat:gap` | 丢帧通知（慢消费者 / 超大帧） |
 | `engine:ready` | 引擎就绪 `{kind, work_dir, pid, protocol}` |
 | `engine:exit` | 引擎退出 `{kind, work_dir, reason}` |
+| `engine:detected` | 探测完成 `{at}`：界面据此把「检测中」换成真结果 |
 | `engine:commands` | 可用斜杠命令列表（仅 omp 主动推） |
 | `engine:config_changed` | 模型 / 思考档变化 |
 | `engine:extension_error` | 扩展报错，只进日志 |
@@ -388,6 +389,38 @@ GET /events?since=41
 | `subagent:event` | 子代理原始会话事件（仅 omp，`events` 档） |
 | `agents:cleared` | roster 与游标已清空（会话切换后由后端主动发） |
 | `app:progress` | 装 / 升 / 卸的进度：`{kind, action, phase, line?, command?, message?}`。`phase` = `start｜line｜done｜fail`；`start` 帧带 `command`（要跑的命令原文），`line` 帧带一行输出 |
+
+### 渲染块
+
+一轮里的内容按引擎吐出的**原始顺序**摆成 `blocks[]`，不按类型分组
+（分组会把所有工具卡顶到正文前面，顺序一丢就读不出先干了什么）。
+
+| 字段 | 说明 |
+|---|---|
+| `kind` | `text` / `thinking` / `tool` |
+| `text` | 正文或思考内容 |
+| `tool_call_id` / `tool_name` | 工具块的身份与名字 |
+| `args` | 工具参数（引擎原样给出的 JSON） |
+| `intent` | 引擎给的一行说明（比参数更贴近「在做什么」） |
+| `output` | 工具输出正文 |
+| `status` | `pending` / `running` / `done` / `error` |
+| `duration_ms` | 工具耗时 |
+| `file_path` | 被改动的文件（只有改文件的工具有） |
+| `diff` | 差异行（只有改文件的工具有） |
+
+`diff` 的每一行是 `{line_kind, old_no, new_no, line_text}`，
+`line_kind` 取 `file` / `hunk` / `add` / `del` / `ctx`。
+
+**为什么差异由后端归一**：两个引擎的差异格式不同——
+omp 给的是编号差异（`@@ -1,2 +1,2 @@` 加 `+2|正文` 这样的行），
+pi 给的是标准 unified diff（`details.patch`）与一份自己的编号差异。
+把两种格式解析成同一种行结构，前端就只有一套渲染代码，
+而「引擎改了什么」不会因为格式差异而整个丢掉。
+
+差异的来源是工具结果的 `details`（`details.diff` / `details.patch`），
+不在 `content` 里——`content` 是给模型看的一句人话。
+文件路径两个引擎放的地方也不同（omp 在 `details.path`，pi 在工具参数里），
+两条路都要认。
 
 ### 一轮对话怎么结束
 
@@ -412,7 +445,7 @@ GET /events?since=41
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`9`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+当前：`10`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
 只增可选字段不需要。
 
 新增端点本身不需要升版本（前端没调它就不受影响）；

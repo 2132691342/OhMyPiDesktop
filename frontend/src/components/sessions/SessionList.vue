@@ -93,10 +93,10 @@ function relative(iso: string): string {
   if (Number.isNaN(time)) return ''
   const diff = Date.now() - time
   const minute = 60_000
-  if (diff < minute) return '刚刚'
-  if (diff < 60 * minute) return `${Math.floor(diff / minute)} 分钟前`
-  if (diff < 24 * 60 * minute) return `${Math.floor(diff / (60 * minute))} 小时前`
-  return `${Math.floor(diff / (24 * 60 * minute))} 天前`
+  if (diff < minute) return t('history.justNow')
+  if (diff < 60 * minute) return t('history.minutesAgo', { n: Math.floor(diff / minute) })
+  if (diff < 24 * 60 * minute) return t('history.hoursAgo', { n: Math.floor(diff / (60 * minute)) })
+  return t('history.daysAgo', { n: Math.floor(diff / (24 * 60 * minute)) })
 }
 
 watch(kind, () => {

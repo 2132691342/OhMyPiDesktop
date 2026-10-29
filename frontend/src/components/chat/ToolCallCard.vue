@@ -1,9 +1,15 @@
 <script setup lang="ts">
-// 工具卡：参数 / 输出 / 耗时。运行中状态灯呼吸，失败换色。
-// 默认收起输出——工具输出可能几千行，展开是用户的选择，不是默认代价。
+// 工具卡：一行摘要 + 展开后的参数 / 输出 / 差异。
+//
+// 三条纪律：
+//  1. 默认收起输出——工具输出可能几千行，展开是用户的选择，不是默认代价。
+//  2. 差异优先于输出展示。改文件工具的输出是一句人话
+//     （"Successfully replaced 3 blocks"），真正要看的是改了哪几行。
+//  3. 块顺序由上层保证，这里不重排。
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { ChatBlock } from '@/types/api'
+import { openFilePeek } from '@/composables/useFilePeek'
+import type { ChatBlock, DiffLine } from '@/types/api'
 
 const props = defineProps<{ block: ChatBlock }>()
 const { t } = useI18n()
@@ -13,6 +19,9 @@ watch(
   () => props.block.status,
   (status, prev) => {
     if (prev === 'running' && status === 'error') open.value = true
+    // 差异到货就把卡片展开：用户最想看的就是「它改了什么」，
+    // 而展开这一步由他们自己点会漏掉。
+    if (prev !== 'done' && status === 'done' && props.block.diff?.length) open.value = true
   },
 )
 
@@ -60,6 +69,36 @@ const duration = computed(() => {
 })
 
 const output = computed(() => props.block.output ?? '')
+
+/** 差异行：引擎改了什么。没有差异的工具（读文件、跑命令）没有这一段。 */
+const diffLines = computed<DiffLine[]>(() => props.block.diff ?? [])
+
+/** 差异的增删行数。 */
+const diffStat = computed(() => {
+  let adds = 0
+  let dels = 0
+  for (const line of diffLines.value) {
+    if (line.line_kind === 'add') adds++
+    else if (line.line_kind === 'del') dels++
+  }
+  return { adds, dels }
+})
+
+/** 被改动的文件：只取末段，路径通常很长。 */
+const fileName = computed(() => {
+  const path = props.block.file_path ?? ''
+  if (!path) return ''
+  const parts = path.split(/[\\/]/).filter(Boolean)
+  return parts.length ? parts[parts.length - 1] : path
+})
+
+/**
+ * 能不能「看工作区里的真实差异」。
+ *
+ * 要有文件路径；而路径得在当前工作区里——工作区外的文件 git 读不到，
+ * 那种情况下给一个点不动的按钮不如不给。
+ */
+const canPeek = computed(() => Boolean(props.block.file_path))
 </script>
 
 <template>
@@ -67,8 +106,15 @@ const output = computed(() => props.block.output ?? '')
     <button class="tool-head" type="button" @click="open = !open">
       <span class="dot" :class="statusClass" />
       <span class="tool-name">{{ block.tool_name || 'tool' }}</span>
-      <span v-if="headline" class="tool-intent">{{ headline }}</span>
-      <span v-if="label" class="tag" :class="status === 'error' ? 'bad' : status === 'done' ? 'ok' : 'brand'">{{ label }}</span>
+      <span v-if="fileName" class="tool-file">{{ fileName }}</span>
+      <span v-else-if="headline" class="tool-intent">{{ headline }}</span>
+      <span v-if="diffLines.length" class="tool-diffstat">
+        <b class="is-add">+{{ diffStat.adds }}</b>
+        <b class="is-del">−{{ diffStat.dels }}</b>
+      </span>
+      <span v-if="label" class="tag" :class="status === 'error' ? 'bad' : status === 'done' ? 'ok' : 'brand'">
+        {{ label }}
+      </span>
       <span v-if="duration" class="tool-time">{{ duration }}</span>
       <svg
         class="tool-chevron"
@@ -84,6 +130,39 @@ const output = computed(() => props.block.output ?? '')
       </svg>
     </button>
     <div v-if="open" class="tool-body">
+      <!-- 差异先于输出：改文件工具的输出只是一句人话 -->
+      <div v-if="diffLines.length">
+        <div class="tool-label-row">
+          <span class="tool-label">{{ t('chat.toolChanges') }}</span>
+          <!-- 「看工作区」：引擎给的是它当时的改动，
+               这里给的是现在的真实差异。两者可能已经不一样了。 -->
+          <button
+            v-if="canPeek"
+            class="omp-btn text sm peek-btn"
+            :title="t('chat.peekInWorkspace')"
+            @click="openFilePeek(block.file_path ?? '', fileName)"
+          >
+            {{ t('chat.peekInWorkspace') }}
+          </button>
+        </div>
+        <div class="tool-diff">
+          <div
+            v-for="(line, i) in diffLines"
+            :key="i"
+            class="diff-row"
+            :class="{
+              'is-add': line.line_kind === 'add',
+              'is-del': line.line_kind === 'del',
+              'is-hunk': line.line_kind === 'hunk',
+              'is-file': line.line_kind === 'file',
+            }"
+          >
+            <span class="ln">{{ line.old_no || '' }}</span>
+            <span class="ln">{{ line.new_no || '' }}</span>
+            <span class="tx">{{ line.line_text }}</span>
+          </div>
+        </div>
+      </div>
       <template v-if="args">
         <div>
           <div class="tool-label">{{ t('chat.toolArgs') }}</div>
@@ -96,7 +175,7 @@ const output = computed(() => props.block.output ?? '')
           <pre class="tool-pre selectable">{{ output }}</pre>
         </div>
       </template>
-      <div v-if="!args && !output" class="tool-label">{{ t('common.empty') }}</div>
+      <div v-if="!args && !output && !diffLines.length" class="tool-label">{{ t('common.empty') }}</div>
     </div>
   </div>
 </template>
@@ -110,5 +189,87 @@ const output = computed(() => props.block.output ?? '')
 }
 .tool-chevron.open {
   transform: rotate(90deg);
+}
+
+/* 被改动的文件名：等宽字体，让用户一眼认得出是哪个文件 */
+.tool-file {
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* 增删统计：跟在文件名后面，是用户扫一眼就想知道的数字 */
+.tool-diffstat {
+  display: flex;
+  gap: var(--omp-sp-1);
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-3xs);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.tool-diffstat .is-add {
+  color: var(--omp-ok);
+}
+.tool-diffstat .is-del {
+  color: var(--omp-bad);
+}
+
+/* 标签行：左边是标题，右边是动作。
+   两者放一行是因为「改动」这个标题本身没有信息量，
+   而「看工作区」这个动作才是用户真正会点的。 */
+.tool-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--omp-sp-2);
+}
+
+.peek-btn {
+  color: var(--omp-brand);
+}
+
+/* 差异表：三列（旧行号 / 新行号 / 正文），与工作区的差异视图同一套列宽 */
+.tool-diff {
+  border: 1px solid var(--omp-line);
+  border-radius: var(--omp-r-sm);
+  overflow: hidden;
+  background: var(--omp-code-bg);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.diff-row {
+  display: grid;
+  grid-template-columns: 40px 40px 1fr;
+  gap: 0;
+  padding: 0 var(--omp-sp-2);
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-3xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-row .ln {
+  color: var(--omp-faint);
+  text-align: right;
+  padding-right: var(--omp-sp-2);
+  user-select: none;
+}
+.diff-row.is-add {
+  background: color-mix(in srgb, var(--omp-ok) 10%, transparent);
+}
+.diff-row.is-del {
+  background: color-mix(in srgb, var(--omp-bad) 10%, transparent);
+}
+.diff-row.is-hunk {
+  background: var(--omp-hover);
+  color: var(--omp-brand);
+}
+/* 文件头：不是改动，所以不涂成增删色 */
+.diff-row.is-file {
+  color: var(--omp-faint);
 }
 </style>

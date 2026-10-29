@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"time"
+
+	"OhMyPiDesktop/backend/domain"
 )
 
 // 事件翻译：把引擎帧归一成界面事件。
@@ -34,6 +37,10 @@ type Block struct {
 	Status     string          `json:"status,omitempty"` // pending / running / done / error
 	Streaming  bool            `json:"streaming,omitempty"`
 	DurationMS int64           `json:"duration_ms,omitempty"`
+	// FilePath 被改动的文件路径；只有改文件的工具才有
+	FilePath string `json:"file_path,omitempty"`
+	// Diff 差异行；只有改文件的工具才有
+	Diff []domain.DiffLineVO `json:"diff,omitempty"`
 }
 
 // Turn 是一轮对话在界面上的投影：一次「提问 → 回答」。
@@ -73,6 +80,12 @@ type Translator struct {
 	toolByID map[string]int
 	curMsgID string
 	curRole  string
+	// toolStart 记每个工具开始的时刻，用来算耗时。
+	//
+	// 为什么自己算：pi 在帧顶层给 durationMs，omp 完全不给。
+	// 界面上「这个工具跑了多久」对两个引擎都得有，
+	// 而 omp 那边没有任何现成字段可读——那就自己量。
+	toolStart map[string]time.Time
 }
 
 // NewTranslator 构造翻译器。
@@ -91,6 +104,7 @@ func (t *Translator) BeginTurn(runID, userMessage, model string) *Turn {
 	t.thinkIdx = map[int]int{}
 	t.toolIdx = map[int]int{}
 	t.toolByID = map[string]int{}
+	t.toolStart = map[string]time.Time{}
 	t.curMsgID = ""
 	return t.snapshotLocked()
 }
@@ -104,6 +118,7 @@ func (t *Translator) Reset() {
 	t.thinkIdx = map[int]int{}
 	t.toolIdx = map[int]int{}
 	t.toolByID = map[string]int{}
+	t.toolStart = map[string]time.Time{}
 	t.curMsgID = ""
 }
 
@@ -242,6 +257,8 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 			ToolName   string          `json:"toolName"`
 			Args       json.RawMessage `json:"args"`
 			Intent     string          `json:"intent"`
+			// StartedAt omp 给的起始时刻（ISO 8601）
+			StartedAt string `json:"startedAt"`
 		}
 		if json.Unmarshal(raw, &f) != nil || t.turn == nil {
 			return nil
@@ -262,6 +279,13 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 			t.turn.Blocks[idx].Intent = f.Intent
 		}
 		t.turn.Blocks[idx].Status = "running"
+		// 记下开始的时刻：omp 结束帧里没有任何耗时字段，只能自己量。
+		// 有引擎给的 startedAt 就用它（更准，跨进程时钟一致）。
+		start := time.Now()
+		if ts, err := time.Parse(time.RFC3339, f.StartedAt); err == nil {
+			start = ts
+		}
+		t.toolStart[f.ToolCallID] = start
 		return t.blockUpdate(idx)
 
 	case "tool_execution_update":
@@ -283,14 +307,13 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 
 	case "tool_execution_end":
 		var f struct {
-			ToolCallID string `json:"toolCallId"`
-			Result     struct {
-				Content []ContentBlock `json:"content"`
-				Details struct {
-					WallTimeMs float64 `json:"wallTimeMs"`
-				} `json:"details"`
-			} `json:"result"`
-			IsError bool `json:"isError"`
+			ToolCallID string          `json:"toolCallId"`
+			Result     json.RawMessage `json:"result"`
+			IsError    bool            `json:"isError"`
+			// DurationMS 在帧的顶层，不在 result 里。
+			// pi 有这个字段，omp 没有——omp 的耗时在 result.details 里，形状又不一样，
+			// 所以两处都读，读到哪个算哪个。
+			DurationMS int64 `json:"durationMs"`
 		}
 		if json.Unmarshal(raw, &f) != nil || t.turn == nil {
 			return nil
@@ -299,9 +322,43 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 		if !ok {
 			return nil
 		}
-		t.turn.Blocks[idx].Output = JoinText(f.Result.Content)
+		var res struct {
+			Content []ContentBlock `json:"content"`
+			Details struct {
+				WallTimeMs float64 `json:"wallTimeMs"`
+			} `json:"details"`
+		}
+		_ = json.Unmarshal(f.Result, &res)
+		t.turn.Blocks[idx].Output = JoinText(res.Content)
 		t.turn.Blocks[idx].IsError = f.IsError
-		t.turn.Blocks[idx].DurationMS = int64(f.Result.Details.WallTimeMs)
+		t.turn.Blocks[idx].DurationMS = f.DurationMS
+		if t.turn.Blocks[idx].DurationMS == 0 && res.Details.WallTimeMs > 0 {
+			t.turn.Blocks[idx].DurationMS = int64(res.Details.WallTimeMs)
+		}
+		// 引擎没给耗时就自己量：pi 给 durationMs，omp 一个字段都没有，
+		// 而界面上「这个工具跑了多久」对两个引擎都得有。
+		if t.turn.Blocks[idx].DurationMS == 0 {
+			if started, ok := t.toolStart[f.ToolCallID]; ok {
+				t.turn.Blocks[idx].DurationMS = time.Since(started).Milliseconds()
+			}
+		}
+		delete(t.toolStart, f.ToolCallID)
+		// 差异在 result.details 里，不在 content 里：
+		// content 是给模型看的一句人话（"Successfully replaced 3 blocks"），
+		// 真正的改动在 details.diff / details.patch。漏掉这一步，
+		// 界面上就永远看不到「引擎改了什么」。
+		diffText, filePath := ExtractToolDiff(f.Result)
+		if diffText != "" {
+			t.turn.Blocks[idx].Diff = ParseToolDiff(diffText)
+		}
+		// details 里没有路径时从参数里找：pi 的 edit 把路径放在参数里，
+		// 而 omp 放在 details.path。两条路都要覆盖。
+		if filePath == "" {
+			filePath = ToolFilePath(t.turn.Blocks[idx].Args)
+		}
+		if filePath != "" {
+			t.turn.Blocks[idx].FilePath = filePath
+		}
 		t.turn.Blocks[idx].Status = "done"
 		if f.IsError {
 			t.turn.Blocks[idx].Status = "error"

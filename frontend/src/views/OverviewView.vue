@@ -217,6 +217,41 @@ function uptimeOf(engine: EngineHealth): string {
   return `${Math.floor(hours / 24)}${t('overview.days')}`
 }
 
+/**
+ * 探测还没完成时，不能显示「未安装」——那是一个尚未成立的事实。
+ * 显示「检测中」，用户就知道这一格稍后会变。
+ */
+const detecting = computed(() => health.value?.detecting ?? false)
+
+/** 状态标签：运行中 / 空闲 / 检测中 / 未安装。 */
+function statusLabel(engine: EngineHealth): string {
+  if (engine.running) return t('overview.running')
+  if (engine.installed) return t('overview.idle')
+  if (detecting.value) return t('overview.detecting')
+  return t('overview.notInstalled')
+}
+
+function statusTagClass(engine: EngineHealth): string {
+  if (engine.running) return 'ok'
+  if (engine.installed) return ''
+  if (detecting.value) return ''
+  return 'warn'
+}
+
+function statusLedClass(engine: EngineHealth): string {
+  if (engine.running) return 'omp-led--ok'
+  if (engine.installed) return ''
+  if (detecting.value) return ''
+  return 'omp-led--warn'
+}
+
+/** 版本号那一行：装了就显示版本，没装且还在探就显示「检测中」。 */
+function versionLabel(engine: EngineHealth): string {
+  if (engine.version) return engine.version
+  if (detecting.value) return t('overview.detecting')
+  return t('overview.notInstalled')
+}
+
 async function openSession(path: string) {
   try {
     await router.push({ name: 'chat', query: { session: path } })
@@ -231,6 +266,20 @@ function onResize() {
 }
 
 watch([span, byDay], () => renderCharts())
+
+// 探测是后台跑的：首屏拿到的可能还是「不知道装没装」。
+// 探测完成时后端会推 engine:detected，全局 store 据此刷新引擎清单，
+// 于是 app.detecting 从 true 变 false——这一刻把这一屏的 health 重新拉一次。
+//
+// 盯的是 store 那个标志而不是本页的 health.detecting：
+// 后者只在本页 load() 时才变，而 load() 只由这个 watch 触发——
+// 盯自己就成了等自己。
+watch(
+  () => app.detecting,
+  (value, prev) => {
+    if (prev && !value) void load()
+  },
+)
 
 onMounted(() => {
   void load()
@@ -278,7 +327,7 @@ onUnmounted(() => {
           v-for="engine in engines"
           :key="engine.engine_kind"
           class="omp-card card-pad engine-card"
-          :class="{ 'is-missing': !engine.installed }"
+          :class="{ 'is-missing': !engine.installed && !detecting }"
         >
           <div class="engine-head">
             <span class="omp-tile omp-tile--sm" :class="engine.installed ? '' : 'omp-tile--neutral'">
@@ -286,15 +335,24 @@ onUnmounted(() => {
             </span>
             <div class="engine-id">
               <span class="engine-name">{{ engine.engine_label }}</span>
-              <span class="engine-ver">{{ engine.version || t('overview.notInstalled') }}</span>
+              <span class="engine-ver">{{ versionLabel(engine) }}</span>
             </div>
-            <span class="tag" :class="engine.running ? 'ok' : engine.installed ? '' : 'warn'">
-              <span class="omp-led" :class="[engine.running ? 'omp-led--ok' : engine.installed ? '' : 'omp-led--warn']" />
-              {{ engine.running ? t('overview.running') : engine.installed ? t('overview.idle') : t('overview.notInstalled') }}
+            <span class="tag" :class="statusTagClass(engine)">
+              <span class="omp-led" :class="[statusLedClass(engine)]" />
+              {{ statusLabel(engine) }}
             </span>
           </div>
 
-          <div v-if="!engine.installed" class="engine-missing">
+          <!-- 还在探测：不知道装没装，就不能显示「未安装」并给出安装命令。
+               那会让用户去装一个其实已经装好的引擎。 -->
+          <div v-if="detecting && !engine.installed" class="engine-missing">
+            <p class="engine-hint">
+              <span class="dot busy" />
+              {{ t('overview.detecting') }}
+            </p>
+          </div>
+
+          <div v-else-if="!engine.installed" class="engine-missing">
             <p class="engine-hint">{{ t('overview.installHint') }}</p>
             <code v-if="engine.install_hint" class="engine-cmd selectable">{{ engine.install_hint }}</code>
             <button class="omp-btn sm primary" @click="app.openApps()">{{ t('overview.goInstall') }}</button>

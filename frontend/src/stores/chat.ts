@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from '@/api/http'
+import { dropAllCaches, dropCache } from '@/utils/md'
 import type {
   AskRequest,
   ChatAttachment,
@@ -47,6 +48,16 @@ export const useChatStore = defineStore('chat', () => {
   // 能力表：界面按它决定显示哪些入口（不渲染灰按钮）。
   const caps = ref<EngineCaps | null>(null)
 
+  // 每个引擎一份的模型清单与思考档。
+  //
+  // 为什么要分桶：两个引擎的模型清单完全不同，而拉清单可能要起进程
+  // （omp 冷启动实测 11 秒）。不分桶的话，切一次引擎就要重拉一次——
+  // 于是「切引擎」这个高频动作每次都付一次冷启动。
+  //
+  // 分桶之后，第一次切到某个引擎要付一次，之后是瞬时的。
+  const modelCache = ref<Record<EngineKind, ModelRow[]>>({ omp: [], pi: [] })
+  const levelCache = ref<Record<EngineKind, string[]>>({ omp: [], pi: [] })
+
   // 当前轮：一次「提问 → 回答」
   const turn = ref<Turn | null>(null)
   // 历史轮（由后端投影好的轮次，界面直接渲染）
@@ -88,14 +99,19 @@ export const useChatStore = defineStore('chat', () => {
     streaming.value = state.streaming
     model.value = state.model ?? null
     thinkingLevel.value = state.thinking_level ?? ''
-    levels.value = state.levels?.length ? state.levels : levels.value
+    if (state.kind) kind.value = state.kind
+    // 思考档按引擎记账：切回上一个引擎时，它的档位立刻就位，
+    // 不用等一次 RPC 回来。
+    if (state.levels?.length) {
+      levelCache.value = { ...levelCache.value, [kind.value]: state.levels }
+    }
+    levels.value = levelCache.value[kind.value] ?? []
     context.value = state.context ?? null
     tokensPerSecond.value = state.tokens_per_second ?? null
     autoCompaction.value = state.auto_compaction
     stats.value = state.stats ?? null
     commands.value = state.commands ?? []
     profile.value = state.profile ?? ''
-    if (state.kind) kind.value = state.kind
     if (state.caps) caps.value = state.caps
     if (state.queued) queue.value = { steering: state.queued.steering ?? [], followUp: state.queued.followUp ?? [] }
     history.value = state.history ?? []
@@ -134,16 +150,24 @@ export const useChatStore = defineStore('chat', () => {
 // 拉可选模型清单。失败不抛：模型清单拉不到时输入区仍应可用，
   // 只是下拉里只剩「当前模型」一项。
   //
-  // loading 单独暴露：这个请求会顺手把引擎拉起来（omp 冷启动实测 11 秒），
-  // 界面要能显示「正在取模型清单」而不是一个永远禁用的下拉。
-  async function loadModels() {
+  // 按引擎分桶缓存：切引擎时立刻换成那个引擎的清单，不用等。
+  // 后端在引擎没跑时退到读配置文件，所以首次拉取也不再冷启动一个进程。
+  async function loadModels(force = false) {
+    const target = kind.value
+    if (!force && modelCache.value[target].length) {
+      models.value = modelCache.value[target]
+      return models.value
+    }
     if (modelsLoading.value) return models.value
     modelsLoading.value = true
     try {
-      const data = await api.models(kind.value)
-      models.value = data.models ?? []
+      const data = await api.models(target)
+      const rows = data.models ?? []
+      modelCache.value = { ...modelCache.value, [target]: rows }
+      // 请求返回时用户可能已经切走了：这时不能覆盖当前引擎的清单。
+      if (kind.value === target) models.value = rows
     } catch {
-      models.value = []
+      if (kind.value === target) models.value = []
     } finally {
       modelsLoading.value = false
     }
@@ -213,6 +237,10 @@ export const useChatStore = defineStore('chat', () => {
 
   // 切引擎：不切目录。当前会话属于另一个引擎，界面保留已看到的消息（可回看），
   // 并在新引擎上开一条新会话接着聊——直接清空会让人以为上下文丢了。
+  //
+  // 顺序很重要：先立刻把界面换成目标引擎的缓存值（模型 / 思考档），
+  // 再去问后端要新引擎的状态。用户看到的切换是瞬时的，
+  // 而不是「等一次 chat/state 往返」之后才变。
   async function switchEngine(next: EngineKind) {
     if (next === kind.value) return
     switching.value = 'engine'
@@ -221,6 +249,9 @@ export const useChatStore = defineStore('chat', () => {
       if (turn.value) finishTurn()
       const kept = history.value
       kind.value = next
+      // 立刻换到目标引擎的缓存：下拉里该出现哪个引擎的模型，一眼就该是它。
+      models.value = modelCache.value[next] ?? []
+      levels.value = levelCache.value[next] ?? []
       const state = await api.chatState(next, undefined)
       applyState(state)
       // 流里插一条分隔：告诉用户“以下由 xxx 接续，前面的内容不在新会话里”。
@@ -231,6 +262,8 @@ export const useChatStore = defineStore('chat', () => {
         { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] },
         ...history.value,
       ]
+      // 后台补这个引擎的模型清单：切过去时可能是第一次用这个引擎。
+      void loadModels()
     } finally {
       switching.value = ''
     }
@@ -330,6 +363,9 @@ export const useChatStore = defineStore('chat', () => {
         { role: 'assistant', blocks: finished.blocks, model: finished.model },
       ]
       turn.value = null
+      // 这一轮的流式渲染缓存可以丢了：正文已经进历史，
+      // 之后渲染走的是静态路径。留着它只是白占一份全文。
+      dropCache(finished.run_id)
     }
   }
 
@@ -344,6 +380,8 @@ export const useChatStore = defineStore('chat', () => {
     context.value = null
     stats.value = null
     promptError.value = ''
+    // 换会话 / 新会话时把渲染缓存全清掉：旧会话的正文不该一直占着内存。
+    dropAllCaches()
   }
 
   return {

@@ -77,9 +77,19 @@ type HealthVO struct {
 	// 它是「现在屏幕上这些数字可能比实际旧一点」的唯一信号。
 	// 界面据此给一个不阻断操作的提示，而不是让用户以为已经是最新。
 	Refreshing bool `json:"refreshing"`
+	// Detecting 引擎探测正在进行中
+	//
+	// 它与 Refreshing 分开：Refreshing 是「数字可能旧了」，
+	// Detecting 是「还不知道装没装」。后者必须区分，
+	// 否则首发时界面会把「还没探到」显示成「没装」——
+	// 而用户看到的是一个尚未成立的事实。
+	Detecting bool `json:"detecting"`
 	// Workspace 当前工作目录
 	Workspace string `json:"workspace"`
-	// DetectedAt 本次探测的时刻（Unix 毫秒）
+	// DetectedAt 上次探测完成的时刻（Unix 毫秒）；从未探过时为 0
+	//
+	// 它回答「屏幕上这个版本号是什么时候验的」。用请求时刻冒充它，
+	// 界面就会永远显示「刚刚检测过」，用户就无法判断可信度。
 	DetectedAt int64 `json:"detected_at"`
 	// TotalSessions 两个引擎的会话总数
 	TotalSessions int `json:"total_sessions"`

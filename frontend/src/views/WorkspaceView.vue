@@ -10,6 +10,7 @@ import { ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
 import DiffView from '@/components/workspace/DiffView.vue'
 import FilePanel from '@/components/workspace/FilePanel.vue'
+import GitBar from '@/components/workspace/GitBar.vue'
 import HistoryPanel from '@/components/workspace/HistoryPanel.vue'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
@@ -182,6 +183,45 @@ async function switchBranch(name: string) {
   await act(`switch:${name}`, () => api.gitSwitchBranch(name))
 }
 
+/**
+ * 推送。
+ *
+ * force 分三档：none 普通、lease 带租约、force 无条件。
+ * 无条件强推会静默覆盖别人的提交，所以要用户输入分支名确认——
+ * 确认文本在 GitBar 里收，这里只负责把它传下去。
+ */
+async function push(force = 'none') {
+  const branch = status.value?.branch_name ?? ''
+  const remote = status.value?.remotes?.length === 1 ? status.value.remotes[0].remote_name : ''
+  let confirm = ''
+  if (force === 'force') {
+    try {
+      const { value } = await ElMessageBox.prompt(
+        t('workspace.forceConfirmPlaceholder', { name: branch }),
+        t('workspace.forcePush'),
+        { confirmButtonText: t('workspace.forcePush'), cancelButtonText: t('common.cancel') },
+      )
+      confirm = value
+    } catch {
+      return
+    }
+  }
+  await act(`push:${force}`, () =>
+    api.gitPush(remote, branch, force, !status.value?.upstream_ref, confirm),
+  )
+}
+
+async function pull() {
+  const branch = status.value?.branch_name ?? ''
+  const remote = status.value?.remotes?.length === 1 ? status.value.remotes[0].remote_name : ''
+  await act('pull', () => api.gitPull(remote, branch, false))
+}
+
+async function fetchRemote() {
+  const remote = status.value?.remotes?.length === 1 ? status.value.remotes[0].remote_name : ''
+  await act('fetch', () => api.gitFetch(remote))
+}
+
 async function createBranch() {
   try {
     const result = await ElMessageBox.prompt(t('workspace.branchName'), t('workspace.newBranch'), {
@@ -251,6 +291,12 @@ onMounted(refresh)
         <button class="omp-btn sm danger" :class="{ 'is-loading': pending === 'state:abort' }" :disabled="Boolean(pending)" @click="stateAction('abort')">
           {{ t('workspace.abort') }}
         </button>
+      </div>
+
+      <!-- 版本栏：分支 / 上游 / 领先落后 / 同步动作。
+           它放在三栏之上，因为「在哪个分支」决定了下面每一栏的语境。 -->
+      <div class="bar-wrap">
+        <GitBar :status="status" :busy="Boolean(pending)" @fetch="fetchRemote" @pull="pull" @push="push" />
       </div>
 
       <div class="split">
@@ -451,6 +497,12 @@ onMounted(refresh)
   gap: var(--omp-sp-3);
   padding: var(--omp-sp-4) var(--omp-sp-6) var(--omp-sp-5);
   overflow: hidden;
+}
+
+/* 版本栏的位置：贴着页头，横跨整个内容区 */
+.bar-wrap {
+  padding: var(--omp-sp-4) var(--omp-sp-6) 0;
+  flex: none;
 }
 
 /* 窄窗口下三栏放不下：文件树压到最小，diff 让出宽度。

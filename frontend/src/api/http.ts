@@ -252,11 +252,17 @@ export const api = {
   gitState: (action: 'continue' | 'abort') => post<GitStatus>('/git/state', { action }),
   gitInit: (branch = '') => post<GitStatus>('/git/init', { branch }),
   gitAddRemote: (name: string, url: string) => post<GitStatus>('/git/remote', { name, url }),
-  gitPush: (remote: string, branch: string, force = 'none') =>
-    post<GitStatus>('/git/push', { remote, branch, force }),
+  gitPush: (remote: string, branch: string, force = 'none', setUpstream = false, confirm = '') =>
+    post<GitStatus>('/git/push', {
+      remote_name: remote,
+      branch_name: branch,
+      force,
+      set_upstream: setUpstream,
+      confirm,
+    }),
   gitPull: (remote: string, branch: string, rebase = false) =>
-    post<GitStatus>('/git/pull', { remote, branch, rebase }),
-  gitFetch: (remote = '') => post<GitStatus>('/git/fetch', { remote }),
+    post<GitStatus>('/git/pull', { remote_name: remote, branch_name: branch, rebase }),
+  gitFetch: (remote = '') => post<GitStatus>('/git/fetch', { remote_name: remote }),
 
   reveal: (path: string) => post<{ ok: boolean }>('/system/reveal', { path }),
   openPath: (path: string) => post<{ ok: boolean }>('/system/open', { path }),

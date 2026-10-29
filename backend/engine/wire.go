@@ -174,6 +174,10 @@ type Message struct {
 	ToolName    string         `json:"toolName,omitempty"`
 	IsError     bool           `json:"isError,omitempty"`
 	Attribution string         `json:"attribution,omitempty"`
+	// Details 工具结果的结构化细节；改文件的工具把差异放在这里
+	Details json.RawMessage `json:"details,omitempty"`
+	// DurationMs 工具执行耗时（毫秒）
+	DurationMs int64 `json:"durationMs,omitempty"`
 }
 
 // SlashCommand 是引擎报上来的可用命令。

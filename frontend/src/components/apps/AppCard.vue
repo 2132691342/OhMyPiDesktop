@@ -1,8 +1,14 @@
 <script setup lang="ts">
-// 一个引擎在「应用」页里的卡片：版本对比、三个动作、安装进度。
+// 一个引擎在「应用」页里的一行：版本对比、三个动作、安装进度、手动命令。
 //
 // 它不认识后端：能点什么由 AppRow 里的 can_* 决定，动作由父组件发。
 // 这样「按钮该不该存在」只有一处判断（后端），组件不再做第二次。
+//
+// 三条纪律：
+//  1. 动手之前把命令原文给用户看。装 / 升级 / 卸载都是改系统的事，
+//     用户有权知道那行命令是什么。
+//  2. 没装的时候给出两种拿法：按钮（我们代跑）与命令原文（用户自己跑）。
+//  3. 「为什么点不动」用一句话说清，不是一个灰按钮。
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
@@ -25,6 +31,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const open = ref(false)
+const manualOpen = ref(false)
 
 /** 有现场或正在跑才展开；跑完自动收起。 */
 const showProgress = computed(() => Boolean(props.progress || props.busy))
@@ -42,30 +49,68 @@ const versionState = computed<'outdated' | 'current' | 'unknown' | 'none'>(() =>
   if (props.row.latest_version) return 'current'
   return 'unknown'
 })
+
+/** 升级 / 卸载要先把命令给用户看。 */
+const pendingAction = ref<'update' | 'uninstall' | ''>('')
+
+/** 确认面板里要显示的那行命令。 */
+const previewCommand = computed(() => {
+  if (pendingAction.value === 'update') return props.row.update_preview ?? ''
+  if (pendingAction.value === 'uninstall') return props.row.uninstall_preview ?? ''
+  return ''
+})
+
+/** 卸载是一次不可逆操作，所以它要过一道确认；升级不用。 */
+function askUninstall() {
+  pendingAction.value = 'uninstall'
+}
+
+function askUpdate() {
+  pendingAction.value = 'update'
+}
+
+function cancel() {
+  pendingAction.value = ''
+}
+
+function confirm() {
+  const action = pendingAction.value
+  pendingAction.value = ''
+  if (action) emit('run', action)
+}
 </script>
 
 <template>
-  <article class="app-card card-pad">
-    <div class="app-top">
-      <span class="app-badge" :class="{ on: row.installed }">{{ row.app_name }}</span>
-      <div class="app-version">
-        <span class="ver mono">{{ row.installed ? row.version : t('apps.notInstalled') }}</span>
-        <template v-if="versionState === 'outdated'">
-          <AppIcon name="arrow-left" :size="12" class="ver-arrow" />
-          <span class="ver latest mono" :title="t('apps.latestHint')">{{ row.latest_version }}</span>
-          <span class="tag brand">{{ t('apps.updateAvailable') }}</span>
-        </template>
+  <article class="app-card">
+    <!-- 第一行：名字 / 版本 / 动作。四个部分共用一行，
+         装了什么、能做什么一眼看完，不用展开。 -->
+    <div class="app-row">
+      <div class="app-ident">
+        <span class="app-badge" :class="{ on: row.installed }">{{ row.app_name }}</span>
+        <span class="app-ver mono">{{ row.installed ? row.version : t('apps.notInstalled') }}</span>
+        <span v-if="versionState === 'outdated'" class="tag brand">{{ t('apps.updateAvailable') }}</span>
         <span v-else-if="versionState === 'unknown'" class="tag" :title="row.latest_note">
           {{ t('apps.latestUnknown') }}
         </span>
         <span v-else-if="versionState === 'current'" class="tag ok">{{ t('apps.upToDate') }}</span>
       </div>
-      <span class="push" />
+
+      <div class="app-channel">
+        <template v-if="row.installed">
+          <span class="ch-label">{{ t('apps.channel') }}</span>
+          <span class="ch-value">{{ row.channel_label }}</span>
+        </template>
+        <template v-else>
+          <span class="ch-value ch-missing">{{ t('apps.notInstalledHint') }}</span>
+        </template>
+      </div>
+
       <div class="app-actions">
         <button
           class="omp-btn primary sm"
           :class="{ 'is-loading': busy }"
           :disabled="!row.can_install || busy"
+          :title="row.install_command"
           @click="emit('run', 'install')"
         >
           <AppIcon name="download" :size="13" />
@@ -76,7 +121,8 @@ const versionState = computed<'outdated' | 'current' | 'unknown' | 'none'>(() =>
           class="omp-btn sm"
           :class="{ 'is-loading': busy }"
           :disabled="!row.can_update || busy"
-          @click="emit('run', 'update')"
+          @title="row.update_preview"
+          @click="askUpdate"
         >
           <AppIcon name="refresh" :size="13" />
           {{ t('common.update') }}
@@ -86,20 +132,23 @@ const versionState = computed<'outdated' | 'current' | 'unknown' | 'none'>(() =>
           class="omp-btn sm danger"
           :class="{ 'is-loading': busy }"
           :disabled="busy"
-          @click="emit('run', 'uninstall')"
+          @click="askUninstall"
         >
           <AppIcon name="trash" :size="13" />
           {{ t('common.uninstall') }}
         </button>
+        <button
+          class="omp-btn sm ghost"
+          :title="t('apps.manualCommands')"
+          @click="manualOpen = !manualOpen"
+        >
+          <AppIcon name="terminal" :size="13" />
+        </button>
       </div>
     </div>
 
-    <!-- 装着的：给出渠道与落点；没装着的：给出要跑的命令 -->
+    <!-- 装着的：给出落点；没装着的：给出要跑的命令 -->
     <div v-if="row.installed" class="app-facts">
-      <span class="fact">
-        <span class="fact-label">{{ t('apps.channel') }}</span>
-        <span class="fact-value">{{ row.channel_label }}</span>
-      </span>
       <span class="fact wide">
         <span class="fact-label">{{ t('apps.location') }}</span>
         <code class="fact-value mono selectable">{{ row.exe }}</code>
@@ -117,6 +166,55 @@ const versionState = computed<'outdated' | 'current' | 'unknown' | 'none'>(() =>
       <AppIcon name="alert" :size="12" />
       {{ row.blocker }}
     </p>
+
+    <!-- 动手之前的确认：把那行命令摆出来。
+         用户点的是「装 / 升级 / 卸载」，但真正发生的是这条命令。 -->
+    <div v-if="pendingAction" class="confirm">
+      <div class="confirm-head">
+        {{ pendingAction === 'update' ? t('apps.confirmUpdate') : t('apps.confirmUninstall') }}
+      </div>
+      <code v-if="previewCommand" class="confirm-cmd mono selectable">{{ previewCommand }}</code>
+      <p class="confirm-hint">
+        {{ pendingAction === 'update' ? t('apps.confirmUpdateHint') : t('apps.confirmUninstallHint') }}
+      </p>
+      <div class="confirm-actions">
+        <button class="omp-btn sm ghost" @click="cancel">{{ t('common.cancel') }}</button>
+        <button
+          class="omp-btn sm"
+          :class="pendingAction === 'uninstall' ? 'danger' : 'primary'"
+          @click="confirm"
+        >
+          {{ pendingAction === 'update' ? t('common.update') : t('common.uninstall') }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 手动命令：给不想（或不能）由界面代跑的人 -->
+    <div v-if="manualOpen" class="manual">
+      <div class="manual-head">{{ t('apps.manualCommands') }}</div>
+      <div class="manual-row">
+        <span class="manual-label">{{ t('common.install') }}</span>
+        <code class="manual-cmd mono selectable">{{ row.install_command }}</code>
+        <button class="omp-btn text sm" @click="emit('copy', row.install_command)">
+          {{ copied === row.install_command ? t('settings.copied') : t('settings.copyCommand') }}
+        </button>
+      </div>
+      <div v-if="row.update_preview" class="manual-row">
+        <span class="manual-label">{{ t('common.update') }}</span>
+        <code class="manual-cmd mono selectable">{{ row.update_preview }}</code>
+        <button class="omp-btn text sm" @click="emit('copy', row.update_preview)">
+          {{ copied === row.update_preview ? t('settings.copied') : t('settings.copyCommand') }}
+        </button>
+      </div>
+      <div v-if="row.uninstall_preview" class="manual-row">
+        <span class="manual-label">{{ t('common.uninstall') }}</span>
+        <code class="manual-cmd mono selectable">{{ row.uninstall_preview }}</code>
+        <button class="omp-btn text sm" @click="emit('copy', row.uninstall_preview)">
+          {{ copied === row.uninstall_preview ? t('settings.copied') : t('settings.copyCommand') }}
+        </button>
+      </div>
+      <p class="manual-hint">{{ t('apps.manualHint') }}</p>
+    </div>
 
     <div v-if="showProgress" class="progress">
       <button class="progress-head" type="button" @click="open = !open">
@@ -138,18 +236,31 @@ const versionState = computed<'outdated' | 'current' | 'unknown' | 'none'>(() =>
 </template>
 
 <style scoped>
+/* 一行一个引擎：四个部分（标识 / 渠道 / 动作 / 事实）横向排开，
+   竖向空间留给命令、进度这些真正需要展开的内容。 */
 .app-card {
   display: flex;
   flex-direction: column;
-  gap: var(--omp-sp-3);
-  max-width: 860px;
+  gap: var(--omp-sp-2);
+  padding: var(--omp-sp-3) var(--omp-sp-4);
+  border: 1px solid var(--omp-line);
+  border-radius: var(--omp-r-lg);
+  background: var(--omp-surface);
 }
 
-.app-top {
+.app-row {
   display: flex;
   align-items: center;
-  gap: var(--omp-sp-3);
+  gap: var(--omp-sp-4);
   flex-wrap: wrap;
+}
+
+.app-ident {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .app-badge {
@@ -171,30 +282,37 @@ const versionState = computed<'outdated' | 'current' | 'unknown' | 'none'>(() =>
   background: var(--omp-brand-soft);
 }
 
-.app-version {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  flex-wrap: wrap;
-}
-
-.ver {
-  font-size: var(--omp-fs-sm);
+.app-ver {
+  font-size: var(--omp-fs-xs);
   color: var(--omp-ink-5);
 }
 
-.ver.latest {
-  color: var(--omp-brand);
+.app-channel {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  min-width: 0;
+  flex: 1;
 }
-
-.ver-arrow {
+.ch-label {
+  font-size: var(--omp-fs-3xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--omp-faint);
-  transform: rotate(180deg);
+}
+.ch-value {
+  font-size: var(--omp-fs-2xs);
+  color: var(--omp-ink-5);
+}
+.ch-missing {
+  color: var(--omp-faint);
 }
 
 .app-actions {
   display: flex;
   gap: var(--omp-sp-2);
+  flex: none;
 }
 
 .app-facts {
@@ -261,6 +379,98 @@ const versionState = computed<'outdated' | 'current' | 'unknown' | 'none'>(() =>
   font-size: var(--omp-fs-2xs);
   line-height: 1.6;
   color: var(--omp-warn);
+}
+
+/* 确认面板：把那行命令摆出来，再问一次 */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--omp-sp-2);
+  padding: var(--omp-sp-3);
+  border: 1px solid var(--omp-line);
+  border-left: 2px solid var(--omp-brand-2);
+  border-radius: var(--omp-r-sm);
+  background: var(--omp-hover);
+}
+
+.confirm-head {
+  font-size: var(--omp-fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--omp-faint);
+}
+
+.confirm-cmd {
+  padding: var(--omp-sp-2);
+  border-radius: var(--omp-r-sm);
+  background: var(--omp-code-bg);
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-ink-5);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.confirm-hint {
+  margin: 0;
+  font-size: var(--omp-fs-3xs);
+  line-height: 1.6;
+  color: var(--omp-faint);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--omp-sp-2);
+}
+
+/* 手动命令清单 */
+.manual {
+  display: flex;
+  flex-direction: column;
+  gap: var(--omp-sp-2);
+  padding: var(--omp-sp-3);
+  border: 1px solid var(--omp-line);
+  border-radius: var(--omp-r-sm);
+  background: var(--omp-hover);
+}
+
+.manual-head {
+  font-size: var(--omp-fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--omp-faint);
+}
+
+.manual-row {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  min-width: 0;
+}
+
+.manual-label {
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-mute);
+  width: 3em;
+  flex: none;
+}
+
+.manual-cmd {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-ink-5);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.manual-hint {
+  margin: 0;
+  font-size: var(--omp-fs-3xs);
+  line-height: 1.6;
+  color: var(--omp-faint);
 }
 
 /* 进度默认收起：装一个引擎的日志能到几百行，

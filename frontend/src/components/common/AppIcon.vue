@@ -36,6 +36,7 @@ export type IconName =
   | 'server'
   | 'eye'
   | 'link'
+  | 'terminal'
 
 withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 16 })
 </script>
@@ -189,6 +190,11 @@ withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 16 })
     <template v-else-if="name === 'link'">
       <path d="M10 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1.2 1.2" />
       <path d="M14 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1.2-1.2" />
+    </template>
+    <template v-else-if="name === 'terminal'">
+      <rect x="2.5" y="4" width="19" height="16" rx="2" />
+      <path d="M7 9.5l3 2.5-3 2.5" />
+      <path d="M12.5 15h5" />
     </template>
   </svg>
 </template>

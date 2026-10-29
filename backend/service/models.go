@@ -37,20 +37,23 @@ type ModelRow struct {
 //
 // “都列”在这里真的有用：模型是「我现在能用什么」的问题，
 // 两个引擎各用不同的服务商配置，一屏对比才能决定下一句发给谁。
+//
+// 引擎没在跑时读它自己的配置文件，不为看一个下拉去起进程——
+// omp 冷启动实测 11 秒，界面不该为一次「看看有哪些模型」付这个代价。
 func (a *App) Models(ctx context.Context, kind engine.Kind) ([]ModelRow, error) {
 	kinds := engine.AllKinds()
 	if kind.Valid() {
 		kinds = []engine.Kind{kind}
 	}
 	if len(kinds) == 1 {
-		return a.modelsOf(ctx, kinds[0])
+		return a.AvailableModels(ctx, kinds[0])
 	}
-	// 两个引擎各自要拉一次进程（冷启动几秒），所以必须并发。
+	// 两个引擎各自要问一次，所以必须并发。
 	rows := make([][]ModelRow, len(kinds))
 	done := make(chan int, len(kinds))
 	for i, k := range kinds {
 		go func(i int, k engine.Kind) {
-			rows[i], _ = a.modelsOf(ctx, k)
+			rows[i], _ = a.AvailableModels(ctx, k)
 			done <- i
 		}(i, k)
 	}
@@ -60,24 +63,6 @@ func (a *App) Models(ctx context.Context, kind engine.Kind) ([]ModelRow, error) 
 	out := make([]ModelRow, 0, 16)
 	for _, row := range rows {
 		out = append(out, row...)
-	}
-	return out, nil
-}
-
-// modelsOf 只列一个引擎的模型。
-func (a *App) modelsOf(ctx context.Context, kind engine.Kind) ([]ModelRow, error) {
-	e := a.EngineFor(kind, a.Workspace())
-	list, err := e.AvailableModels(ctx)
-	if err != nil {
-		return []ModelRow{}, nil
-	}
-	out := make([]ModelRow, 0, len(list))
-	for _, m := range list {
-		out = append(out, ModelRow{
-			Kind: kind, Provider: m.Provider, ID: m.ID, Name: m.Name, API: m.API,
-			ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens,
-			Reasoning: m.Reasoning, Input: m.Input,
-		})
 	}
 	return out, nil
 }

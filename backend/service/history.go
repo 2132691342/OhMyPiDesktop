@@ -85,6 +85,19 @@ func ProjectHistory(messages []json.RawMessage) []HistoryTurn {
 				block.Output = text
 				block.IsError = msg.IsError
 				block.Status = "done"
+				block.DurationMS = msg.DurationMs
+				// 历史里的工具结果也带 details，差异同样要从那里取。
+				// 不取的话：刚聊完能看到差异，刷新一下就没了——
+				// 用户会以为「引擎把改动撤销了」。
+				if diffText, filePath := engine.ExtractToolDiff(msg.Details); diffText != "" {
+					block.Diff = engine.ParseToolDiff(diffText)
+					if filePath == "" {
+						filePath = engine.ToolFilePath(block.Args)
+					}
+					if filePath != "" {
+						block.FilePath = filePath
+					}
+				}
 				if msg.IsError {
 					block.Status = "error"
 				}

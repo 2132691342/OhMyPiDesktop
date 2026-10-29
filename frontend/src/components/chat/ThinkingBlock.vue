@@ -39,7 +39,9 @@ const chars = computed(() => props.text.length)
     >
       <span class="dot" :class="streaming ? 'busy' : ''" />
       <span>{{ streaming ? t('chat.thinkingLive') : t('chat.thinking') }}</span>
-      <span class="caret-toggle">{{ chars }} 字 · {{ open ? '收起' : '展开' }}</span>
+      <span class="caret-toggle">
+        {{ t('chat.chars', { n: chars }) }} · {{ open ? t('chat.collapse') : t('chat.expand') }}
+      </span>
     </button>
     <div v-if="open" class="think-body selectable">{{ shown }}</div>
   </div>

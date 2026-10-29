@@ -69,6 +69,10 @@ export interface AppRow {
   /** 不能操作的原因（一句话），空表示没阻碍 */
   blocker?: string
   busy: boolean
+  /** 升级命令原文：动手之前显示它 */
+  update_preview?: string
+  /** 卸载命令原文 */
+  uninstall_preview?: string
 }
 
 /** 安装进度帧（SSE `app:progress`）。逐行推，前端 append 到日志面板。 */
@@ -143,11 +147,18 @@ export interface HealthData {
   workspace: string
   /** 有后台补验在跑：屏幕上这些数字可能比实际旧一点 */
   refreshing: boolean
+  /** 引擎探测进行中（含「从没探过」）：此时不能说「没装」 */
+  detecting: boolean
+  /** 上次探测完成的时刻；0 表示从没探过 */
   detected_at: number
   total_sessions: number
   total_skills: number
   total_plugins: number
   total_mcp: number
+  /** 当前存活的引擎实例数（键是「引擎 + 工作目录」） */
+  live_engines: number
+  /** 实例数上限 */
+  max_engines: number
 }
 
 export interface Bootstrap {
@@ -183,6 +194,8 @@ export interface EngineStatus {
   engines: EngineInfo[]
   running: RunRow[]
   install: Record<string, string>
+  /** 探测正在进行（含「从没探过」）：此时不能说「没装」 */
+  detecting: boolean
 }
 
 export interface WorkspaceRow {
@@ -292,6 +305,18 @@ export interface ChatBlock {
   status?: 'pending' | 'running' | 'done' | 'error'
   streaming?: boolean
   duration_ms?: number
+  /** 被改动的文件路径；只有改文件的工具才有 */
+  file_path?: string
+  /** 引擎吐出的差异；只有改文件的工具才有 */
+  diff?: DiffLine[]
+}
+
+/** 差异行。两个引擎的差异格式不同，后端已归一成这一种。 */
+export interface DiffLine {
+  line_kind: 'file' | 'hunk' | 'add' | 'del' | 'ctx'
+  old_no: number
+  new_no: number
+  line_text: string
 }
 
 export interface Turn {

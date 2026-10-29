@@ -76,6 +76,15 @@ type AppRow struct {
 	Blocker string `json:"blocker,omitempty"`
 	// Busy 这个应用当前有长任务在跑
 	Busy bool `json:"busy"`
+
+	// UpdatePreview 升级命令原文（界面在确认前显示它）
+	//
+	// 单独一份而不是复用 UpdateCommand：那条是「装好了之后怎么升」，
+	// 而这一条是「点了升级按钮会真的跑什么」。两者内容相同但用途不同，
+	// 混用的话以后加了参数就会显示到不该显示的地方。
+	UpdatePreview string `json:"update_preview,omitempty"`
+	// UninstallPreview 卸载命令原文
+	UninstallPreview string `json:"uninstall_preview,omitempty"`
 }
 
 // Apps 汇总「应用」页需要的全部事实。
@@ -143,6 +152,10 @@ func (a *App) appRow(ctx context.Context, kind engine.Kind, latest engine.Latest
 	if row.Installed && row.UninstallCommand == "" && row.Blocker == "" {
 		row.Blocker = uninstallBlocker(id.Channel)
 	}
+	// 升级 / 卸载的命令原文：界面在动手之前显示它。
+	// 用户点一个会改系统的按钮之前，应该看得见那行命令是什么。
+	row.UpdatePreview = row.UpdateCommand
+	row.UninstallPreview = row.UninstallCommand
 	return row
 }
 
@@ -222,7 +235,40 @@ func (a *App) RunAppAction(ctx context.Context, kind engine.Kind, action AppActi
 	fresh := context.WithoutCancel(ctx)
 	a.detectAll(fresh, true)
 	engine.QueryLatest(fresh, true)
+	// 重探之后要核对结果：命令退出码是 0 不等于事情做成了。
+	// 上游的更新器有时什么都没改也返回 0，这时界面报「升级成功」是撒谎。
+	if err := a.verifyAction(kind, action); err != nil {
+		return nil, err
+	}
 	return &AppRow{Kind: kind}, nil
+}
+
+// verifyAction 核对动作真的生效了。
+//
+// 只在命令成功之后调用。三种结果：
+//   - 安装后仍探不到可执行文件：装上了却跑不起来，这是软失败；
+//   - 升级后版本没变且仍然落后：上游没真的升级，也是软失败；
+//   - 其余：成功。
+//
+// 软失败用软失败的方式报（消息说清现状），而不是把整次操作判成失败。
+func (a *App) verifyAction(kind engine.Kind, action AppAction) error {
+	id := a.Identity(kind)
+	switch action {
+	case ActionInstall:
+		if id.Exe == "" {
+			return pkg.New(pkg.CodeInstallUnavailable,
+				kind.Label()+" 装完了，但在这个环境里跑不起来",
+				"命令本身是成功的，但重新探测找不到可执行文件。请在终端里手动跑一次："+engine.InstallHint(kind))
+		}
+	case ActionUpdate:
+		latest := engine.QueryLatestFast(context.Background())[kind]
+		if id.Version != "" && latest.Version != "" && compareVersion(id.Version, latest.Version) < 0 {
+			return pkg.New(pkg.CodeInstallUnavailable,
+				kind.Label()+" 的升级命令跑完了，但版本还是 "+id.Version,
+				"上游最新版是 "+latest.Version+"。可以重跑一次升级命令，或按它自己的方式升级。")
+		}
+	}
+	return nil
 }
 
 // actionCommand 把动作翻成一条可执行命令行。

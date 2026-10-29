@@ -140,6 +140,40 @@ service 层返回 `ErrUnsupported`，界面据此隐藏控件——**不要发�
 | `subagent_lifecycle/progress/event` | ✅ | — | → `subagent:*`（见 §子代理） |
 | 其他（btw / live / goal / todo / irc / advisor / ttsr / cache_warming） | ✅ | — | 静默丢弃：翻译层不处理、不报错（未知帧一律忽略） |
 
+### 工具结果里的差异
+
+工具执行结束时，帧里带着 `result`。`result.content` 是**给模型看的一句人话**
+（"Successfully replaced 1 block(s)"），真正的改动在 `result.details` 里。
+
+| 引擎 | 差异字段 | 格式 | 文件路径 |
+|---|---|---|---|
+| omp | `details.diff` | 编号差异：`@@ -1,2 +1,2 @@` 加 `+2|正文` 这样的行 | `details.path` |
+| pi | `details.patch` | 标准 unified diff | 工具参数里的 `path` |
+| pi | `details.diff` | 编号差异（空格分隔：`+2 正文`） | 工具参数里的 `path` |
+
+**为什么不直接透传引擎的原文**：两种格式的差别不只是分隔符——
+编号差异的行号是引擎自己算的（删行给旧行号、增行给新行号、上下文行给旧行号），
+unified diff 的行号由区块头累加。两种都要能读，且读出来的行结构必须一样，
+否则前端就要为两个引擎写两套渲染。
+
+于是归一在 `backend/engine/diff.go`：
+`ExtractToolDiff` 取出差异原文与文件路径（`patch` 优先于 `diff`，
+文件路径在 `details.path` 与工具参数两条路里都找），
+`ParseToolDiff` 把它拆成 `{line_kind, old_no, new_no, line_text}` 的行。
+
+`details` 在流式帧里嵌在 `result` 里，在会话消息里本身就是那个对象——
+两种形状都要认，否则「刚聊完能看到差异，刷新一下就没了」。
+
+### 工具耗时
+
+pi 在 `tool_execution_end` 帧顶层给 `durationMs`；omp 一个字段都没有。
+界面上「这个工具跑了多久」对两个引擎都得有，所以引擎没给时自己量：
+记 `tool_execution_start` 的时刻（omp 还给了 `startedAt`，跨进程时钟更准），
+到结束帧相减。
+
+自己量的值不是引擎的权威值，但 0 更糟——0 看起来像「瞬间完成」，
+是个会误导人的假数字。
+
 ### 一轮什么时候算完（两个引擎的判据不同，不能混）
 
 ```

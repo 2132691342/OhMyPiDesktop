@@ -289,6 +289,34 @@ func (a *App) detectOnce(ctx context.Context) {
 	// 而结果只会在「用户换了引擎路径或版本」时变。落盘之后，
 	// 下次启动可以直接用上次的结论，首屏不必再等这三秒。
 	a.persistIdentities(snapshot)
+	// 探完了就说一声。界面据此把「正在检测」换成真结果——
+	// 之前只有界面自己去轮询，于是概览页显示的是探测前的旧值，
+	// 而用户看到的是「版本号是旧的」，却没有任何提示说它正在更新。
+	a.emitDetected()
+}
+
+// emitDetected 广播探测完成。
+//
+// 事件不带结论本身：结论由界面自己去拉一次 /engines。
+// 理由是探测结果会落盘并被各处缓存，多一份广播就要多一处可能漂移的真相。
+func (a *App) emitDetected() {
+	if a.Hub == nil {
+		return
+	}
+	a.Hub.Emit("", "engine:detected", map[string]any{"at": time.Now().UnixMilli()})
+}
+
+// DetectedAt 返回上次探测完成的时刻；从未探过时返回 0。
+//
+// 它回答「屏幕上这个版本号是什么时候验的」，所以必须是真实完成时刻，
+// 不能是「本次响应的时刻」——后者会让界面永远显示「刚刚检测过」。
+func (a *App) DetectedAt() int64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.detectedAt.IsZero() {
+		return 0
+	}
+	return a.detectedAt.UnixMilli()
 }
 
 // identityCacheKey 是探测结果的落盘键。

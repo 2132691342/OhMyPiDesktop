@@ -34,7 +34,10 @@ export const useAppStore = defineStore('app', () => {
   const active = ref<EngineKind>('omp')
   const workspaces = ref<WorkspaceRow[]>([])
   const sessions = ref<SessionRow[]>([])
-  const detecting = ref(false)
+  // reDetecting 是「用户点了重新检测」的按钮态；
+  // detecting 是「后台探测正在跑」的事实态。两者不是一回事：
+  // 前者只持续用户点击的那几秒，后者可能持续整个首屏。
+  const reDetecting = ref(false)
   // 应用页的数据与安装进度。两者都放全局：缺引擎横幅、设置页引擎卡、
   // 应用页三处都看同一份，各拉一份就会出现「这里说装了、那里说没装」。
   const apps = ref<AppRow[]>([])
@@ -50,6 +53,9 @@ export const useAppStore = defineStore('app', () => {
   let source: EventSource | null = null
   let lastSeq = 0
   let reconnectTimer: number | undefined
+  // reconnectDelay 是当前的重连等待。成功连上就复位，
+  // 连不上就指数退避——固定间隔重连会在后端未启动时变成请求风暴。
+  let reconnectDelay = 1200
 
   const toasts = useToasts()
   const chat = useChatStore()
@@ -168,6 +174,14 @@ export const useAppStore = defineStore('app', () => {
     engines.value = await api.engineStatus()
   }
 
+  /**
+   * 引擎探测进行中（含「从没探过」）。
+   *
+   * 它回答「界面能不能说『没装』」：还在探的时候说没装是撒谎，
+   * 而首发时探测要几秒（pi 的 --help 起一次 Node），那段窗口正好是用户第一眼看到的。
+   */
+  const detecting = computed(() => engines.value?.detecting ?? true)
+
   // 应用页清单。refresh 为真时忽略后端缓存（重查上游最新版）。
   async function loadApps(refresh = false) {
     const data = await api.apps(refresh)
@@ -177,12 +191,12 @@ export const useAppStore = defineStore('app', () => {
 
   // 重新探测：设置页的「重新检测」。pi 的探测要起一次 Node，所以要给 loading。
   async function detectEngines() {
-    detecting.value = true
+    reDetecting.value = true
     try {
       engines.value = await api.detectEngines()
       return engines.value
     } finally {
-      detecting.value = false
+      reDetecting.value = false
     }
   }
 
@@ -249,11 +263,17 @@ export const useAppStore = defineStore('app', () => {
       }
       route(frame.event, frame.data)
     }
+    source.onopen = () => {
+      reconnectDelay = 1200
+    }
     source.onerror = () => {
       source?.close()
       source = null
       window.clearTimeout(reconnectTimer)
-      reconnectTimer = window.setTimeout(connect, 1200)
+      // 退避重连：后端没起来时固定 1.2 秒一次会把日志刷爆，
+      // 也让后端刚起来的瞬间还在被上一次的重连风暴打。
+      reconnectTimer = window.setTimeout(connect, reconnectDelay)
+      reconnectDelay = Math.min(reconnectDelay * 2, 15000)
     }
   }
 
@@ -278,6 +298,12 @@ export const useAppStore = defineStore('app', () => {
         return
       case 'engine:ready':
       case 'engine:exit':
+        void refreshEngines()
+        return
+      case 'engine:detected':
+        // 探测完成了：引擎清单要跟着换。之前只有用户手动点「重新检测」
+        // 才会更新，于是首发时概览页一直显示「没装」——
+        // 而那只是因为探测还在跑，不是一个事实。
         void refreshEngines()
         return
       case 'engine:commands': {
@@ -470,6 +496,7 @@ export const useAppStore = defineStore('app', () => {
     engines,
     active,
     detecting,
+    reDetecting,
     workspaces,
     sessions,
     pendingLink,

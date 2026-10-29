@@ -23,6 +23,11 @@ type EngineStatus struct {
 	Engines []EngineInfo      `json:"engines"`
 	Running []engine.RunRow   `json:"running"`
 	Install map[string]string `json:"install"`
+	// Detecting 探测正在进行（含「从没探过」）
+	//
+	// 界面据此说「检测中」而不是「未安装」——两者都是「不知道」，
+	// 但只有前者是对的：装没装要等探测说了算。
+	Detecting bool `json:"detecting"`
 }
 
 // EngineInfo 是单个引擎的探测结果与落盘位置。
@@ -47,9 +52,10 @@ type envLayoutVO struct {
 func (a *App) EngineStatus(ctx context.Context) (*EngineStatus, error) {
 	a.detectAll(ctx, false)
 	out := &EngineStatus{
-		Engines: []EngineInfo{},
-		Running: a.Engine.Running(),
-		Install: map[string]string{},
+		Engines:   []EngineInfo{},
+		Running:   a.Engine.Running(),
+		Install:   map[string]string{},
+		Detecting: a.bgDetecting.Load() || a.DetectedAt() == 0,
 	}
 	if out.Running == nil {
 		out.Running = []engine.RunRow{}
@@ -121,6 +127,10 @@ func (a *App) Health(ctx context.Context) (*domain.HealthVO, error) {
 		ActiveKind: string(a.ActiveKind()),
 		Workspace:  a.Workspace(),
 		Refreshing: a.bgDetecting.Load(),
+		// Detecting 覆盖两种「还不知道」：正在探，或从没探过。
+		// 只报「正在探」的话，首发时（探测还没跑完）界面会显示成「没装」。
+		Detecting:  a.bgDetecting.Load() || a.DetectedAt() == 0,
+		DetectedAt: a.DetectedAt(),
 	}
 	kinds := engine.AllKinds()
 	rows := make([]domain.EngineHealthVO, len(kinds))
@@ -142,7 +152,6 @@ func (a *App) Health(ctx context.Context) (*domain.HealthVO, error) {
 		out.TotalMcp += row.McpCount
 	}
 	out.LiveEngines, out.MaxEngines = a.Engine.Stats()
-	out.DetectedAt = time.Now().UnixMilli()
 	return out, nil
 }
 

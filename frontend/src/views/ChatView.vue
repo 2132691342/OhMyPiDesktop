@@ -10,6 +10,7 @@ import ContextMeter from '@/components/chat/ContextMeter.vue'
 import TurnBlocks from '@/components/chat/TurnBlocks.vue'
 import AskCard from '@/components/chat/AskCard.vue'
 import MarkdownBlock from '@/components/chat/MarkdownBlock.vue'
+import FilePeekDrawer from '@/components/chat/FilePeekDrawer.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import SessionList from '@/components/sessions/SessionList.vue'
 import AgentPanel from '@/components/agents/AgentPanel.vue'
@@ -270,6 +271,7 @@ async function openLink(url: string) {
     </section>
 
     <AgentPanel />
+    <FilePeekDrawer />
   </div>
 </template>
 
