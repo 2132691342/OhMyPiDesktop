@@ -44,6 +44,12 @@ export const usePrefsStore = defineStore('prefs', () => {
     return prefs.value
   }
 
+  /** 改关窗行为：tray / quit。 */
+  async function setCloseAction(action: 'tray' | 'quit') {
+    prefs.value = await api.setCloseAction(action)
+    return prefs.value
+  }
+
   /** 选一份配置文件并读它的原文。file 为空表示「这个引擎的主配置」。 */
   async function openConfig(kind: EngineKind, file = '') {
     configKind.value = kind
@@ -83,6 +89,7 @@ export const usePrefsStore = defineStore('prefs', () => {
     load,
     setAutoStart,
     setRestoreSession,
+    setCloseAction,
     openConfig,
     pickConfig,
   }

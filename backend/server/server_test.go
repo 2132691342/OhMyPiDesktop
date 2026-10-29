@@ -1,7 +1,6 @@
 package server
 
-// 这一层是安全边界：令牌、来源、方法三件事漏一件，本机任意网页就能拿到引擎控制权，
-// 所以只测令牌闸门、来源拦截、方法限制，外加应用页与附件契约形态。
+// 安全边界层：只测令牌闸门、来源拦截、方法限制，外加应用页与附件契约形态。
 
 import (
 	"context"
@@ -17,11 +16,7 @@ import (
 	"OhMyPiDesktop/backend/service"
 )
 
-// testServer 造一个带令牌的服务。
-//
-// 探测与查最新版都被换掉：前者要起子进程（pi 的 --help 要起一次 Node，几秒），
-// 后者要连 npm registry 与引擎的构建服务。让单元测试真去干这两件事，
-// 它就变成「测这台机器装了什么、网通不通」——一慢就慢、一断就红。
+// testServer 桩掉探测与查最新版（不依赖本机环境），造一个带令牌的服务。
 func testServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
 	restoreDetect := service.SetDetector(func(_ string, kind engine.Kind) (engine.Identity, error) {
@@ -60,7 +55,7 @@ func testServer(t *testing.T) (*Server, http.Handler) {
 	return srv, srv.Handler()
 }
 
-// req 造的请求默认来自 192.0.2.1，会被来源闸门挡下；测试要显式站在本机上。
+// loopback 把请求来源标为本机，绕开来来源闸门（默认来源会被挡）。
 func loopback(req *http.Request) *http.Request {
 	req.RemoteAddr = "127.0.0.1:51234"
 	return req
@@ -87,12 +82,7 @@ func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRec
 	return rec
 }
 
-// 令牌闸门有四个状态，一个都不能错：
-//
-//	无令牌 → 403（端口在本机上，猜到端口不等于猜到令牌）
-//	头令牌 → 200（前端正常请求）
-//	查询令牌 → 200（SSE 走 EventSource，它设不了自定义头）
-//	/health → 200 且不需要令牌（只用来看服务在不在）
+// 令牌闸门四个状态都不能错：无令牌 403、头令牌 200、查询令牌 200、health 免令牌。
 func TestTokenGate(t *testing.T) {
 	_, h := testServer(t)
 
@@ -140,7 +130,7 @@ func TestTokenGate(t *testing.T) {
 	}
 }
 
-// 只允许 GET / POST：没有 DELETE 的路由，就不存在「顺手写一个删除接口」的入口。
+// 只允许 GET / POST：不留 DELETE 路由就没有「顺手加删除接口」的入口。
 func TestRejectsOtherMethods(t *testing.T) {
 	_, h := testServer(t)
 	for _, method := range []string{http.MethodDelete, http.MethodPut, http.MethodPatch} {
@@ -180,7 +170,7 @@ func TestErrorUsesEnvelope(t *testing.T) {
 	}
 }
 
-// 来源闸门：别的机器 / 别的网卡地址打进来一律拒绝，哪怕令牌对。
+// 来源闸门：非本机地址一律拒绝，哪怕令牌正确。
 func TestRejectsNonLoopback(t *testing.T) {
 	_, h := testServer(t)
 	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
@@ -196,10 +186,7 @@ func TestRejectsNonLoopback(t *testing.T) {
 	}
 }
 
-// 应用页的契约：两个引擎各一行、字段齐全、动作开关与「命令存在」一致。
-//
-// 测的是形态而不是这台机器装了什么：CI 上可能一个引擎都没有，
-// 那时 Installed 为假正好是另一种要覆盖的状态。
+// 应用页契约：两引擎各一行、字段齐全、动作开关与「命令存在」一致。
 func TestAppsContract(t *testing.T) {
 	_, h := testServer(t)
 	rec := get(t, h, "/api/v1/apps")
@@ -281,11 +268,7 @@ func TestAppsRejectsDelete(t *testing.T) {
 	}
 }
 
-// 附件契约：前端发来的 attachments 必须被解析、并透传到用例层。
-//
-// 这条链路错了不会有编译错误，表现是「图发出去了，模型说没看到」。
-// 只验到「坏输入被拦住」这一层：真正到达引擎由 tools 里的手工验证覆盖，
-// 因为那需要起一个真引擎。
+// 附件契约：坏输入必须在发给引擎前被拦下（图发过去模型却说没看到，无编译错误）。
 func TestChatSendRejectsBadAttachments(t *testing.T) {
 	_, h := testServer(t)
 

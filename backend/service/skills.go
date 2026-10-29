@@ -154,44 +154,34 @@ func (a *App) projectSkillDirs(projectDir string) []string {
 	return out
 }
 
-// pluginSkillDirs 找出已装包自带的 skills 目录。
+// pluginSkillDirs 找出**已登记插件**自带的 skills 目录。
 //
-// 两个引擎的包根不同（omp: ~/.omp/plugins/node_modules；pi: ~/.pi/agent/npm），
-// 但都是 node_modules 布局，所以扫描逻辑共用。
+// 为什么只查已登记的：node_modules 里绝大多数是间接依赖。
+// 之前是遍历整个 node_modules 找 skills 子目录，在装了十几个插件的机器上
+// 实测要 4.6 秒（几千个包 × 每次两次 stat）——而它们里面几乎都没有 skills。
+// 插件清单本来就已经读出来了（env.ReadPluginEntries），照它去 stat 是 O(插件数)。
 func (a *App) pluginSkillDirs(layout env.Layout) []string {
-	roots := []string{
-		filepath.Join(layout.Plugins, "node_modules"),
-		layout.Plugins,
+	entries, _, err := env.ReadPluginEntries(string(layout.Kind), layout)
+	if err != nil || len(entries) == 0 {
+		return nil
 	}
+	base := filepath.Join(layout.Plugins, "node_modules")
 	var out []string
 	seen := map[string]bool{}
-	for _, nodeModules := range roots {
-		entries, err := os.ReadDir(nodeModules)
-		if err != nil {
+	for _, entry := range entries {
+		// Name 是清单里那一行去掉 npm: 前缀与版本后的裸名（@scope/pkg 或 pkg），
+		// 正好就是 node_modules 下的相对目录。
+		pkg := strings.TrimSpace(entry.Name)
+		if pkg == "" {
 			continue
 		}
-		walk := func(dir string) {
-			sub, err := os.ReadDir(dir)
-			if err != nil {
-				return
-			}
-			for _, e := range sub {
-				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-					continue
-				}
-				cand := filepath.Join(dir, e.Name(), "skills")
-				if st, err := os.Stat(cand); err == nil && st.IsDir() && !seen[cand] {
-					seen[cand] = true
-					out = append(out, cand)
-				}
-			}
+		cand := filepath.Join(base, filepath.FromSlash(pkg), "skills")
+		if seen[cand] {
+			continue
 		}
-		walk(nodeModules)
-		// scoped 包：node_modules/@scope/pkg/skills
-		for _, e := range entries {
-			if e.IsDir() && strings.HasPrefix(e.Name(), "@") {
-				walk(filepath.Join(nodeModules, e.Name()))
-			}
+		seen[cand] = true
+		if st, err := os.Stat(cand); err == nil && st.IsDir() {
+			out = append(out, cand)
 		}
 	}
 	return out

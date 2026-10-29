@@ -23,6 +23,9 @@ frontend/node_modules/
 # 子代理运行时产物
 .crew/
 
+# 冒烟工具会把设置写进仓库根（tools/smoke 的 dirPath 默认是 cwd）
+/smoke-*.json
+
 # 编辑器
 .vscode/
 .idea/

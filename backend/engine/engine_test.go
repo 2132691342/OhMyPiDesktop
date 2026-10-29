@@ -1,8 +1,6 @@
 package engine
 
-// 这一层只测会「悄无声息出错」的地方：引擎判种与能力漂移、协议翻译的
-// 顺序/增量/回填、分片重组的残缺丢弃、以及引擎实例绝不会无限增长。
-// 这些点错了不会 panic，只会让界面显示错数据或机器越来越卡。
+// 只测会悄无声息出错的地方：判种/能力、协议翻译顺序/增量/回填、分片残缺丢弃、实例有界回收。
 
 import (
 	"context"
@@ -69,7 +67,7 @@ func TestDetectChannel(t *testing.T) {
 	}
 }
 
-// 全局 shim 是 <prefix>\pi.cmd + 同级 node_modules，只看路径段会全判成未知。
+// 同级 node_modules 的 shim 只看路径段会判成未知，必须靠同级目录识别。
 func TestDetectChannelSiblingModules(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent"), 0o755)
@@ -83,8 +81,7 @@ func TestDetectChannelSiblingModules(t *testing.T) {
 	}
 }
 
-// 能力表是「按钮是否出现」的唯一依据。与真实命令表对不上时，界面会给出
-// 点了没反应的按钮，所以钉死「哪条命令属于谁」。
+// Caps 是按钮是否出现的唯一依据，钉死「哪条命令属于谁」。
 func TestCapsMatchCommandTable(t *testing.T) {
 	cases := []struct {
 		kind, cmd string
@@ -177,8 +174,7 @@ func TestTranslateDeltaIsIncremental(t *testing.T) {
 	}
 }
 
-// 增量与全量必须等价：两种路径累加出来的块必须一模一样，否则界面会出现
-// 重复或残缺的正文。
+// 增量与全量必须等价：两条路径累加出的块必须一致。
 func TestTranslateDeltaEqualsFullSnapshot(t *testing.T) {
 	inc := NewTranslator()
 	inc.BeginTurn("run-1", "hi", "")
@@ -222,7 +218,7 @@ func TestTranslateNewAssistantMessageResetsIndices(t *testing.T) {
 	}
 }
 
-// 交出去的 blocks 必须是副本：交实时指针等于把正在被追加的 slice 递给序列化。
+// 交出去的 blocks 必须是副本，不能把正在被追加的 slice 递给序列化。
 func TestTranslateHandsOutCopies(t *testing.T) {
 	tr := NewTranslator()
 	tr.BeginTurn("run-1", "hi", "")
@@ -369,8 +365,7 @@ func backdate(s *Supervisor, d time.Duration) {
 	}
 }
 
-// 反复按不同键取引擎，实例数必须有界：不限的话切十次目录就常驻二十个进程。
-// evictLocked 在 Engine() 里就地淘汰，所以建完就已经卡在上限了。
+// 反复取不同键，实例数必须有界；超上限在取的时候就地淘汰。
 func TestEnginesAreRecycled(t *testing.T) {
 	s := newTestSupervisor()
 	defer s.Shutdown()
@@ -390,7 +385,7 @@ func TestEnginesAreRecycled(t *testing.T) {
 	}
 }
 
-// 正在流式回答的引擎绝不能被回收：回收等于打断用户正在看的那一轮。
+// 正在回答的引擎绝不能被回收，否则打断用户正在看的那一轮。
 func TestBusyEngineNeverRecycled(t *testing.T) {
 	s := newTestSupervisor()
 	defer s.Shutdown()
@@ -404,7 +399,7 @@ func TestBusyEngineNeverRecycled(t *testing.T) {
 	}
 }
 
-// 上限必须在取引擎时就生效，不能只靠外部调 Sweep。
+// 上限在取引擎时就生效，不能只靠外部 Sweep。
 func TestHardLimitOnEngineCreate(t *testing.T) {
 	s := newTestSupervisor()
 	defer s.Shutdown()
@@ -416,7 +411,7 @@ func TestHardLimitOnEngineCreate(t *testing.T) {
 	}
 }
 
-// 并发取同一个键必须返回同一个实例：否则两个 goroutine 各拉一个进程抢同一个 cwd。
+// 并发取同一键必须返回同一实例，否则两个 goroutine 各拉一个进程抢同一 cwd。
 func TestConcurrentEngineSameInstance(t *testing.T) {
 	s := newTestSupervisor()
 	defer s.Shutdown()
@@ -440,7 +435,7 @@ func TestConcurrentEngineSameInstance(t *testing.T) {
 	}
 }
 
-// StopAll / StopKind 之后实例表必须清空，否则是持有已死进程引用的僵尸句柄。
+// StopAll / StopKind 之后实例表必须清空，不留已死进程的僵尸句柄。
 func TestStopClearsRegistry(t *testing.T) {
 	s := newTestSupervisor()
 	defer s.Shutdown()
@@ -472,14 +467,7 @@ func TestShutdownIdempotent(t *testing.T) {
 	s.Shutdown()
 }
 
-// 引擎进程死在对话中途时，那一轮必须自己收尾。
-//
-// 这是会悄无声息错的地方：正常路径的结束帧（agent_end / agent_settled）
-// 永远不会再来了，而收尾函数靠 runID 幂等——进程死的时候 runID 已经被清掉，
-// 于是那一轮永远收不了尾。界面于是停在「正在回答」：输入框禁用、
-// 停止按钮一直转圈，用户只能重启应用。
-//
-// 所以这里钉死：进程退出后必须发出 chat:done（外加一条 chat:error 说明原因）。
+// 引擎进程死在对话中途时，那一轮必须自己收尾：发出 chat:done + chat:error，清空 runID。
 func TestDeadEngineFinishesTurn(t *testing.T) {
 	events := make(chan [2]any, 8)
 	s := newTestSupervisorWith(func(_ string, name string, data any) {
@@ -519,9 +507,7 @@ func TestDeadEngineFinishesTurn(t *testing.T) {
 	}
 }
 
-// 空闲时进程退出（回收、手动停止）不该发出收尾事件。
-//
-// 没有轮要收的时候发 chat:done，会让界面白白收掉一轮不存在的话。
+// 空闲时进程退出不该发出收尾事件，否则界面白白收掉一轮不存在的话。
 func TestIdleEngineExitEmitsNoTurnEvents(t *testing.T) {
 	events := make(chan [2]any, 8)
 	s := newTestSupervisorWith(func(_ string, name string, data any) {

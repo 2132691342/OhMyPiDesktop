@@ -38,18 +38,26 @@ type ChatState struct {
 	Commands        []engine.SlashCommand  `json:"commands"`
 	Profile         string                 `json:"profile"`
 	Caps            engine.Caps            `json:"caps"`
+	// BindErr 是「没能把引擎切到请求的会话」的原因原话；空表示切好了或不需要切。
+	// 界面据此提一句「历史可看，但接下来的话会写到原会话」，而不是静默撒谎。
+	BindErr string `json:"bind_err,omitempty"`
 }
 
 // ChatState 拉对话页快照。会话文件为空时用当前工作目录的引擎状态。
+//
+// 它是「用户点了某条历史会话」的唯一入口，所以必须做到两件事：
+//  1. **真的把引擎切到那个会话**。只把路径写进返回值等于撒谎：界面会以为
+//     自己在看历史，而引擎的当前会话仍是原来那条，下一句话就写错文件。
+//  2. 引擎没跑的时候不为了读历史而拉起它。读历史走会话文件，那本来就是
+//     引擎自己写的账本，比拉一个进程问它要快三个数量级（pi 起 Node 实测 3 秒）。
 func (a *App) ChatState(ctx context.Context, kind engine.Kind, sessionFile string) (*ChatState, error) {
 	if !kind.Valid() {
 		kind = a.kindOfSession(kind, sessionFile)
 	}
 	dir := a.Workspace()
-	if sessionFile != "" {
-		if d, err := a.Index(a.kindOfSession(kind, sessionFile)).Detail(sessionFile); err == nil && d.CWD != "" {
-			dir = d.CWD
-		}
+	detail, detailErr := a.sessionDetailFor(kind, sessionFile)
+	if detailErr == nil && detail.CWD != "" {
+		dir = detail.CWD
 	}
 	caps := a.Identity(kind).Caps
 	state := &ChatState{
@@ -64,46 +72,66 @@ func (a *App) ChatState(ctx context.Context, kind engine.Kind, sessionFile strin
 		Commands:    []engine.SlashCommand{},
 	}
 	e := a.EngineFor(kind, dir)
-	st, err := e.State(ctx)
-	if err != nil {
-		// 引擎没起来不算错误：界面要显示「输入框禁用 + 连不上」。
-		return state, nil
-	}
-	state.Session = st.SessionID
-	if st.SessionFile != "" {
-		state.SessionFile = st.SessionFile
-	}
-	state.EngineRunning = true
-	state.Streaming = st.IsStreaming
-	state.Model = st.Model
-	state.ThinkingLevel = st.ThinkingLevel
-	state.Context = st.ContextUsage
-	state.TokensPerSecond = st.TokensPerSecond
-	state.AutoCompaction = st.AutoCompaction
-	state.Queued = st.Queued
-	state.Levels = e.ThinkingLevels(ctx)
-	if stats, err := e.Stats(ctx); err == nil {
-		state.Stats = stats
-		if state.Context == nil {
-			state.Context = stats.ContextUsage
+
+	// 会话对齐：要看的会话与引擎当前的不是同一条时，真的切过去。
+	// 切不动（引擎正忙 / 有扩展拦下）就不切，但也不假装切了：
+	// SessionFile 保持请求值（界面会去看历史），BindErr 原话说清为什么没切。
+	bound := true
+	if sessionFile != "" && !samePath(e.CachedSessionFile(), sessionFile) {
+		if err := e.Switch(ctx, sessionFile); err != nil {
+			bound = false
+			state.BindErr = pkg.As(err).Message
+			if e.CachedSessionFile() != "" {
+				// 引擎仍停在别处：把真实会话说出来，界面别把它当成用户点的那条。
+				state.SessionFile = e.CachedSessionFile()
+			}
 		}
 	}
-	if msgs, err := e.Messages(ctx); err == nil && len(msgs) > 0 {
-		state.Messages = msgs
-	} else if state.SessionFile != "" {
-		// 引擎在跑但拿不到消息（换过会话 / 刚启动）时退回文件投影。
-		if d, err := a.Index(kind).Detail(state.SessionFile); err == nil {
-			state.Messages = itemsToRaw(d.Items)
+
+	// 引擎活着才问它要状态与消息。没跑就从文件投影——两条路径的投影规则同一份。
+	if e.Live() {
+		if st, err := e.State(ctx); err == nil {
+			state.EngineRunning = true
+			state.Session = st.SessionID
+			state.Streaming = st.IsStreaming
+			state.Model = st.Model
+			state.ThinkingLevel = st.ThinkingLevel
+			state.Context = st.ContextUsage
+			state.TokensPerSecond = st.TokensPerSecond
+			state.AutoCompaction = st.AutoCompaction
+			state.Queued = st.Queued
+			state.Levels = e.ThinkingLevels(ctx)
+			if stats, err := e.Stats(ctx); err == nil {
+				state.Stats = stats
+				if state.Context == nil {
+					state.Context = stats.ContextUsage
+				}
+			}
+			if bound {
+				if st.SessionFile != "" {
+					state.SessionFile = st.SessionFile
+				}
+			}
+			if msgs, err := e.Messages(ctx); err == nil && len(msgs) > 0 {
+				state.Messages = msgs
+			}
+			if caps.SlashCommands {
+				if cmds := e.Commands(ctx); len(cmds) > 0 {
+					state.Commands = cmds
+				}
+			} else {
+				state.Commands = e.Commands(ctx)
+			}
 		}
+	}
+
+	if len(state.Messages) == 0 && detailErr == nil {
+		// 引擎没跑、或刚切过去还没装载消息：用文件投影。
+		// omp 的会话文件没有 usage 条目时也能读出正文，这是唯一覆盖
+		// 「在终端里聊过、这里没进程」那种会话的来源。
+		state.Messages = itemsToRaw(detail.Items)
 	}
 	state.History = ProjectHistory(state.Messages)
-	if caps.SlashCommands {
-		if cmds := e.Commands(ctx); len(cmds) > 0 {
-			state.Commands = cmds
-		}
-	} else {
-		state.Commands = e.Commands(ctx)
-	}
 	if state.SessionFile == "" && sessionFile != "" {
 		state.SessionFile = sessionFile
 	}
@@ -113,6 +141,14 @@ func (a *App) ChatState(ctx context.Context, kind engine.Kind, sessionFile strin
 		a.RememberSession(kind, state.SessionFile)
 	}
 	return state, nil
+}
+
+// sessionDetailFor 读一条会话的文件投影；路径为空或读不到时返回空详情。
+func (a *App) sessionDetailFor(kind engine.Kind, sessionFile string) (*session.Detail, error) {
+	if sessionFile == "" {
+		return nil, pkg.New(pkg.CodeBadRequest, "没有指定会话", "")
+	}
+	return a.Index(kind).Detail(sessionFile)
 }
 
 // itemsToRaw 把文件投影的条目转回 message 形态，让投影只有一条路径。
@@ -164,10 +200,13 @@ func (a *App) Send(ctx context.Context, kind engine.Kind, sessionFile string, re
 		}
 	}
 	e := a.EngineFor(kind, dir)
-	if sessionFile != "" && !samePath(e.CurrentSessionFile(), sessionFile) && !e.Busy() {
+	if sessionFile != "" && !samePath(e.CurrentSessionFile(), sessionFile) {
 		// 打开的是历史会话：先切过去再发，否则消息会落到另一个会话里。
-		// 切换失败必须报错：忽略它意味着「用户以为在 A 里聊，实际发到了 B」——
-		// 这是最坏的一类错：内容写对了，位置错了，事后很难发现。
+		// 切换失败（含「正在回答、切不了」）必须报错：忽略它意味着
+		// 「用户以为在 A 里聊，实际发到了 B」——内容写对了，位置错了，事后很难发现。
+		if e.Busy() {
+			return "", pkg.New(pkg.CodeEngineBusy, "这个会话还没切过去：引擎正在回答，先停下来再发", "")
+		}
 		if err := e.Switch(ctx, sessionFile); err != nil {
 			return "", pkg.Wrap(pkg.CodeEngineBusy, "切不到这个会话，消息没有发出去", err)
 		}

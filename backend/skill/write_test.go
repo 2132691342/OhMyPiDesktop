@@ -1,6 +1,6 @@
 package skill
 
-// 保存技能正文只测会静默出错的两件：只认 SKILL.md、文件不存在或超限时拒绝写入。
+// 保存技能正文只测两件：只认 SKILL.md、文件不存在或超限时拒绝写入。
 
 import (
 	"os"
@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// 非 SKILL.md 的文件不许改：否则这个接口就是任意文件写入。
+// 非 SKILL.md 不许改：否则这个接口就是任意文件写入。
 func TestSaveContentRejectsOtherFiles(t *testing.T) {
 	dir := t.TempDir()
 	other := filepath.Join(dir, "notes.md")
@@ -21,7 +21,7 @@ func TestSaveContentRejectsOtherFiles(t *testing.T) {
 	}
 }
 
-// 写入的内容就是给的原文：frontmatter 由调用方原样带回来。
+// 写入内容就是给定原文，frontmatter 由调用方原样带回。
 func TestSaveContentWritesAndKeepsFrontmatter(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "SKILL.md")
@@ -42,7 +42,7 @@ func TestSaveContentWritesAndKeepsFrontmatter(t *testing.T) {
 	}
 }
 
-// 两种拒绝：文件不存在（不该凭空造一个技能）、正文超限（引擎每次启动都要读它）。
+// 两种拒绝：文件不存在（不该凭空造技能）、正文超限（引擎每次启动都要读它）。
 func TestSaveContentRejectsBadInput(t *testing.T) {
 	dir := t.TempDir()
 	if err := SaveContent(filepath.Join(dir, "SKILL.md"), "x"); err == nil {

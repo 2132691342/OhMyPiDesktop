@@ -1,7 +1,6 @@
 package git
 
-// 文件历史与单文件差异共享路径翻译（工作区相对路径 → 仓库根相对路径），
-// 错译会让界面显示「没有记录」，故放在一条用例里共用一个仓库。
+// 文件历史与单文件差异共享路径翻译（工作区相对 → 仓库根相对），错译会让界面显示「没有记录」。
 
 import (
 	"os"
@@ -64,8 +63,7 @@ func TestFileHistoryAndDiff(t *testing.T) {
 		t.Fatalf("期望差异里有一行新增的 two，得到 %d（%+v）", added, diff.DiffLines)
 	}
 
-	// 提交号不合法时必须拒绝，而不是把它当选项传给 git。
-	// （`--upload-pack=evil` 会被 git 当成参数注入，这条守住白名单。）
+	// 非法提交号必须拒绝，而不是把它当选项传给 git（防参数注入）。
 	if _, err := FileDiffInCommit(ws, "--upload-pack=evil", "a.txt"); err == nil {
 		t.Fatal("非法提交号应当被拒绝")
 	}

@@ -64,11 +64,12 @@ const busy = computed(() => Boolean(chat.switching))
       <AppIcon name="file" :size="14" />
     </button>
 
-    <el-dropdown trigger="click" max-height="360px" :disabled="!chat.models.length">
+    <el-dropdown trigger="click" max-height="360px" :disabled="!chat.models.length && !chat.modelsLoading">
       <button
         class="omp-btn sm ghost"
-        :class="{ 'is-loading': chat.switching === 'model' }"
+        :class="{ 'is-loading': chat.switching === 'model' || chat.modelsLoading }"
         :disabled="!chat.model || busy"
+        :title="chat.modelsLoading ? t('chat.modelsLoading') : t('chat.pickModel')"
       >
         <AppIcon name="cpu" :size="13" />
         <span class="model-label">{{ chat.model?.id || t('common.unknown') }}</span>
@@ -81,18 +82,26 @@ const busy = computed(() => Boolean(chat.switching))
             @click="emit('pickModel', m.provider, m.id)"
           >
             <span class="drop-row">
-              <span class="drop-id">{{ m.id }}</span>
-              <span class="drop-prov">{{ m.provider }}</span>
-              <span
-                v-if="m.provider === chat.model?.provider && m.id === chat.model?.id"
-                class="tag brand"
-              >
-                {{ t('chat.current') }}
+              <span class="drop-main">
+                <span class="drop-id">{{ m.id }}</span>
+                <span class="drop-prov">{{ m.provider }}</span>
+              </span>
+              <!-- 能力标记：推理与图片是选模型时真的会看的两个属性，
+                   不展示的话用户只能先选了再排错 -->
+              <span class="drop-caps">
+                <span v-if="m.reasoning" class="cap" :title="t('models.reasoning')">R</span>
+                <span v-if="m.input?.includes('image')" class="cap" :title="t('models.inputImage')">IMG</span>
+                <span
+                  v-if="m.provider === chat.model?.provider && m.id === chat.model?.id"
+                  class="tag brand"
+                >
+                  {{ t('chat.current') }}
+                </span>
               </span>
             </span>
           </el-dropdown-item>
           <el-dropdown-item v-if="!chat.models.length" disabled>
-            {{ t('chat.noModels') }}
+            {{ chat.modelsLoading ? t('chat.modelsLoading') : t('chat.noModels') }}
           </el-dropdown-item>
         </el-dropdown-menu>
       </template>
@@ -193,6 +202,31 @@ const busy = computed(() => Boolean(chat.switching))
 
 .drop-id {
   font-family: var(--omp-font-mono);
+}
+
+.drop-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.drop-caps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+/* 能力标记：两个字母的窄条，比图标省位置且不需要额外解释 */
+.cap {
+  padding: 0 4px;
+  border-radius: var(--omp-r-xs);
+  border: 1px solid var(--omp-line);
+  color: var(--omp-mute);
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-3xs);
+  line-height: 1.5;
 }
 
 .drop-prov {

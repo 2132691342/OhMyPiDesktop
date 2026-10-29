@@ -11,6 +11,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
+import EngineScopeBar from '@/components/common/EngineScopeBar.vue'
+import { useEngineScope } from '@/composables/useEngineScope'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
 import { useToasts } from '@/composables/useToasts'
@@ -31,12 +33,22 @@ const output = ref('')
 const restarting = ref(false)
 
 const kind = computed<EngineKind>(() => app.active)
-const caps = computed(() => app.capsOf(kind.value))
+// 本页作用域（omp / pi / 全部），不跟对话引擎联动。
+const { scope, set: setScope } = useEngineScope('plugins')
+const installedKinds = computed(() => app.installed.map((e) => e.kind))
+const writeKind = computed<EngineKind>(() => (scope.value === 'all' ? 'omp' : scope.value))
+const caps = computed(() => app.capsOf(writeKind.value))
+const engineParam = computed<EngineKind | undefined>(() => (scope.value === 'all' ? undefined : scope.value))
+
+/** 一行属于哪个引擎：「全部」下靠行自身的 engine_kind 定向写操作。 */
+function rowEngine(row: PluginRow): EngineKind {
+  return (row.engine_kind || writeKind.value) as EngineKind
+}
 
 async function load() {
   loading.value = true
   try {
-    const data = await api.plugins(kind.value)
+    const data = await api.plugins(engineParam.value)
     rows.value = data.plugins ?? []
     registry.value = data.registry_path ?? ''
     readError.value = data.read_error ?? ''
@@ -53,7 +65,7 @@ async function install() {
   installing.value = true
   output.value = ''
   try {
-    const res = await api.installPlugin(target, kind.value)
+    const res = await api.installPlugin(target, writeKind.value)
     output.value = res.output
     source.value = ''
     ElMessage.success(t('plugins.installed'))
@@ -81,7 +93,7 @@ async function uninstall(row: PluginRow) {
   busyName.value = row.plugin_name
   output.value = ''
   try {
-    const res = await api.uninstallPlugin(row.plugin_source, kind.value)
+    const res = await api.uninstallPlugin(row.plugin_source, rowEngine(row))
     output.value = res.output
     await load()
   } catch (err) {
@@ -95,7 +107,7 @@ async function uninstall(row: PluginRow) {
 async function restart() {
   restarting.value = true
   try {
-    await api.restartEngines(kind.value)
+    await api.restartEngines(writeKind.value)
     await app.refreshEngines()
     ElMessage.success(t('common.saved'))
   } catch (err) {
@@ -124,9 +136,10 @@ onMounted(load)
     <header class="page-head">
       <div>
         <h1 class="page-title">{{ t('plugins.title') }}</h1>
-        <p class="page-sub">{{ t('plugins.subtitle', { engine: kind }) }}</p>
+        <p class="page-sub">{{ t('plugins.scopedSubtitle') }}</p>
       </div>
       <div class="head-actions">
+        <EngineScopeBar :scope="scope" :installed="installedKinds" @pick="setScope" />
         <button class="omp-btn" :class="{ 'is-loading': restarting }" :disabled="restarting" @click="restart">
           <AppIcon name="refresh" :size="14" />
           {{ t('plugins.restart') }}
@@ -140,7 +153,7 @@ onMounted(load)
     <div v-if="!caps?.extensions" class="omp-empty">
       <span class="omp-tile omp-tile--lg omp-tile--neutral"><AppIcon name="plug" :size="22" /></span>
       <p class="omp-empty-title">{{ t('plugins.unsupported') }}</p>
-      <p class="omp-empty-hint">{{ t('plugins.unsupportedHint', { engine: kind }) }}</p>
+      <p class="omp-empty-hint">{{ t('plugins.unsupportedHint', { engine: scope }) }}</p>
     </div>
 
     <div v-else class="page-body">
@@ -194,6 +207,11 @@ onMounted(load)
         </div>
 
         <el-table v-else :data="rows" size="small">
+          <el-table-column :label="t('plugins.engine')" width="72">
+            <template #default="{ row }">
+              <span class="omp-mono">{{ row.engine_kind }}</span>
+            </template>
+          </el-table-column>
           <el-table-column :label="t('plugins.name')" min-width="180">
             <template #default="{ row }">
               <div class="cell-name">

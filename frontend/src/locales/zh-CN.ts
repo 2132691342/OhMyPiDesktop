@@ -2,6 +2,11 @@
 export default {
   app: {
     starting: '正在启动本地服务…',
+    closePromptTitle: '关闭窗口时要做什么？',
+    closePromptBody:
+      '收进托盘：应用继续在后台跑，对话不会中断，可以从托盘图标叫回来。\n退出：直接结束应用与所有引擎进程。\n\n这个选择会被记住，以后可以在设置里改。',
+    closeToTray: '收进托盘',
+    closeToQuit: '退出应用',
   },
   nav: {
     overview: '概览',
@@ -15,6 +20,11 @@ export default {
     usage: '用量',
     apps: '应用',
     settings: '设置',
+  },
+  scope: {
+    all: '全部',
+    hint: '这一页管哪个引擎：omp / pi / 两边一起看。不影响对话用的引擎。',
+    notInstalled: '{engine} 没有安装，装好后才能管它的东西',
   },
   overview: {
     title: '概览',
@@ -33,7 +43,11 @@ export default {
     spend: '花费',
     tokens: 'Tokens',
     turns: '会话数',
-    resources: '技能 + 插件 + MCP',
+    // 三张独立的读数卡。之前合成一个「技能 + 插件 + MCP」的合计：
+    // 三者不是同一种东西，合计出来也没有对应的行动。
+    capSkills: '技能',
+    capPlugins: '插件',
+    capMcp: 'MCP',
     byDay: '按天花费',
     byModel: '按模型 tokens',
     noUsage: '这段时间还没有用量',
@@ -50,6 +64,8 @@ export default {
   mcp: {
     title: 'MCP',
     subtitle: 'MCP 服务器给 {engine} 额外的工具。两个引擎共用 mcp.json 的同一份形状，所以这里一份代码管两边。',
+    scopedSubtitle: 'MCP 服务器给引擎额外的工具。上面选作用域：omp、pi 或两边一起看；两份 mcp.json 各自独立。',
+    probeScopeOnly: '实时探测要先确定是哪一个引擎：先把作用域切到 omp 或 pi。',
     subtitleSidebar: '{engine} 的 MCP 服务器',
     file: '配置文件',
     userLevel: '用户级',
@@ -173,6 +189,7 @@ export default {
     delete: '删除',
     edit: '编辑',
     close: '关闭',
+    quitApp: '退出应用',
     confirm: '确认',
     remove: '移除',
     refresh: '刷新',
@@ -276,6 +293,10 @@ export default {
     autoCompact: '自动压缩',
     current: '当前',
     noModels: '引擎还没报上可用模型',
+    modelsLoading: '正在取模型清单…',
+    pickModel: '换模型',
+    engineHandoff: '以下由 {engine} 接续（其上下文与新开一条会话等同）',
+    bindFailed: '历史可以看，但没能把引擎切到这条会话（{reason}）——现在发消息会写到原来的会话里。',
     thinkingDefault: '默认',
     queue: '排队',
     queueHint: '等这一轮结束后再说',
@@ -335,6 +356,8 @@ export default {
   models: {
     title: '模型',
     subtitle: '服务商与模型来自 {engine} 自己的配置文件；这里改的每一项，终端里的 {engine} 立刻也认。',
+    scopedSubtitle:
+      '服务商与模型来自各引擎自己的配置文件。上面选作用域：omp、pi 或两边一起看；不影响对话用的引擎。',
     providers: '服务商',
     addProvider: '新增服务商',
     editProvider: '编辑服务商',
@@ -352,7 +375,10 @@ export default {
     contextWindow: '上下文窗口',
     maxTokens: '最大输出',
     reasoning: '推理模型',
+    reasoningHint: '这个模型支持思考 / 推理档；给普通模型打开它会让上游报错',
     input: '输入',
+    inputText: '文本输入',
+    inputImage: '图片输入',
     login: '登录服务商',
     loginHint: '需要 OAuth 的服务商（Claude / Codex / Copilot 等）在这里登录，授权链接会自动打开。',
     loggedIn: '已登录',
@@ -368,6 +394,7 @@ export default {
   skills: {
     title: '技能',
     subtitle: '技能就是一段教模型「这件事怎么做」的说明。启停改的是 SKILL.md 头部那几行声明。',
+    scopedSubtitle: '技能就是一段教模型「这件事怎么做」的说明。上面选作用域：omp、pi 或两边一起看；不影响对话用的引擎。',
     create: '新建技能',
     createTitle: '新建技能',
     nameLabel: '技能名',
@@ -396,6 +423,8 @@ export default {
   plugins: {
     title: '插件',
     subtitle: '插件是 npm 包或本地目录，可以带来工具、命令与技能。装与卸都走 {engine} 自己的命令。',
+    scopedSubtitle: '插件是 npm 包或本地目录，可以带来工具、命令与技能。上面选作用域；装与卸走该引擎自己的命令。',
+    engine: '引擎',
     unsupported: '这个引擎没有可管理的插件',
     unsupportedHint: '{engine} 的扩展需要在它自己的配置文件里启停。',
     installPlaceholder: '包名或本地路径，例如 pi-crew 或 D:\\my-plugin',
@@ -453,6 +482,10 @@ export default {
     autoStartFailed: '改不了开机自启',
     restoreSession: '启动时回到上次那个会话',
     restoreSessionHint: '关掉后每次启动都是新对话，工作目录照旧恢复',
+    closeAction: '关闭窗口时',
+    closeActionHint: '收进托盘：应用与对话继续在后台；退出：直接结束应用与所有引擎进程',
+    closeToTray: '收进托盘',
+    closeToQuit: '退出应用',
     lastSession: '上次的会话',
     lastSessionNone: '没有记录（也许被删掉了）',
     dataDir: '数据目录',

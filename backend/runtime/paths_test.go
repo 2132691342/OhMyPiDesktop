@@ -1,7 +1,6 @@
 package runtime
 
-// 落盘位置只测会静默出错的两件：目录必须真的建出来、WebView2 缓存必须在数据目录里
-// （否则卸载时几十 MB 没人清理）。
+// 落盘位置只测两件：目录必须真的建出来、WebView2 缓存必须在数据目录里（否则卸载没人清理）。
 
 import (
 	"os"
@@ -24,7 +23,7 @@ func TestResolveCreatesDaemonDirs(t *testing.T) {
 			t.Fatalf("目录没建出来：%s（%v）", dir, err)
 		}
 	}
-	// WebView2 缓存必须落在数据目录内部：否则卸载时没人知道要删它。
+	// WebView2 缓存必须落在数据目录内部，否则卸载时没人知道要删它。
 	if !strings.HasPrefix(paths.WebViewDir, paths.DataDir) {
 		t.Fatalf("WebView2 缓存不在数据目录里：%s 不属于 %s", paths.WebViewDir, paths.DataDir)
 	}
@@ -33,7 +32,7 @@ func TestResolveCreatesDaemonDirs(t *testing.T) {
 	}
 }
 
-// 目录建不出来时必须报错，而不是返回一个半成品让后面的 WriteFile 各自失败。
+// 目录建不出来时必须报错，而不是返回半成品让后续 WriteFile 各自失败。
 func TestResolveFailsWhenDataDirUnwritable(t *testing.T) {
 	base := t.TempDir()
 	// 在 LOCALAPPDATA 的位置放一个普通文件：MkdirAll 一定失败。

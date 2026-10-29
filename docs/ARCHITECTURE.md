@@ -151,6 +151,15 @@ return」的分支——窗口建出来了但仍是隐藏的；紧随其后的 `
 哪些页面要显示「该引擎不支持」。三步判据、缓存策略与坑见
 [ENGINE-MATRIX.md §5](ENGINE-MATRIX.md)。
 
+**首屏路径永不阻塞在探测上。** 这两件事很容易被写回去，而两者都只表现为
+「打开应用卡几秒」，编译与其余测试全是绿的：
+
+- `detectAll(ctx, false)` 只交缓存并触发一次后台补验。它的子进程（pi 的
+  `--help` 要起 Node，实测 3.6 秒）不在任何请求的响应路径上。
+- `detectOnce` **先收齐结果再持锁写入**。持锁等 channel 会让所有读
+  `Identity` / `Workspace` / `Index` 的请求在 RLlock 上堆住，
+  表现出来就是探测虽然在后台、界面却照样卡四秒。
+
 **装不是探测的一部分。** 「应用」页单独拉 `GET /apps`：它在探测结果上多给三项
 （安装渠道、上游最新版、三条命令原文）并算好「能不能点」。升级与卸载怎么跑、
 渠道判错会出什么事，见 [modules/apps.md](modules/apps.md)。
@@ -162,6 +171,19 @@ return」的分支——窗口建出来了但仍是隐藏的；紧随其后的 `
 + 「去应用页安装」。不弹窗、不引导、不代装（代跑的是用户自己按下的那一下）。
 
 ## 一次对话的链路
+
+打开一条历史会话（`GET /chat/state?engine=&session=`）与发一轮是两条不同的路径：
+
+```
+ChatState:
+  读会话文件拿 cwd 与历史投影（引擎没跑时这就是全部）
+  → 引擎活着（Live）：真的 switch_session 到请求的会话 + 问它要状态/消息
+  → 引擎没跑：不为了读历史去拉一个（pi 冷启动 3 秒）
+  → 切不动（正忙 / 扩展拦下）：bind_err 说原话，不假装切好了
+```
+
+「真的切」是硬要求：只把路径写进返回值等于遍谎，界面会以为在看历史，
+而引擎的当前会话仍是原来那条，下一句话就写错文件。
 
 ```
 前端输入（带 engine + session + message）→ POST /chat/send
@@ -230,7 +252,8 @@ Supervisor                      // 按 (Kind, WorkDir) 管理 Engine
 引擎包内的文件分工：`engine.go` 是抽象（Kind / Caps / Dialect 接口），
 `proc.go` 是进程与命令收发，`readloop.go` 是读协程与分片，`process.go` 是拉起与重启，
 `session.go` 是会话命令，`frames.go` 是帧派发与一轮的收尾，`translate.go` 是事件翻译，
-`supervisor.go` 是按 (Kind, WorkDir) 管理实例的监督者，`probe.go` 是版本与种类探测，
+`supervisor.go` 是按 (Kind, WorkDir) 管理实例的监督者，`recycle.go` 是空闲实例回收与
+运行快照，`shutdown.go` 是退出路径上的快速停止，`probe.go` 是版本与种类探测，
 `channel.go` / `dist.go` / `latest.go` 是装与升级的分发事实，`rpcparams.go` / `wire.go`
 是 RPC 参数名与共有视图类型，`agents.go` 是子代理视图。引擎两家的私有帧差异收口在
 `engine/omp/dialect.go` 与 `engine/pi/dialect.go`，改协议翻译时没有「先读哪个」的疑问。

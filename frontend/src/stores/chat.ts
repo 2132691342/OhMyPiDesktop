@@ -32,6 +32,7 @@ export const useChatStore = defineStore('chat', () => {
   const levels = ref<string[]>([])
   // 可选模型清单：引擎的 get_available_models。切换走 RPC，不是本地开关。
   const models = ref<ModelRow[]>([])
+  const modelsLoading = ref(false)
   // 切换进行中的动作名（'model' / 'thinking' / 'new' / 'compact'），
   // 按钮靠它进 loading 并锁尺寸，避免连点造成两次切换打架。
   const switching = ref('')
@@ -59,6 +60,9 @@ export const useChatStore = defineStore('chat', () => {
   const retry = ref<{ attempt: number; max: number; delay_ms: number } | null>(null)
   const compacting = ref(false)
   const promptError = ref('')
+  // 切不到请求会话的原因（引擎正忙 / 扩展拦下）。它不会自动消失：
+  // 用户需要知道“历史可以看，但下一句话会写到另一条会话里”。
+  const bindErr = ref('')
   // 引擎通过 set_editor_text 要求回填输入框。它是一次性的，消费后置空。
   const draftOverride = ref('')
 
@@ -78,6 +82,9 @@ export const useChatStore = defineStore('chat', () => {
     sessionFile.value = state.session_file ?? ''
     workDir.value = state.work_dir ?? ''
     engineRunning.value = state.engine_running
+    // 切不到请求的会话时，引擎的当前会话仍是另一条。这时把“实际会写到哪里”
+    // 原话交给界面提示——静默把历史当当前会话看，下一句话就会落到错的文件里。
+    bindErr.value = state.bind_err ?? ''
     streaming.value = state.streaming
     model.value = state.model ?? null
     thinkingLevel.value = state.thinking_level ?? ''
@@ -117,18 +124,30 @@ export const useChatStore = defineStore('chat', () => {
   async function refresh(session = sessionFile.value) {
     const state = await api.chatState(kind.value, session || undefined)
     applyState(state)
+    // 模型清单跟着「当前引擎 + 当前模型」走：引擎可能被换过（装完插件重启、
+    // 改了 models 配置），而 get_available_models 的返回不会主动推过来。
+    // 不在这里跟一次，下拉里就会一直停着上一次的清单。
+    if (!models.value.length || !state.model) void loadModels()
     return state
   }
 
-  // 拉可选模型清单。失败不抛：模型清单拉不到时输入区仍应可用，
+// 拉可选模型清单。失败不抛：模型清单拉不到时输入区仍应可用，
   // 只是下拉里只剩「当前模型」一项。
+  //
+  // loading 单独暴露：这个请求会顺手把引擎拉起来（omp 冷启动实测 11 秒），
+  // 界面要能显示「正在取模型清单」而不是一个永远禁用的下拉。
   async function loadModels() {
+    if (modelsLoading.value) return models.value
+    modelsLoading.value = true
     try {
       const data = await api.models(kind.value)
       models.value = data.models ?? []
     } catch {
       models.value = []
+    } finally {
+      modelsLoading.value = false
     }
+    return models.value
   }
 
   // 换模型。失败要把显示值拨回去——否则界面上写着一个引擎并不认识的模型。
@@ -192,17 +211,26 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  // 切引擎：不切目录、不切会话，只换「跟哪个进程说话」。
-  // 当前会话属于另一个引擎，所以界面要开一轮新会话，并在消息流里留一句分隔提示。
+  // 切引擎：不切目录。当前会话属于另一个引擎，界面保留已看到的消息（可回看），
+  // 并在新引擎上开一条新会话接着聊——直接清空会让人以为上下文丢了。
   async function switchEngine(next: EngineKind) {
     if (next === kind.value) return
     switching.value = 'engine'
     try {
+      // 先把已看的消息并进历史，否则它们随 turn 一起被丢掉。
+      if (turn.value) finishTurn()
+      const kept = history.value
       kind.value = next
-      reset()
-      sessionFile.value = ''
       const state = await api.chatState(next, undefined)
       applyState(state)
+      // 流里插一条分隔：告诉用户“以下由 xxx 接续，前面的内容不在新会话里”。
+      // 它不是系统消息，只是界面层的标记，不会发进引擎。
+      // applyState 会用新引擎的历史覆盖，所以拼在它之后。
+      history.value = [
+        ...kept,
+        { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] },
+        ...history.value,
+      ]
     } finally {
       switching.value = ''
     }
@@ -327,6 +355,7 @@ export const useChatStore = defineStore('chat', () => {
     thinkingLevel,
     levels,
     models,
+    modelsLoading,
     switching,
     context,
     contextPercent,
@@ -349,6 +378,7 @@ export const useChatStore = defineStore('chat', () => {
     compacting,
     busy,
     promptError,
+    bindErr,
     draftOverride,
     applyState,
     applyPatch,

@@ -31,7 +31,32 @@ import (
 // live 为真时额外问一次引擎的连接状态（pi 有 `mcp list --json`，omp 没有），
 // 并把状态并到同一批行上。探测失败不算错误：配置照样给，
 // 只是状态栏留空——「引擎没起」不该让整页打不开。
+// McpList 列 MCP 服务器。kind 为空表示两个引擎都列（“全部”作用域）。
+//
+// live 只对单引擎有意义：实时探测要问引擎进程，而“两个引擎的实时状态”
+// 在同一个请求里拿不到一致快照——所以全部作用域不做 live。
 func (a *App) McpList(ctx context.Context, kind engine.Kind, live bool) (*domain.McpListVO, error) {
+	if kind.Valid() {
+		return a.mcpListOf(ctx, kind, live)
+	}
+	out := &domain.McpListVO{Servers: []domain.McpServerVO{}}
+	for _, k := range engine.AllKinds() {
+		one, err := a.mcpListOf(ctx, k, false)
+		if err != nil || one == nil {
+			// 一边的 mcp.json 坏了不该让另一边也看不见。
+			continue
+		}
+		out.Servers = append(out.Servers, one.Servers...)
+		out.ReadErrors = append(out.ReadErrors, one.ReadErrors...)
+		if out.UserPath == "" {
+			out.UserPath = one.UserPath
+		}
+	}
+	return out, nil
+}
+
+// mcpListOf 列一个引擎的 MCP 服务器。
+func (a *App) mcpListOf(ctx context.Context, kind engine.Kind, live bool) (*domain.McpListVO, error) {
 	k := a.KindOr(string(kind))
 	layout, err := a.Layout(k)
 	if err != nil {
@@ -64,6 +89,7 @@ func (a *App) McpList(ctx context.Context, kind engine.Kind, live bool) (*domain
 			entry := file.Servers[name]
 			enabled, byDeny := file.IsEnabled(name)
 			row := domain.McpServerVO{
+				EngineKind:     string(k),
 				ServerName:     name,
 				TransportKind:  entry.Transport(),
 				Desc:           entry.Description,
@@ -116,6 +142,7 @@ func (a *App) applyLiveStatus(ctx context.Context, kind engine.Kind, out *domain
 			continue
 		}
 		out.Servers = append(out.Servers, domain.McpServerVO{
+			EngineKind: string(kind),
 			ServerName: item.Name,
 			Enabled:    true,
 			ScopeKind:  "extension",

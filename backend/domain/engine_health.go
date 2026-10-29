@@ -72,6 +72,11 @@ type HealthVO struct {
 	Engines []EngineHealthVO `json:"engines"`
 	// ActiveKind 当前选中的引擎
 	ActiveKind string `json:"active_kind"`
+	// Refreshing 有后台补验在跑（探测 / 计数 / 最新版）
+	//
+	// 它是「现在屏幕上这些数字可能比实际旧一点」的唯一信号。
+	// 界面据此给一个不阻断操作的提示，而不是让用户以为已经是最新。
+	Refreshing bool `json:"refreshing"`
 	// Workspace 当前工作目录
 	Workspace string `json:"workspace"`
 	// DetectedAt 本次探测的时刻（Unix 毫秒）

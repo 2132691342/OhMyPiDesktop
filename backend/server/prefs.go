@@ -19,6 +19,15 @@ func (s *Server) prefsRoutes(api *gin.RouterGroup) {
 	api.POST("/prefs/autostart", s.setAutoStart)
 	api.POST("/prefs/restore", s.setRestoreSession)
 	api.POST("/prefs/session", s.rememberSession)
+	api.POST("/prefs/close-action", s.setCloseAction)
+	api.POST("/prefs/tray-hint-shown", func(c *gin.Context) {
+		s.run(c, func(*gin.Context) (any, error) {
+			if err := s.svc.MarkTrayHintShown(); err != nil {
+				return nil, err
+			}
+			return s.svc.Prefs(), nil
+		})
+	})
 	api.POST("/prefs/data-dir", func(c *gin.Context) {
 		s.run(c, func(*gin.Context) (any, error) { return nil, s.svc.OpenDataDir() })
 	})
@@ -47,6 +56,20 @@ func (s *Server) setRestoreSession(c *gin.Context) {
 	}
 	s.run(c, func(*gin.Context) (any, error) {
 		if err := s.svc.SetRestoreSession(body.Enabled); err != nil {
+			return nil, err
+		}
+		return s.svc.Prefs(), nil
+	})
+}
+
+// setCloseAction 改关窗行为：收托盘还是直接退出。
+func (s *Server) setCloseAction(c *gin.Context) {
+	var body domain.CloseActionREQ
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(*gin.Context) (any, error) {
+		if err := s.svc.SetCloseAction(body.Action); err != nil {
 			return nil, err
 		}
 		return s.svc.Prefs(), nil

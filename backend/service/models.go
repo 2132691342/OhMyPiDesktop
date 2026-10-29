@@ -33,11 +33,39 @@ type ModelRow struct {
 	Input         []string    `json:"input"`
 }
 
-// Models 列出引擎眼下的可用模型。
+// Models 列出引擎眼下的可用模型。kind 为空表示两个引擎都列。
+//
+// “都列”在这里真的有用：模型是「我现在能用什么」的问题，
+// 两个引擎各用不同的服务商配置，一屏对比才能决定下一句发给谁。
 func (a *App) Models(ctx context.Context, kind engine.Kind) ([]ModelRow, error) {
-	if !kind.Valid() {
-		kind = a.ActiveKind()
+	kinds := engine.AllKinds()
+	if kind.Valid() {
+		kinds = []engine.Kind{kind}
 	}
+	if len(kinds) == 1 {
+		return a.modelsOf(ctx, kinds[0])
+	}
+	// 两个引擎各自要拉一次进程（冷启动几秒），所以必须并发。
+	rows := make([][]ModelRow, len(kinds))
+	done := make(chan int, len(kinds))
+	for i, k := range kinds {
+		go func(i int, k engine.Kind) {
+			rows[i], _ = a.modelsOf(ctx, k)
+			done <- i
+		}(i, k)
+	}
+	for range kinds {
+		<-done
+	}
+	out := make([]ModelRow, 0, 16)
+	for _, row := range rows {
+		out = append(out, row...)
+	}
+	return out, nil
+}
+
+// modelsOf 只列一个引擎的模型。
+func (a *App) modelsOf(ctx context.Context, kind engine.Kind) ([]ModelRow, error) {
 	e := a.EngineFor(kind, a.Workspace())
 	list, err := e.AvailableModels(ctx)
 	if err != nil {
@@ -54,13 +82,32 @@ func (a *App) Models(ctx context.Context, kind engine.Kind) ([]ModelRow, error) 
 	return out, nil
 }
 
-// Providers 返回某引擎的服务商视图（密钥打码）。
+// Providers 返回服务商视图（密钥打码）。
 //
 // 两个引擎的配置文件格式完全不同，但视图形态一致：前端只认 ProvidersView。
+// kind 为空表示两个引擎都返回（“全部”作用域），每行带 engine_kind。
 func (a *App) Providers(kind engine.Kind) (*domain.ProvidersView, error) {
-	if !kind.Valid() {
-		kind = a.ActiveKind()
+	if kind.Valid() {
+		return a.providersOf(kind)
 	}
+	out := &domain.ProvidersView{Providers: []domain.ProviderView{}}
+	for _, k := range engine.AllKinds() {
+		one, err := a.providersOf(k)
+		if err != nil || one == nil {
+			// 一个引擎的配置读不了不该让整个页失败：
+			// 另一边的服务商仍然要能看、能改。
+			continue
+		}
+		if out.ConfigPath == "" {
+			out.ConfigPath = one.ConfigPath
+		}
+		out.Providers = append(out.Providers, one.Providers...)
+	}
+	return out, nil
+}
+
+// providersOf 只取一个引擎的服务商。
+func (a *App) providersOf(kind engine.Kind) (*domain.ProvidersView, error) {
 	layout, err := a.Layout(kind)
 	if err != nil {
 		return nil, err
@@ -74,6 +121,7 @@ func (a *App) Providers(kind engine.Kind) (*domain.ProvidersView, error) {
 		for _, name := range f.Names() {
 			p := f.Providers[name]
 			v := domain.ProviderView{
+				EngineKind:   string(kind),
 				ProviderName: name,
 				BaseURL:      p.BaseURL,
 				API:          p.API,
@@ -100,6 +148,7 @@ func (a *App) Providers(kind engine.Kind) (*domain.ProvidersView, error) {
 	out := &domain.ProvidersView{Providers: []domain.ProviderView{}, ConfigPath: view.Path}
 	for _, p := range view.Providers {
 		out.Providers = append(out.Providers, domain.ProviderView{
+			EngineKind:   string(kind),
 			ProviderName: p.Name, BaseURL: p.BaseURL, API: p.API, Auth: p.Auth,
 			APIKey: p.APIKey, HasKey: p.HasKey, Models: toDomainModels(p.Models),
 		})

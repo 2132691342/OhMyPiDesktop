@@ -11,6 +11,7 @@ import (
 
 	"OhMyPiDesktop/backend/pkg"
 	"OhMyPiDesktop/backend/server"
+	"OhMyPiDesktop/backend/service"
 )
 
 // Endpoint 返回本地服务地址与令牌。前端首屏只调这一个绑定方法。
@@ -129,15 +130,23 @@ func (a *App) WindowToggleMaximize() {
 	a.win.Maximise()
 }
 
-// WindowClose 关窗（收托盘，不退出）。
+// WindowClose 关窗（按设置收托盘或退出）。
 func (a *App) WindowClose() {
+	if a.closeAction() == service.CloseActionQuit {
+		a.requestQuit()
+		return
+	}
 	a.toTray()
 }
 
 // Quit 退出应用。
 func (a *App) Quit() {
-	a.quitting.Store(true)
-	if a.app != nil {
-		a.app.Quit()
-	}
+	a.requestQuit()
+}
+
+// ApplyCloseDecision 执行界面对「关窗时做什么」的选择。
+//
+// 只由首次收托盘的对话框调用：action 取 tray / quit，remember 为真时写进设置。
+func (a *App) ApplyCloseDecision(action string, remember bool) error {
+	return a.applyCloseDecision(action, remember)
 }

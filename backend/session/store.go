@@ -314,14 +314,16 @@ func (ix *Index) Detail(path string) (*Detail, error) {
 		var entry struct {
 			Type    string `json:"type"`
 			Message *struct {
-				Role       string          `json:"role"`
-				Content    json.RawMessage `json:"content"`
-				Model      string          `json:"model"`
-				Timestamp  int64           `json:"timestamp"`
-				ToolName   string          `json:"toolName"`
-				ToolCallID string          `json:"toolCallId"`
-				IsError    bool            `json:"isError"`
-				Usage      *struct {
+				Role         string          `json:"role"`
+				Content      json.RawMessage `json:"content"`
+				Model        string          `json:"model"`
+				Timestamp    int64           `json:"timestamp"`
+				ToolName     string          `json:"toolName"`
+				ToolCallID   string          `json:"toolCallId"`
+				IsError      bool            `json:"isError"`
+				ErrorMessage string          `json:"errorMessage"`
+				StopReason   string          `json:"stopReason"`
+				Usage        *struct {
 					TotalTokens int `json:"totalTokens"`
 					Cost        struct {
 						Total float64 `json:"total"`
@@ -357,7 +359,17 @@ func (ix *Index) Detail(path string) (*Detail, error) {
 		item := projectMessage(entry.Message.Role, entry.Message.Content, entry.Message.Model,
 			entry.Message.ToolName, entry.Message.ToolCallID, entry.Message.IsError, entry.Message.Timestamp)
 		if item == nil {
-			continue
+			// 正文投影为空但这一轮其实失败了（上游报错、被中止）：
+			// 这种消息在文件里没有 content，只有 errorMessage。丢掉它的后果是
+			// 「用户记得自己问过、界面却只剩前半段」，所以把它当一条错误正文留着。
+			if entry.Message.ErrorMessage != "" {
+				item = &Item{
+					Kind: "assistant", Role: entry.Message.Role, Text: entry.Message.ErrorMessage,
+					Model: entry.Message.Model, IsError: true, Timestamp: entry.Message.Timestamp,
+				}
+			} else {
+				continue
+			}
 		}
 		if entry.Message.Usage != nil {
 			item.Tokens = entry.Message.Usage.TotalTokens

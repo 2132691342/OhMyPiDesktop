@@ -25,6 +25,13 @@ const (
 	KeyLastSession    = "app.last_session"
 	KeyFontScale      = "ui.font_scale"
 	KeyReduceMotion   = "ui.reduce_motion"
+	// KeyCloseAction 是「点窗口关闭按钮时做什么」：tray（默认）/ quit。
+	//
+	// 为什么要可配：关窗静默收托盘在第一次用时看起来就是「关不掉」。
+	// 默认收托盘是为了不丢正在跑的对话，但用户必须能改成直接退。
+	KeyCloseAction = "app.close_action"
+	// KeyTrayHintShown 记录「收托盘」的首次提示是否已经看过（1 / 0）。
+	KeyTrayHintShown = "app.tray_hint_shown"
 )
 
 // RecentWorkspaceMax 最近工作目录的保留条数。
@@ -55,6 +62,11 @@ type ProvidersView struct {
 
 // ProviderView 是单个服务商的展示形态（密钥已打码）。
 type ProviderView struct {
+	// EngineKind 这条服务商属于哪个引擎（omp / pi）
+	//
+	// 两边的配置文件完全独立，同一个服务商名可以在两边各有一份。
+	// 界面在「全部」作用域下靠这个字段分组与路由写操作。
+	EngineKind string `json:"engine_kind"`
 	// ProviderName 服务商名，也是配置文件里那个键
 	ProviderName string `json:"provider_name"`
 	// BaseURL 接口地址

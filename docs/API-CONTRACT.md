@@ -44,6 +44,25 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 能力差异由 `Bootstrap.caps` 与 `ChatState.caps` 表达，前端据此隐藏控件——
 **不要靠接口报错来发现「不支持」**。
 
+### 两种引擎作用域
+
+管理页（模型 / 技能 / 插件 / MCP）与对话是两个独立的作用域：
+
+| | 对话 | 管理页 |
+|---|---|---|
+| 作用域来源 | 设置 `app.engine` | 页面自己的分段控件 |
+| 可取值 | `omp` / `pi` | `omp` / `pi` / **省略即全部** |
+| 影响 | 下一句话发给谁 | 本页列出、修改谁的东西 |
+
+管理页省略 `engine` 时，接口返回**两边合并**的清单，每行带 `engine_kind`
+（`ProviderView` / `McpServerVO`）；写入操作必须带具体的 `engine`。
+
+为什么要拆开：把两者绑在一起，就会出「想看一眼 pi 的技能，顺手把对话引擎
+也切了、当前会话还丢了」——而这两件事本来是两个问题。
+
+不进「全部」的两处：`/login/providers`（只有 omp 有 RPC 面）与 MCP 的
+`live=1`（两个引擎的实时状态拿不到一致快照）。
+
 ## 路由表
 
 ### 系统
@@ -61,6 +80,8 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | GET | `/prefs` | 应用偏好快照：设置 KV、`auto_start`（**真读注册表**）、`restore_session`、`last_session_file` 与标题、`data_dir`、`log_dir` |
 | POST | `/prefs/autostart` | 开关开机自启 `{enabled}` → 同 `/prefs`（写 `HKCU\...\Run`，不需要管理员） |
 | POST | `/prefs/restore` | 开关「启动时回到上次会话」`{enabled}` → 同 `/prefs` |
+| POST | `/prefs/close-action` | 关窗行为 `{action}`：`tray`（收进托盘）/ `quit`（退出）→ 同 `/prefs` |
+| POST | `/prefs/tray-hint-shown` | 记下「收托盘」的首次提示已经给过 → 同 `/prefs` |
 | POST | `/prefs/session` | 记住当前会话 `{engine_kind, session_file}` → 同 `/prefs` |
 | POST | `/prefs/data-dir` | 在资源管理器里打开数据目录 |
 | GET | `/config/files?engine=` | 引擎配置文件清单（`file_path / file_label / exists / size_bytes`） |
@@ -391,7 +412,7 @@ GET /events?since=41
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`8`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+当前：`9`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
 只增可选字段不需要。
 
 新增端点本身不需要升版本（前端没调它就不受影响）；

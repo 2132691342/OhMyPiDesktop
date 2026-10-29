@@ -5,6 +5,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
+import EngineScopeBar from '@/components/common/EngineScopeBar.vue'
+import { useEngineScope } from '@/composables/useEngineScope'
 import { api } from '@/api/http'
 import { useToasts } from '@/composables/useToasts'
 import { useAppStore } from '@/stores/app'
@@ -14,9 +16,13 @@ const { t } = useI18n()
 const toasts = useToasts()
 const app = useAppStore()
 
-/** 当前编辑/查看的引擎。两个引擎的配置文件格式完全不同，界面不能混着展示。 */
-const kind = computed<EngineKind>(() => app.active)
-const caps = computed(() => app.capsOf(kind.value))
+// 本页的作用域（omp / pi / 全部），不跟对话引擎联动。
+const { scope, set: setScope } = useEngineScope('models')
+const installedKinds = computed(() => app.installed.map((e) => e.kind))
+
+/** 写操作必须落在一个具体引擎上：作用域是「全部」时靠行上的 engine_kind 定向。 */
+const writeKind = computed<EngineKind>(() => (scope.value === 'all' ? 'omp' : scope.value))
+const caps = computed(() => app.capsOf(writeKind.value))
 
 const providers = ref<ProviderView[]>([])
 const configPath = ref('')
@@ -40,6 +46,8 @@ const form = ref<{ name: string; base_url: string; api: string; api_key: string;
   models: [],
 })
 const editing = ref('')
+// 正在编辑的那一行属于哪个引擎（"全部"作用域下新建时取当前作用域）。
+const editingKind = ref<EngineKind>('omp')
 
 const apiOptions = [
   'openai-completions',
@@ -49,10 +57,13 @@ const apiOptions = [
   'openai-codex-responses',
 ]
 
+// api 的 engine 参数：'all' 时省略，后端会两个都返回。
+const engineParam = computed<EngineKind | undefined>(() => (scope.value === 'all' ? undefined : scope.value))
+
 async function loadProviders() {
   loadingProviders.value = true
   try {
-    const view = await api.providers(kind.value)
+    const view = await api.providers(engineParam.value)
     providers.value = view.providers ?? []
     configPath.value = view.config_path
   } catch (err) {
@@ -66,7 +77,7 @@ async function loadProviders() {
 async function loadModels() {
   loadingModels.value = true
   try {
-    const data = await api.models(kind.value)
+    const data = await api.models(engineParam.value)
     models.value = data.models ?? []
     engineMissing.value = false
   } catch {
@@ -78,9 +89,14 @@ async function loadModels() {
 }
 
 async function loadLogins() {
+  // 登录只有 omp 有 RPC 面；作用域是 pi / 全部时不发这个请求。
+  if (scope.value !== 'omp' && scope.value !== 'all') {
+    logins.value = []
+    return
+  }
   loadingLogins.value = true
   try {
-    const data = await api.loginProviders(kind.value)
+    const data = await api.loginProviders('omp')
     logins.value = data.providers ?? []
   } catch {
     logins.value = []
@@ -91,12 +107,15 @@ async function loadLogins() {
 
 function openCreate() {
   editing.value = ''
+  editingKind.value = writeKind.value
   form.value = { name: '', base_url: '', api: 'openai-completions', api_key: '', models: [] }
   dialogOpen.value = true
 }
 
 function openEdit(view: ProviderView) {
   editing.value = view.provider_name
+  // 记住这一行属于哪个引擎：编辑同名服务商时不能写到另一个引擎的文件里。
+  editingKind.value = (view.engine_kind || writeKind.value) as EngineKind
   form.value = {
     name: view.provider_name,
     base_url: view.base_url,
@@ -109,11 +128,37 @@ function openEdit(view: ProviderView) {
 }
 
 function addModel() {
-  form.value.models = [...form.value.models, { model_id: '', model_name: '', context_window: 128000, max_tokens: 8192 }]
+  form.value.models = [
+    ...form.value.models,
+    // 新建默认 text 输入：绝大多数模型只收文本，写成 image 会让配置报错
+    { model_id: '', model_name: '', context_window: 128000, max_tokens: 8192, reasoning: false, input: ['text'] },
+  ]
 }
 
 function removeModel(index: number) {
   form.value.models = form.value.models.filter((_, i) => i !== index)
+}
+
+/** 勾/取消推理模型。 */
+function setReasoning(index: number, on: boolean): void {
+  const list = [...form.value.models]
+  list[index] = { ...list[index], reasoning: on }
+  form.value.models = list
+}
+
+/** 模型是否声明了某种输入模态。 */
+function hasInput(model: ModelEntry, kind: string): boolean {
+  return (model.input ?? []).includes(kind)
+}
+
+/** 勾/取消一种输入模态。至少保留 text：空数组在引擎那边等价于“什么都收不了”。 */
+function setInput(index: number, kind: string, on: boolean): void {
+  const list = [...form.value.models]
+  const current = list[index].input ?? []
+  let next = on ? [...current.filter((v) => v !== kind), kind] : current.filter((v) => v !== kind)
+  if (!next.length) next = ['text']
+  list[index] = { ...list[index], input: next }
+  form.value.models = list
 }
 
 async function save() {
@@ -127,12 +172,13 @@ async function save() {
       api_key: form.value.api_key.trim(),
       models: form.value.models.filter((m) => m.model_id.trim()),
     }
-    const view = await api.upsertProvider(name, payload, kind.value)
-    providers.value = view.providers ?? []
-    configPath.value = view.config_path
+    // 写入必须落到一个具体引擎：编辑已有行时用它自己的 engine_kind，
+    // 新建时用当前作用域（「全部」时退回 omp）。
+    const target = editing.value ? editingKind.value : writeKind.value
+    await api.upsertProvider(name, payload, target)
     dialogOpen.value = false
     toasts.push('ok', t('common.saved'))
-    await loadModels()
+    await Promise.all([loadProviders(), loadModels()])
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
@@ -151,9 +197,11 @@ async function remove(view: ProviderView) {
     return
   }
   try {
-    const next = await api.deleteProvider(view.provider_name, kind.value)
-    providers.value = next.providers ?? []
+    // 删除必须落在行自己的引擎上："全部"下两个引擎可能同名。
+    const target = (view.engine_kind || writeKind.value) as EngineKind
+    await api.deleteProvider(view.provider_name, target)
     toasts.push('ok', t('common.saved'))
+    await Promise.all([loadProviders(), loadModels()])
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   }
@@ -162,7 +210,7 @@ async function remove(view: ProviderView) {
 async function login(provider: LoginProvider) {
   loggingIn.value = provider.id
   try {
-    await api.startLogin(provider.id, kind.value)
+    await api.startLogin(provider.id, 'omp')
     toasts.push('info', t('models.loginHint'))
     await loadLogins()
     await loadModels()
@@ -179,7 +227,7 @@ async function reload() {
   await Promise.all([loadProviders(), loadModels(), loadLogins()])
 }
 
-watch(kind, () => {
+watch(scope, () => {
   providers.value = []
   models.value = []
   logins.value = []
@@ -196,9 +244,10 @@ onMounted(() => {
     <header class="page-head">
       <div>
         <h1 class="page-title">{{ t('models.title') }}</h1>
-        <p class="page-sub">{{ t('models.subtitle', { engine: kind }) }}</p>
+        <p class="page-sub">{{ t('models.scopedSubtitle') }}</p>
       </div>
       <div class="head-actions">
+        <EngineScopeBar :scope="scope" :installed="installedKinds" @pick="setScope" />
         <button class="omp-btn icon ghost" :class="{ 'is-loading': loadingProviders }" :title="t('common.refresh')" @click="loadProviders">
           <AppIcon name="refresh" :size="15" />
         </button>
@@ -223,9 +272,10 @@ onMounted(() => {
           <button class="omp-btn sm primary" @click="openCreate">{{ t('models.addProvider') }}</button>
         </div>
         <div v-else class="grid">
-          <article v-for="view in providers" :key="view.provider_name" class="provider-card card-pad">
+          <article v-for="view in providers" :key="`${view.engine_kind}:${view.provider_name}`" class="provider-card card-pad">
             <div class="provider-head">
               <span class="provider-name">{{ view.provider_name }}</span>
+              <span class="tag engine-tag">{{ view.engine_kind }}</span>
               <span class="tag" :class="view.has_key ? 'ok' : 'warn'">
                 {{ view.has_key ? t('models.keyHidden') : t('models.apiKey') }}
               </span>
@@ -245,7 +295,12 @@ onMounted(() => {
               </div>
             </div>
             <div class="model-chips">
-              <span v-for="model in view.models" :key="model.model_id" class="tag">{{ model.model_id }}</span>
+              <span v-for="model in view.models" :key="model.model_id" class="tag model-chip">
+                {{ model.model_id }}
+                <!-- 能力标记：选模型时真会看的两个属性，直接标在 id 旁边 -->
+                <b v-if="model.reasoning" class="chip-cap" :title="t('models.reasoning')">R</b>
+                <b v-if="model.input?.includes('image')" class="chip-cap" :title="t('models.inputImage')">IMG</b>
+              </span>
               <span v-if="!view.models?.length" class="tag warn">{{ t('models.addModel') }}</span>
             </div>
             <div class="provider-actions">
@@ -348,11 +403,51 @@ onMounted(() => {
         <span class="field-label">{{ t('models.modelsLabel') }}</span>
         <button class="omp-btn text sm" @click="addModel">{{ t('models.addModel') }}</button>
       </div>
+      <!-- 表头：四个字段各自的含义写在列头上，不靠占位符（输入后就消失了） -->
+      <div v-if="form.models.length" class="model-row model-head">
+        <span>{{ t('models.modelId') }}</span>
+        <span>{{ t('common.name') }}</span>
+        <span>{{ t('models.contextWindow') }}</span>
+        <span>{{ t('models.maxTokens') }}</span>
+        <span>{{ t('models.reasoning') }}</span>
+        <span>{{ t('models.input') }}</span>
+        <span />
+      </div>
       <div v-for="(model, index) in form.models" :key="index" class="model-row">
         <input v-model="model.model_id" class="omp-input" :placeholder="t('models.modelId')" />
         <input v-model="model.model_name" class="omp-input" :placeholder="t('common.name')" />
         <input v-model.number="model.context_window" class="omp-input num-input" type="number" :placeholder="t('models.contextWindow')" />
         <input v-model.number="model.max_tokens" class="omp-input num-input" type="number" :placeholder="t('models.maxTokens')" />
+        <!-- 推理模型：勾上才会把 reasoning 写进配置（默认不写，
+             因为给非推理模型打开它会让上游报错） -->
+        <label class="cap-check" :title="t('models.reasoningHint')">
+          <input
+            type="checkbox"
+            :checked="Boolean(model.reasoning)"
+            @change="(e: Event) => setReasoning(index, (e.target as HTMLInputElement).checked)"
+          />
+          <span>R</span>
+        </label>
+        <!-- 输入模态：两个逐选，而不是自由文本——
+             写错一个词会让配置静默失效 -->
+        <div class="cap-inputs">
+          <label class="cap-check" :title="t('models.inputText')">
+            <input
+              type="checkbox"
+              :checked="hasInput(model, 'text')"
+              @change="(e: Event) => setInput(index, 'text', (e.target as HTMLInputElement).checked)"
+            />
+            <span>TXT</span>
+          </label>
+          <label class="cap-check" :title="t('models.inputImage')">
+            <input
+              type="checkbox"
+              :checked="hasInput(model, 'image')"
+              @change="(e: Event) => setInput(index, 'image', (e.target as HTMLInputElement).checked)"
+            />
+            <span>IMG</span>
+          </label>
+        </div>
         <button class="omp-btn icon ghost danger" :title="t('common.delete')" @click="removeModel(index)">
           <AppIcon name="close" :size="13" />
         </button>
@@ -450,6 +545,13 @@ onMounted(() => {
   gap: var(--omp-sp-2);
 }
 
+/* 引擎标签：作用域为「全部」时，一眼能分出这一行属于谁 */
+.engine-tag {
+  font-family: var(--omp-font-mono);
+  text-transform: lowercase;
+  margin-right: auto;
+}
+
 .provider-name {
   font-size: var(--omp-fs-base);
   font-weight: 650;
@@ -491,6 +593,19 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  align-items: center;
+}
+
+/* 模型胶囊里的能力字母：比胶囊本身更淡，不抢 id 的注意力 */
+.chip-cap {
+  margin-left: 4px;
+  padding: 0 3px;
+  border-radius: var(--omp-r-xs);
+  background: var(--omp-brand-soft);
+  color: var(--omp-brand);
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-3xs);
+  font-weight: 600;
 }
 
 .provider-actions {
@@ -596,9 +711,40 @@ onMounted(() => {
 
 .model-row {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 100px 100px auto;
+  grid-template-columns: 1.4fr 1fr 100px 100px 44px 108px auto;
   gap: var(--omp-sp-2);
   align-items: center;
+}
+
+/* 列头：静止的小字，不是可点控件 */
+.model-head {
+  padding-bottom: var(--omp-sp-1);
+  border-bottom: 1px solid var(--omp-line);
+  font-size: var(--omp-fs-3xs);
+  font-weight: 600;
+  color: var(--omp-mute);
+}
+
+/* 能力勾选：一个方块加一个短标签，宽度固定好对齐 */
+.cap-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-mute);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cap-check input {
+  accent-color: var(--omp-brand);
+  margin: 0;
+}
+
+.cap-inputs {
+  display: flex;
+  gap: var(--omp-sp-2);
 }
 
 .num-input {

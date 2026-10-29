@@ -18,6 +18,15 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * ApplyCloseDecision 执行界面对「关窗时做什么」的选择。
+ * 
+ * 只由首次收托盘的对话框调用：action 取 tray / quit，remember 为真时写进设置。
+ */
+export function ApplyCloseDecision(action: string, remember: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2972345636, action, remember);
+}
+
+/**
  * Endpoint 返回本地服务地址。
  * 
  * 它会**等到服务真的在监听**再返回。前端在 WebView 加载完就调这个方法，
@@ -76,7 +85,7 @@ export function Ready(): $CancellablePromise<void> {
 }
 
 /**
- * WindowClose 关窗（收托盘，不退出）。
+ * WindowClose 关窗（按设置收托盘或退出）。
  */
 export function WindowClose(): $CancellablePromise<void> {
     return $Call.ByID(1989283186);

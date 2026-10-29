@@ -7,6 +7,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
+import EngineScopeBar from '@/components/common/EngineScopeBar.vue'
+import { useEngineScope } from '@/composables/useEngineScope'
 import CodeEditor from '@/components/common/CodeEditor.vue'
 import { api } from '@/api/http'
 import { useToasts } from '@/composables/useToasts'
@@ -23,7 +25,17 @@ const toasts = useToasts()
 const app = useAppStore()
 
 const kind = computed<EngineKind>(() => app.active)
-const caps = computed(() => app.capsOf(kind.value))
+// 本页作用域（omp / pi / 全部），不跟对话引擎联动。
+const { scope, set: setScope } = useEngineScope('skills')
+const installedKinds = computed(() => app.installed.map((e) => e.kind))
+const writeKind = computed<EngineKind>(() => (scope.value === 'all' ? 'omp' : scope.value))
+const caps = computed(() => app.capsOf(writeKind.value))
+const engineParam = computed<EngineKind | undefined>(() => (scope.value === 'all' ? undefined : scope.value))
+
+/** 一行属于哪个引擎：「全部」下靠行自身的 kind 定向写操作。 */
+function rowEngine(row: SkillRow): EngineKind {
+  return (row.kind || writeKind.value) as EngineKind
+}
 
 const rows = ref<SkillRow[]>([])
 const loading = ref(false)
@@ -66,7 +78,7 @@ const nameInvalid = computed(() => !draft.value.name.trim() || /[\\/:*?"<>|]/.te
 async function load() {
   loading.value = true
   try {
-    const data = await api.skills(kind.value)
+    const data = await api.skills(engineParam.value)
     rows.value = data.skills ?? []
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
@@ -80,7 +92,7 @@ async function toggle(row: SkillRow, enabled: boolean) {
   row.enabled = enabled
   toggling.value = row.path
   try {
-    await api.toggleSkill(row.path, enabled, kind.value)
+    await api.toggleSkill(row.path, enabled, rowEngine(row))
   } catch (err) {
     row.enabled = before
     toasts.push('error', err instanceof Error ? err.message : String(err))
@@ -124,7 +136,7 @@ async function saveContent() {
   if (!row || saving.value) return
   saving.value = true
   try {
-    const data = await api.saveSkillContent(kind.value, row.path, draftContent.value)
+    const data = await api.saveSkillContent(rowEngine(row), row.path, draftContent.value)
     content.value = data.content ?? draftContent.value
     draftContent.value = content.value
     editing.value = false
@@ -150,7 +162,7 @@ async function remove(row: SkillRow) {
   }
   deleting.value = row.path
   try {
-    await api.deleteSkill(row.path, kind.value)
+    await api.deleteSkill(row.path, rowEngine(row))
     toasts.push('ok', t('common.saved'))
     await load()
   } catch (err) {
@@ -169,7 +181,7 @@ async function create() {
   if (nameInvalid.value || creating.value) return
   creating.value = true
   try {
-    await api.createSkill(draft.value.name.trim(), draft.value.description.trim(), draft.value.body, kind.value)
+    await api.createSkill(draft.value.name.trim(), draft.value.description.trim(), draft.value.body, writeKind.value)
     toasts.push('ok', t('common.saved'))
     createOpen.value = false
     await load()
@@ -193,9 +205,10 @@ onMounted(load)
     <header class="page-head">
       <div>
         <h1 class="page-title">{{ t('skills.title') }}</h1>
-        <p class="page-sub">{{ t('skills.subtitle') }}</p>
+        <p class="page-sub">{{ t('skills.scopedSubtitle') }}</p>
       </div>
       <div class="head-actions">
+        <EngineScopeBar :scope="scope" :installed="installedKinds" @pick="setScope" />
         <span class="count">{{ t('skills.count', { n: rows.length }) }}</span>
         <button
           class="omp-btn icon ghost"

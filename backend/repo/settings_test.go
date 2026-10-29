@@ -1,6 +1,6 @@
 package repo
 
-// 设置存储只测会静默出错的三条：写后能读回（含重启）、空值等于删除、坏文件不让应用起不来。
+// 设置存储只测静默出错的三条：写后读回（含重启）、空值等于删除、坏文件不让应用起不来。
 
 import (
 	"encoding/json"
@@ -47,7 +47,7 @@ func TestSetThenReopen(t *testing.T) {
 	}
 }
 
-// 空值等于删除：否则文件里会堆一串 "key": ""，界面上还得再判断一次空。
+// 空值等于删除：否则文件里堆一串 "key": ""，界面还要再判断一次空。
 func TestSetEmptyDeletes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	s, err := Open(path)
@@ -76,8 +76,7 @@ func TestSetEmptyDeletes(t *testing.T) {
 	}
 }
 
-// 设置文件坏了不能让应用起不来：改名留档 + 用空设置继续，
-// 用户至少还能打开应用去改回来。
+// 坏文件不能让应用起不来：改名留档 + 用空设置继续，用户至少还能打开去改回来。
 func TestOpenBrokenFileDoesNotFail(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")

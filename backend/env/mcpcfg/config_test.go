@@ -48,9 +48,7 @@ func jsonEqual(x, y any) bool {
 	}
 }
 
-// 一个包一份测试，同一主题合成一条表驱动：这里的主题是
-// 「读写 mcp.json 时不抹掉别人的键」——写错了不会报错，只会在下次引擎
-// 启动时静默丢配置，所以必须测。
+// 读写 mcp.json 时不抹掉别人的键：写错了不会报错，只会在引擎下次启动时静默丢配置。
 
 func TestReadWritePreservesUnknown(t *testing.T) {
 	dir := t.TempDir()
@@ -136,8 +134,7 @@ func TestReadWritePreservesUnknown(t *testing.T) {
 	}
 }
 
-// 启用状态的优先级：停用名单 > 强制启用名单 > 条目 enabled > 默认开。
-// 排错顺序的后果是「界面显示已启用、引擎根本不连」，所以单独一条。
+// 启用优先级：停用名单 > 强制启用名单 > 条目 enabled > 默认开。
 func TestIsEnabledPrecedence(t *testing.T) {
 	yes, no := true, false
 	cases := []struct {

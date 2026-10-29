@@ -74,9 +74,11 @@ func (a *App) Bootstrap(ctx context.Context) (*Bootstrap, error) {
 			b.Sessions[string(kind)] = len(list)
 			allSessions = append(allSessions, list...)
 		}
-		if skills, err := a.Skills(kind); err == nil {
-			b.Skills[string(kind)] = len(skills)
-		}
+		// 技能数走同一份计数快照，不在这里再扫一次目录。
+		// 之前这里直接调 a.Skills(kind)，它会遍历插件的 node_modules——
+		// 在装了十几个插件的机器上实测要 4.6 秒，而 Health 用的是缓存计数，
+		// 于是「同一个数字在两个接口里不一样」，且首屏白白多等四秒。
+		b.Skills[string(kind)] = a.countsOf(kind).skills
 	}
 	b.Workspaces, _ = a.RecentWorkspaces(allSessions)
 	return b, nil

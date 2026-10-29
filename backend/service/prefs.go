@@ -16,6 +16,13 @@ import (
 // 这三件事都不该由 HTTP handler 直接做——「开关一个设置」背后牵着注册表、
 // 设置 KV 与引擎会话三处，只有编排层同时看得到它们。
 
+// 关窗行为只有两种：收托盘（保持对话活着）与直接退出（进程结束）。
+// 不需要第三种：最小化已经存在，而“关窗问一下”会让每次关闭多一次点击。
+const (
+	CloseActionTray = "tray"
+	CloseActionQuit = "quit"
+)
+
 // AutoStart 报告开机自启是否打开。
 //
 // 以注册表为准而不是设置文件：用户可能在任务管理器里禁掉启动项，
@@ -49,6 +56,35 @@ func (a *App) RestoreSession() bool {
 // SetRestoreSession 改「启动时回到上次会话」。
 func (a *App) SetRestoreSession(enabled bool) error {
 	return a.Store.Set(domain.KeyRestoreSession, boolFlag(enabled))
+}
+
+// CloseAction 返回关窗行为：tray / quit。
+func (a *App) CloseAction() string {
+	if a.Store.Get(domain.KeyCloseAction) == CloseActionQuit {
+		return CloseActionQuit
+	}
+	return CloseActionTray
+}
+
+// SetCloseAction 改关窗行为。
+func (a *App) SetCloseAction(action string) error {
+	if action != CloseActionQuit {
+		action = CloseActionTray
+	}
+	return a.Store.Set(domain.KeyCloseAction, action)
+}
+
+// TrayHintPending 报告是否需要给一次「收托盘」的首次提示。
+//
+// 只提示一次：每次关窗都弹一下是把用户当犯错的人对待。
+// 看过之后就不再打扰，直到用户自己改回去。
+func (a *App) TrayHintPending() bool {
+	return a.Store.Get(domain.KeyTrayHintShown) != "1"
+}
+
+// MarkTrayHintShown 记下「收托盘」的首次提示已经给过。
+func (a *App) MarkTrayHintShown() error {
+	return a.Store.Set(domain.KeyTrayHintShown, "1")
 }
 
 // LastSession 返回上次打开的会话文件与它所属的引擎。
@@ -114,6 +150,8 @@ func (a *App) Prefs() domain.AppPrefsVO {
 		LastEngineKind:  string(kind),
 		DataDir:         a.appDir,
 		LogDir:          filepath.Join(a.appDir, "logs"),
+		CloseAction:     a.CloseAction(),
+		TrayHintPending: a.TrayHintPending(),
 	}
 	if session != "" {
 		if d, err := a.Index(kind).Detail(session); err == nil {

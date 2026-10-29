@@ -1,23 +1,10 @@
 package desktop
 
-// 绑定契约的回归门：前端拿到的绑定调用必须与后端注册的方法对得上。
+// 绑定契约回归门：前端生成物的绑定路径与每个绑定 id 都必须与后端运行时一致。
 //
-// 为什么这道门存在：Wails v3 的绑定 id 是 FNV32a(导入路径.类型.方法)。
-// 后端把 desktop 包从仓库根挪到 backend/ 之后，导入路径变了，
-// 前端那份生成物里的 id 就全部变成死数字——运行时查表查不到，
-// 表现是「点任何按钮都没反应」，而不是任何一条报错。
-//
-// 这类问题不会自己暴露：编译通过、类型检查通过、单元测试全绿，
-// 只有真的在 WebView 里点一下才知道。而 CI 当时报的
-// 「找不到模块 @wails/OhMyPiDesktop/desktop/app」只是它的一个副作用，
-// 真正致命的那一半（id 对不上）连报错都没有。
-//
-// 所以这道门同时盯两件事：
-//  1. 前端 import 的那个路径，必须是「现在这个包」生成出来的路径；
-//  2. 那个文件里的每个 id，必须等于后端运行时真正注册的那个 id。
-//
-// 两件事都从「后端现在的样子」推出来，不写死任何路径：
-// 路径变了门会失败，id 变了门也会失败——而这正是它该失败的时候。
+// 为什么：Wails v3 的绑定 id 由 FNV32a(导入路径.类型.方法) 算出。挪包或改绑定面会让
+// 前端那份生成物里的 id 变成死数字——编译、类型检查、单元测试全绿，只有真在 WebView
+// 里点一下才发现「按钮没反应」。所以这里从「后端现在的样子」推出路径与 id，不写死。
 
 import (
 	"fmt"
@@ -107,15 +94,13 @@ func frontendBindingImport(t *testing.T) string {
 	return string(m[1])
 }
 
-// readBindings 读前端生成物，抽出「方法名 → 绑定 id」。
-//
-// 解析失败返回错误而不是空表：空表会让下面的断言「零条不匹配」而假绿。
+// readBindings 读前端生成物，抽出「方法名 → 绑定 id」；解析失败报错而非返回空表（空表会假绿）。
 func readBindings(t *testing.T, rel string) map[string]uint32 {
 	t.Helper()
 	path := filepath.Join(repoRoot(t), "frontend", "bindings", filepath.FromSlash(rel), "app.ts")
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("读不到前端绑定 %s：%v", path, err)
+		t.Fatalf("读不到前端绑定 %s：%v（生成命令是 `wails3 generate bindings -clean=true -ts -i`）", path, err)
 	}
 	out := map[string]uint32{}
 	current := ""
@@ -157,11 +142,7 @@ func splitLines(s string) []string {
 	return out
 }
 
-// TestBindingPathMatchesPackage 断言前端 import 的绑定路径就是这个包生成出来的。
-//
-// 后端包挪位置时（desktop → backend/desktop），生成物的目录也跟着挪。
-// 前端还 import 老路径的话，要么类型检查报「找不到模块」，
-// 要么更糟：文件还在，但里面的 id 全是死数字。
+// 前端 import 的绑定路径必须等于这个包现在生成出来的路径（挪包后目录跟着挪）。
 func TestBindingPathMatchesPackage(t *testing.T) {
 	got := frontendBindingImport(t)
 	// 前端 import 带模块名（@wails/<模块>/<包路径>/app），这里只比包路径那一段。
@@ -187,10 +168,7 @@ func stripModule(p string) string {
 	return p
 }
 
-// TestBindingIDsMatchRuntime 断言前端生成物里的绑定 id 与后端真实注册的一致。
-//
-// 后端侧 id 由「导入路径.类型.方法」算出：导入路径是模块名加包路径，
-// 类型是 App，方法是导出的绑定方法名。这与 Wails 运行时注册时用的是同一条公式。
+// 前端生成物里的绑定 id 必须等于后端运行时注册的值（同一条 FNV32a 公式）。
 func TestBindingIDsMatchRuntime(t *testing.T) {
 	rel := frontendBindingImport(t)
 	bindings := readBindings(t, rel)
@@ -198,6 +176,7 @@ func TestBindingIDsMatchRuntime(t *testing.T) {
 	// 后端真实暴露给前端的绑定方法。少列一个不会漏，
 	// 多列一个会失败——所以这份清单只增不减，删方法时同步删这里。
 	methods := []string{
+		"ApplyCloseDecision",
 		"Endpoint",
 		"OpenExternal",
 		"PickFiles",

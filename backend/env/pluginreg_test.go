@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// 插件清单的解析：source 字符串的形状有好几种，切错了不会报错，
-// 只会「看起来装了、其实卸载时匹配不到」——所以按表驱动全测一遍。
+// 插件 source 字符串形状有好几种，切错了只会在卸载时匹配不到——按表驱动全测一遍。
 
 func TestParsePackageSource(t *testing.T) {
 	cases := []struct {
@@ -32,8 +31,7 @@ func TestParsePackageSource(t *testing.T) {
 	}
 }
 
-// Windows 盘符不能被当成协议前缀切掉：C:\dev\plugin 的前缀是 C，
-// 按 `:` 切会变成 dev\plugin，然后包就永远找不到了。
+// Windows 盘符不能被当协议前缀切掉，否则 C:\dev\plugin 会被切成 dev\plugin 而找不到。
 func TestParsePackageSourceWindowsPath(t *testing.T) {
 	got := ParsePackageSource(`C:\dev\my-plugin`)
 	if got.Name != `C:\dev\my-plugin` {

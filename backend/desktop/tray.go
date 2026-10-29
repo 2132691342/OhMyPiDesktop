@@ -6,6 +6,7 @@ package desktop
 
 import (
 	"path/filepath"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -17,6 +18,13 @@ import (
 //
 // 托盘菜单是一个弹出层，长到要滚动就不再是快捷方式了。
 const trayRecentMax = 5
+
+// quitGrace 是退出时给引擎进程的收尾时间。
+//
+// 退出不该等引擎“优雅完成”：用户点退出时想要的是一秒内关掉。
+// 超过这个时间就直接终止整棵进程树（保留 1.5 秒让正常情况下的 stdin
+// 关闭有反应，又不至于让人以为卡死）。
+const quitGrace = 1500 * time.Millisecond
 
 // buildTrayMenu 组装托盘菜单。
 //
@@ -37,14 +45,31 @@ func (a *App) buildTrayMenu(app *application.App, win *application.WebviewWindow
 	})
 
 	menu.AddSeparator()
-	menu.Add("退出").OnClick(func(*application.Context) {
-		a.quitting.Store(true)
-		app.Quit()
-	})
+	menu.Add("退出").OnClick(func(*application.Context) { a.requestQuit() })
 	a.tray.SetMenu(menu)
 	a.tray.SetTooltip("OhMyPiDesktop")
 	// 单击图标 = 把窗口带出来；菜单用右键。
 	a.tray.OnClick(func() { a.showWindow() })
+}
+
+// requestQuit 退出应用。
+//
+// 为什么不能在这里直接调 app.Quit()：菜单回调是在托盘窗口的
+// WM_COMMAND 里同步执行的，那一刻 TrackPopupMenuEx 还没返回。
+// 在那个栈上销毁托盘与菜单（Quit → cleanup → systray.destroy → DestroyMenu）
+// 会让消息循环在已释放的菜单上继续处理命令——表现就是“点退出没反应”
+// 或者进程卡在退出里。所以先置标志，再异步做。
+func (a *App) requestQuit() {
+	if a.quitting.Swap(true) {
+		return // 已经在退出：重复点击不该再走一遍
+	}
+	go func() {
+		// 离开菜单回调的栈再销毁。
+		time.Sleep(50 * time.Millisecond)
+		if a.app != nil {
+			a.app.Quit()
+		}
+	}()
 }
 
 // fillRecentWorkspaces 往子菜单里铺最近用过的目录。

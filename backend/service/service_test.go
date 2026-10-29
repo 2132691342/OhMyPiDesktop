@@ -1,14 +1,14 @@
 package service
 
-// 编排层只保留「不依赖本机装了什么」的高价值用例：
-// 探测的单飞（首屏多请求只探一轮）、强制重探绕过缓存、探测期间旧结论可读、
-// 以及附件装配的两条边界（图片上限 / 空输入拒绝）。其余纯函数不测。
+// 编排层只测不依赖本机环境的高价值用例：探测单飞、强制重探、探测不阻塞读、附件装配边界。
 
 import (
 	"context"
 	"encoding/base64"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
@@ -30,13 +30,29 @@ func newTestApp(t *testing.T) *App {
 	return app
 }
 
-// 首屏会同时打 Bootstrap / Health / EngineStatus，三个请求都发现缓存过期
-// 就各自起一轮探测——机器上多出多个子进程，而查的是同一件事。单飞锁把它们合成一次。
+// waitDetect 等后台补验跑完（首屏不阻塞，测试需等它落地）。
+func (a *App) waitDetect(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if !a.bgDetecting.Load() {
+			// 拿一次探测锁：后台协程是「先拿锁再置标志」，
+			// 所以能拿到就说明它真的退完了。
+			a.detectMu.Lock()
+			a.detectMu.Unlock()
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatal("后台探测 10 秒内没有结束")
+}
+
+// 首屏并发打多个探测请求时，单飞锁把它们合成每引擎一次。
 func TestDetectSingleFlight(t *testing.T) {
 	app := newTestApp(t)
-	var probes int
+	var probes atomic.Int64
 	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
-		probes++
+		probes.Add(1)
 		return engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}, nil
 	})
 	defer restore()
@@ -52,44 +68,101 @@ func TestDetectSingleFlight(t *testing.T) {
 	for i := 0; i < n; i++ {
 		<-done
 	}
+	app.waitDetect(t)
+
 	// 单飞把 12 个并发请求合成了 1 轮探测；每轮按引擎数探测一次，
 	// 因此总调用数 = 2（两个引擎各一次），而不是 12 轮 × 2。
-	if probes != len(engine.AllKinds()) {
-		t.Fatalf("单飞失效：探测了 %d 次，期望 %d（每轮两个引擎各一次）", probes, len(engine.AllKinds()))
+	if got := probes.Load(); got != int64(len(engine.AllKinds())) {
+		t.Fatalf("单飞失效：探测了 %d 次，期望 %d（每轮两个引擎各一次）", got, len(engine.AllKinds()))
 	}
 }
 
-// 显式「重新检测」必须绕过缓存，无论 detectFresh 说什么。
+// 强制重探绕过缓存；缓存新鲜时的非强制请求直接命中、不再探测。
 func TestDetectForceBypassesCache(t *testing.T) {
 	app := newTestApp(t)
-	var probes int
+	var probes atomic.Int64
 	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
-		probes++
+		probes.Add(1)
 		return engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}, nil
 	})
 	defer restore()
 
 	// 先走一轮，把 detectedAt 填上。
 	app.detectAll(context.Background(), false)
-	if probes != len(engine.AllKinds()) {
-		t.Fatalf("首轮探测 %d 次，期望 %d", probes, len(engine.AllKinds()))
+	app.waitDetect(t)
+	if got := probes.Load(); got != int64(len(engine.AllKinds())) {
+		t.Fatalf("首轮探测 %d 次，期望 %d", got, len(engine.AllKinds()))
 	}
 	// 缓存新鲜时再打一次非强制请求，应直接命中、不再探测。
 	app.detectAll(context.Background(), false)
-	if probes != len(engine.AllKinds()) {
-		t.Fatalf("缓存命中又探了 %d 次，期望仍 %d", probes, len(engine.AllKinds()))
+	app.waitDetect(t)
+	if got := probes.Load(); got != int64(len(engine.AllKinds())) {
+		t.Fatalf("缓存命中又探了 %d 次，期望仍 %d", got, len(engine.AllKinds()))
 	}
-	// 强制重探必须再探一轮。
+	// 强制重探：这条路径是同步的（用户就是来看结果的）。
 	app.detectAll(context.Background(), true)
-	if probes != 2*len(engine.AllKinds()) {
-		t.Fatalf("强制重探只做了 %d 次，期望 %d", probes, 2*len(engine.AllKinds()))
+
+	if got := probes.Load(); got != 2*int64(len(engine.AllKinds())) {
+		t.Fatalf("强制重探后共 %d 次，期望 %d", got, 2*len(engine.AllKinds()))
 	}
 }
 
-// 探测进行中，界面应当能立刻拿到上一次的结论（或空），而不是卡在探测上。
+// 首屏必须立即返回：探测在后台跑，不能同步等它。
+func TestDetectNeverBlocksFirstScreen(t *testing.T) {
+	app := newTestApp(t)
+	release := make(chan struct{})
+	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
+		<-release // 卡住探测，模拟“pi 正在起 Node”
+		return engine.Identity{}, nil
+	})
+	defer restore()
+
+	start := time.Now()
+	app.detectAll(context.Background(), false)
+	elapsed := time.Since(start)
+
+	// 探针被卡着也拿到结论：说明它根本没同步等探测。
+	if elapsed > 200*time.Millisecond {
+		t.Fatalf("首屏探测耗时 %v：它必须立即返回", elapsed)
+	}
+	close(release)
+	app.waitDetect(t)
+}
+
+// 探测进行中读 Identity 必须立即返回：写回结果时不能持锁等子进程。
+func TestIdentityNotBlockedByDetect(t *testing.T) {
+	app := newTestApp(t)
+	release := make(chan struct{})
+	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
+		<-release
+		return engine.Identity{Exe: "x", Caps: engine.CapsFor(engine.KindPi)}, nil
+	})
+	defer restore()
+
+	app.detectAll(context.Background(), false)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// 探测卡在 release 上时，这些读必须全部立即返回。
+		_ = app.Identity(engine.KindOMP)
+		_ = app.Workspace()
+		_ = app.Profile()
+		_ = app.ActiveKind()
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("探测期间读操作被阻塞：写回结果时不能持锁等子进程")
+	}
+	close(release)
+	app.waitDetect(t)
+}
+
+// 探测进行中，界面应立刻拿到旧结论（或空），而不是卡在探测上。
 func TestIdentityReadableDuringDetect(t *testing.T) {
 	app := newTestApp(t)
-	// 先落一个旧结论，再让探针慢吞吞地跑。
 	app.mu.Lock()
 	app.ids[engine.KindPi] = engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}
 	app.detectedAt = app.detectedAt.Add(-2 * detectTTL) // 让缓存过期
@@ -123,7 +196,7 @@ func TestBuildPromptImageLimit(t *testing.T) {
 	}
 }
 
-// 既有文字又有文件时，文件清单必须附在正文的换行之后，而不是吞掉正文。
+// 文件清单必须附在正文换行之后，而不是吞掉正文。
 func TestBuildPromptAppendsFiles(t *testing.T) {
 	atts := []domain.ChatAttachmentREQ{
 		{Kind: domain.AttachmentKindFile, FilePath: "/repo/a.go"},
@@ -138,7 +211,7 @@ func TestBuildPromptAppendsFiles(t *testing.T) {
 	}
 }
 
-// 只有正文没有附件必须能发；而全空必须被拦下。
+// 有正文无附件可发；正文与附件全空必须被拦下。
 func TestBuildPromptEmptyRejected(t *testing.T) {
 	if _, err := buildPrompt("   ", nil); err == nil {
 		t.Fatal("正文与附件全空应被拒绝")
@@ -148,7 +221,7 @@ func TestBuildPromptEmptyRejected(t *testing.T) {
 	}
 }
 
-// 非图片字节且不带 mime 时，sniff 认不出类型，必须被 reject。
+// 非图片字节且不带 mime 时认不出类型，必须被 reject。
 func TestDecodeImageRejectsInvalid(t *testing.T) {
 	if _, err := decodeImage(domain.ChatAttachmentREQ{
 		Kind:        domain.AttachmentKindImage,

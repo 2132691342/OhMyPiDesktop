@@ -1,7 +1,6 @@
 package ompcfg
 
-// 引擎配置写错的共同表现是「用户设的东西下次打开就没了」，而且不会报错，
-// 所以只测会悄无声息出错的事：只改掌管的键、替换与合并契约相反、坏文件不覆盖。
+// 只测悄无声息出错的事：只改掌管的键、替换/合并契约相反、坏文件不覆盖。
 
 import (
 	"os"
@@ -60,7 +59,7 @@ func TestUpsertProviderPreservesOtherKeys(t *testing.T) {
 		t.Errorf("新服务商的模型 = %+v", mf.Providers["local"].Models)
 	}
 
-	// 删一个服务商不能连带删掉别的，也不能报错说「删了不存在的」。
+	// 删一个不能连带删掉别的，删不存在的也要报错。
 	if err := DeleteProvider(path, "local"); err != nil {
 		t.Fatal(err)
 	}
@@ -121,13 +120,7 @@ func TestSetConfigKeysKeepsOthers(t *testing.T) {
 	}
 }
 
-// 写一个服务商有两条路，契约必须相反且都守住：
-//
-//	UpsertProvider  整体替换——界面没表达的字段（密钥、auth、headers）会被丢掉
-//	MergeProvider   逐字段合并——界面没表达的字段保留，用户显式填的采用新值
-//
-// service 层靠后者兜住「界面表达不了的字段」。任何一边改错，
-// 用户改个地址就可能把能用的凭据弄坏。
+// 两个写入入口契约相反：UpsertProvider 整体替换（丢未表达字段），MergeProvider 逐字段合并（保留）。
 func TestProviderReplaceAndMerge(t *testing.T) {
 	prev := Provider{
 		BaseURL: "http://a/v1",

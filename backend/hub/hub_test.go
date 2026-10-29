@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// 锁住「退订后被 close 的 channel 仍被写入导致 panic」这一真实故障：
-// 断言只有一条——并发 Emit 与退订不 panic（丢帧由 seq 跳号与 chat:gap 兜住）。
+// 退订后被 close 的 channel 仍被写入会 panic：断言并发 Emit 与退订不 panic。
 func TestEmitAndUnsubscribeConcurrently(t *testing.T) {
 	h := New(64)
 
@@ -76,7 +75,7 @@ func TestSlowConsumerDropsOldest(t *testing.T) {
 	}
 }
 
-// 重放窗口内的帧要补齐；窗口外不补（靠快照对账）。
+// 重放只在环形窗口内补齐；窗口外不补（靠快照对账）。
 func TestReplayOnlyWithinWindow(t *testing.T) {
 	h := New(8)
 	for i := 0; i < 20; i++ {

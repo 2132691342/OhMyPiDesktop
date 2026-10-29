@@ -1,9 +1,7 @@
 package picfg
 
-// pi 的 models.json 是 JSONC：允许注释与尾逗号。解析器写错的表现有两个方向：
-// 要么把 baseUrl 里的 `//` 当注释吃掉（配置全废），要么尾逗号让它整份读不出来。
-//
-// 写入侧与 omp 同理：只改我们掌管的键，用户与引擎写的其它键原样保留。
+// pi 的 models.json 是 JSONC：解析器要么把 URL 里的 // 当注释吃掉，要么被尾逗号整份读不出。
+// 写入侧只改掌管的键，其余键原样保留。
 
 import (
 	"encoding/json"
@@ -105,8 +103,7 @@ func TestWritePreservesUnknownKeys(t *testing.T) {
 	}
 }
 
-// 空密钥不能当成「删除」：界面上密钥是打码的，用户只点保存时传回来必然是空。
-// 空即删除会把用户能用的凭据毁掉，而且界面上看不出发生过。
+// 空密钥不能当成「删除」：界面密钥打码，保存传回的空值会毁掉能用的凭据。
 func TestMergeKeepsKeyWhenEmpty(t *testing.T) {
 	prev := Provider{APIKey: "sk-real", OAuth: "radius", Headers: map[string]string{"x": "1"}}
 	next := Merge(prev, Provider{BaseURL: "https://new/v1"})

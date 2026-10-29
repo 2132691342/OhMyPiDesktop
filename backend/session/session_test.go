@@ -1,8 +1,6 @@
 package session
 
-// 只测会静默出错的点：跨引擎文件的等价投影、两种日志格式的标题读取、
-// 未知条目跳过、尾部用量投影、以及每个索引器的文件缓存按 LRU 有界
-// （否则翻看的会话越多占内存越多）。这些是「读引擎私有文件」最易错且最不易发现处。
+// 只测读引擎私有文件时静默出错的点：跨引擎等价投影、标题读取、未知条目跳过、缓存有界。
 
 import (
 	"os"
@@ -14,8 +12,7 @@ import (
 	"OhMyPiDesktop/backend/engine"
 )
 
-// writeSession 把若干行写成一个会话文件。List() 只读子目录下的 .jsonl，
-// 所以每条会话单独占一个子目录。
+// writeSession 把若干行写成一个会话文件（每条会话单独占一个子目录，List 据此读取）。
 func writeSession(t *testing.T, dir, name string, lines []string) string {
 	t.Helper()
 	sub := filepath.Join(dir, strings.TrimSuffix(name, ".jsonl"))
@@ -36,8 +33,7 @@ func writeSession(t *testing.T, dir, name string, lines []string) string {
 	return p
 }
 
-// 跨引擎文件的等价投影：同一段对话，omp/pi 两种日志格式投影出来必须一致。
-// 投影不一致会让「切引擎」看到的会话内容对不上。
+// 跨引擎等价投影：同一段对话，omp/pi 两种日志格式投影出来必须一致。
 func TestSessionSnapshotEquivalence(t *testing.T) {
 	roundtrip := func(name string, lines []string, kind engine.Kind) (string, string, int, int, float64, int) {
 		dir := t.TempDir()
@@ -112,7 +108,7 @@ func TestSessionSnapshotEquivalence(t *testing.T) {
 	}
 }
 
-// 两种日志格式都要读得出来标题：读错格式会导致列表标题全空。
+// 两种日志格式都要读得出来标题。
 func TestReadOmpAndPiBothFormats(t *testing.T) {
 	omp := t.TempDir()
 	writeSession(t, omp, "a.jsonl", []string{
@@ -137,7 +133,7 @@ func TestReadOmpAndPiBothFormats(t *testing.T) {
 	}
 }
 
-// 每个引擎有十几种私有条目类型，读不出来的一律跳过，不能因此报错或漏掉有用会话。
+// 读不出来的私有条目一律跳过，不能报错也不能漏掉有用会话。
 func TestSkipUnknownEntriesDoesNotError(t *testing.T) {
 	dir := t.TempDir()
 	writeSession(t, dir, "a.jsonl", []string{
@@ -156,7 +152,7 @@ func TestSkipUnknownEntriesDoesNotError(t *testing.T) {
 	}
 }
 
-// 一条没有 usage 行的会话，费用默认为 0，不得从别的会话累加。
+// 没有 usage 行的会话，费用默认 0，且不能从别的会话累加。
 func TestUsageDefaultsWhenAbsent(t *testing.T) {
 	dir := t.TempDir()
 	writeSession(t, dir, "a.jsonl", []string{
@@ -169,7 +165,7 @@ func TestUsageDefaultsWhenAbsent(t *testing.T) {
 	}
 }
 
-// 文件缓存有界：在单个索引器里反复读超过 cacheMax 个会话文件，缓存不得无限增长。
+// 文件缓存有界：反复读超过 cacheMax 个会话文件，缓存不得无限增长。
 func TestIndexFileCacheBounded(t *testing.T) {
 	dir := t.TempDir()
 	total := cacheMax + 200
@@ -193,7 +189,7 @@ func TestIndexFileCacheBounded(t *testing.T) {
 	}
 }
 
-// 会话改名/删除后必须让该文件的缓存失效，否则会读到旧的标题。
+// 会话改名/删除后必须让该文件缓存失效，否则读到旧标题。
 func TestIndexInvalidate(t *testing.T) {
 	dir := t.TempDir()
 	p := writeSession(t, dir, "a.jsonl", []string{

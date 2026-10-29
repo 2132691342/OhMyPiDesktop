@@ -107,6 +107,9 @@ onMounted(async () => {
   } catch {
     /* 引擎没起来时对话页仍是可用的空态 */
   }
+  // 模型与思考档清单不阻塞首屏：它要问引擎，而引擎冷启动可能要十几秒。
+  // 但它**必须发**：之前没有任何地方在进对话页时拉它，于是模型下拉永远空的。
+  void chat.loadModels()
 })
 
 onBeforeUnmount(() => {
@@ -212,14 +215,25 @@ async function openLink(url: string) {
         </div>
 
         <div v-else class="msg-col">
-          <article v-for="(item, index) in chat.history" :key="`h-${index}`" class="msg" :class="{ user: item.role === 'user' }">
-            <div class="msg-head">
-              <span class="msg-badge" :class="{ user: item.role === 'user' }">{{ item.role === 'user' ? 'you' : 'assistant' }}</span>
-              <span v-if="item.model" class="msg-meta">{{ item.model }}</span>
+          <article
+            v-for="(item, index) in chat.history"
+            :key="`h-${index}`"
+            class="msg"
+            :class="{ user: item.role === 'user', 'msg-mark': item.role === 'engine-mark' }"
+          >
+            <!-- 切引擎的分隔线：说明下面的内容来自另一个引擎、另一条会话 -->
+            <div v-if="item.role === 'engine-mark'" class="mark-line">
+              <span class="mark-text">{{ t('chat.engineHandoff', { engine: item.blocks[0]?.text ?? '' }) }}</span>
             </div>
-            <div class="msg-body">
-              <TurnBlocks :blocks="item.blocks" :run-id="`h-${index}`" />
-            </div>
+            <template v-else>
+              <div class="msg-head">
+                <span class="msg-badge" :class="{ user: item.role === 'user' }">{{ item.role === 'user' ? 'you' : 'assistant' }}</span>
+                <span v-if="item.model" class="msg-meta">{{ item.model }}</span>
+              </div>
+              <div class="msg-body">
+                <TurnBlocks :blocks="item.blocks" :run-id="`h-${index}`" />
+              </div>
+            </template>
           </article>
 
           <template v-if="chat.turn">
@@ -423,6 +437,34 @@ async function openLink(url: string) {
   font-family: var(--omp-font-mono);
   font-size: var(--omp-fs-3xs);
   color: var(--omp-faint);
+}
+
+/* 切引擎分隔：一条带文字的细线。它不是消息，
+   所以不进气泡、不带头像——只把「上下文在这里断了」说清楚。 */
+.msg-mark {
+  padding: 0;
+}
+
+.mark-line {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-3);
+  margin: var(--omp-sp-4) 0;
+}
+
+.mark-line::before,
+.mark-line::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--omp-line);
+}
+
+.mark-text {
+  flex: none;
+  font-size: var(--omp-fs-2xs);
+  color: var(--omp-mute);
+  font-family: var(--omp-font-mono);
 }
 
 .jump-bottom {

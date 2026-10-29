@@ -52,6 +52,9 @@ type App struct {
 	// countsMu / counts 是「落盘计数」的短 TTL 缓存（概览页首屏用）。
 	countsMu sync.Mutex
 	counts   map[engine.Kind]healthCounts
+	// countsBusy 保证同一引擎同时只有一颗后台重扫在跑。
+	countsBusyMu sync.Mutex
+	countsBusy   map[engine.Kind]bool
 
 	Version string
 }
@@ -166,21 +169,21 @@ var detectFunc = env.Detect
 // 发现缓存过期就各自起一轮探测——机器上就多出六个子进程，而它们查的是同一件事。
 // 用一个「探测中就等它」的锁把它们合成一次。
 //
-// 它**不阻塞首屏**：已经有落盘结果时立即返回，同时在后台补一次真探测。
-// 理由：冷探测要 2.7 秒（pi 的 --help 得起一次 Node），而这 2.7 秒内
-// 界面上什么都显示不出来。用上次的结论先把界面填上，验证结果到了再悄悄更新。
+// 阻塞策略（实测数据：pi 的 --help 起一次 Node 要 3.6 秒，而 Health 本身只要 0.5 毫秒）：
+//
+//	tab: 有落盘结论 → 立即返回 + 后台补验。首屏永远不吃这 3.6 秒。
+//	tab: 啥都没有（首发）→ 不等。立即交空值 + 后台探，界面显示「正在检测」
+//	tab: 而不是白屏 3.6 秒。
+//	tab: fore（用户点「重新检测」）→ 这次真的等，因为用户就是来看结果的。
 func (a *App) detectAll(ctx context.Context, fore bool) {
 	if a.detectFresh(fore) {
 		return
 	}
-	// 手上有上次的落盘结论：先交给界面，后台补验。
-	// 注意这时 detectedAt 还是零——所以首屏之后的第二批请求（Bootstrap → Health）
-	// 会再次走到这里；bgDetecting 保证它们只触发一颗后台探测。
-	if !fore && a.hasCachedIdentity() {
+	if !fore {
+		// 首屏路径：永不阻塞。有旧值用旧值，没旧值就空着，两者都后台补验。
 		a.detectInBackground()
 		return
 	}
-	// 啥都没有（首次运行）：只能等这一轮。
 	a.detectMu.Lock()
 	if a.detectFresh(fore) {
 		a.detectMu.Unlock()
@@ -188,18 +191,6 @@ func (a *App) detectAll(ctx context.Context, fore bool) {
 	}
 	a.detectOnce(ctx)
 	a.detectMu.Unlock()
-}
-
-// hasCachedIdentity 判断是否已有可展示的探测结果。
-func (a *App) hasCachedIdentity() bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	for _, kind := range engine.AllKinds() {
-		if id, ok := a.ids[kind]; ok && id.Exe != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // detectInBackground 在后台补一次真探测，不阻塞调用方。
@@ -217,7 +208,23 @@ func (a *App) detectInBackground() {
 		// 后台补验用不带超时的 context：请求自己的 ctx 会随响应结束而取消，
 		// 而探测结果是要落盘的，不该被一个客户端断开打断。
 		a.detectOnce(context.Background())
+		a.invalidateCountsLater()
 	}()
+}
+
+// HasCachedIdentity 报告是否已有可展示的探测结论。
+//
+// 它跟 refreshing 一起回答「界面上这个版本号是不是刚验过的」。
+// 首发（还没探过）时返回 false，界面据此说「正在检测」而不是「未安装」。
+func (a *App) HasCachedIdentity() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	for _, kind := range engine.AllKinds() {
+		if id, ok := a.ids[kind]; ok && id.Exe != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // detectFresh 判断现有结果是否还新。
@@ -256,10 +263,21 @@ func (a *App) detectOnce(ctx context.Context) {
 			ch <- result{kind: kind, id: id}
 		}(kind)
 	}
-	a.mu.Lock()
+	// 先把两个结果收齐，再持锁写入。
+	//
+	// 这一顺序是硬要求：之前是「持写锁等 channel」，于是探测期间（pi 的
+	// --help 要起 Node，实测 3.6 秒）所有读 ids / workspace / index 的调用
+	// 全部堵在 RLock 上——界面上表现就是「打开应用卡四秒」，
+	// 而日志里探测明明已经改成后台了。
+	collected := make(map[engine.Kind]engine.Identity, len(kinds))
 	for range kinds {
 		r := <-ch
-		a.ids[r.kind] = r.id
+		collected[r.kind] = r.id
+	}
+
+	a.mu.Lock()
+	for k, v := range collected {
+		a.ids[k] = v
 	}
 	a.detectedAt = time.Now()
 	snapshot := make(map[engine.Kind]engine.Identity, len(a.ids))

@@ -12,6 +12,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
+import EngineScopeBar from '@/components/common/EngineScopeBar.vue'
+import { useEngineScope } from '@/composables/useEngineScope'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
 import { useToasts } from '@/composables/useToasts'
@@ -41,13 +43,24 @@ const form = ref({
   env_text: '',
 })
 
-const kind = computed<EngineKind>(() => app.active)
+// 本页作用域（omp / pi / 全部），不跟对话引擎联动。
+const { scope, set: setScope } = useEngineScope('mcp')
+const installedKinds = computed(() => app.installed.map((e) => e.kind))
+const writeKind = computed<EngineKind>(() => (scope.value === 'all' ? 'omp' : scope.value))
+const engineParam = computed<EngineKind | undefined>(() => (scope.value === 'all' ? undefined : scope.value))
+// live 只对单引擎有意义：两个引擎的实时状态拿不到一致快照。
+const scopeAll = computed(() => scope.value === 'all')
+
+/** 一行属于哪个引擎：「全部」下靠行自身的 engine_kind 定向写操作。 */
+function rowEngine(row: McpServer): EngineKind {
+  return (row.engine_kind || writeKind.value) as EngineKind
+}
 const servers = computed<McpServer[]>(() => data.value?.servers ?? [])
 
 async function load(live = false) {
   loading.value = true
   try {
-    data.value = await api.mcpList(kind.value, live)
+    data.value = await api.mcpList(engineParam.value, live)
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
@@ -94,7 +107,7 @@ async function save() {
       .map((line) => line.trim())
       .filter(Boolean)
     data.value = await api.mcpSave({
-      engine_kind: kind.value,
+      engine_kind: writeKind.value,
       server_name: form.value.server_name.trim(),
       command_text: form.value.mode === 'command' ? form.value.command_text : undefined,
       server_url: form.value.mode === 'url' ? form.value.server_url : undefined,
@@ -115,7 +128,7 @@ async function save() {
 async function toggle(row: McpServer, enabled: boolean) {
   busyName.value = row.server_name
   try {
-    data.value = await api.mcpToggle(row.server_name, enabled, kind.value)
+    data.value = await api.mcpToggle(row.server_name, enabled, rowEngine(row))
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
@@ -135,7 +148,7 @@ async function remove(row: McpServer) {
   }
   busyName.value = row.server_name
   try {
-    data.value = await api.mcpRemove(row.server_name, kind.value)
+    data.value = await api.mcpRemove(row.server_name, rowEngine(row))
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
@@ -145,9 +158,13 @@ async function remove(row: McpServer) {
 
 // 探测要起一次引擎子进程（几秒），所以单独一个按钮，不跟着列表自动跑
 async function probe() {
+  if (scopeAll.value) {
+    ElMessage.info(t('mcp.probeScopeOnly'))
+    return
+  }
   testing.value = true
   try {
-    data.value = await api.mcpList(kind.value, true)
+    data.value = await api.mcpList(engineParam.value, true)
     if (!data.value.live_checked) {
       ElMessage.info(t('mcp.probeUnavailable'))
     }
@@ -166,7 +183,7 @@ function statusTag(row: McpServer): { cls: string; text: string } {
   return { cls: 'brand', text: t('mcp.configured') }
 }
 
-watch(kind, () => {
+watch(scope, () => {
   data.value = null
   void load()
 })
@@ -179,9 +196,10 @@ onMounted(() => void load())
     <header class="page-head">
       <div>
         <h1 class="page-title">{{ t('mcp.title') }}</h1>
-        <p class="page-sub">{{ t('mcp.subtitle', { engine: kind }) }}</p>
+        <p class="page-sub">{{ t('mcp.scopedSubtitle') }}</p>
       </div>
       <div class="head-actions">
+        <EngineScopeBar :scope="scope" :installed="installedKinds" @pick="setScope" />
         <button class="omp-btn" :class="{ 'is-loading': testing }" :disabled="testing" @click="probe">
           <AppIcon name="search" :size="14" />
           {{ t('mcp.probe') }}

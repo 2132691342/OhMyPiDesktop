@@ -44,6 +44,16 @@ async function toggleAutoStart(enabled: boolean) {
   }
 }
 
+// 关窗行为一旦选定就记住：下次按关闭不会再问。
+async function toggleCloseAction(action: string) {
+  try {
+    await prefs.setCloseAction(action === 'quit' ? 'quit' : 'tray')
+    toasts.push('ok', t('common.saved'))
+  } catch (err) {
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  }
+}
+
 async function toggleRestore(enabled: boolean) {
   restoreBusy.value = true
   try {
@@ -290,6 +300,20 @@ const configLang = computed<'json' | 'yaml' | 'text'>(() => {
             :disabled="autoStartBusy || !prefs.prefs"
             @change="(v: string | number | boolean) => toggleAutoStart(Boolean(v))"
           />
+        </div>
+        <div class="set-row">
+          <div>
+            <div class="set-label">{{ t('settings.closeAction') }}</div>
+            <div class="set-hint">{{ t('settings.closeActionHint') }}</div>
+          </div>
+          <el-radio-group
+            :model-value="prefs.prefs?.close_action ?? 'tray'"
+            :disabled="!prefs.prefs"
+            @change="(v: string | number | boolean | undefined) => toggleCloseAction(String(v))"
+          >
+            <el-radio-button value="tray">{{ t('settings.closeToTray') }}</el-radio-button>
+            <el-radio-button value="quit">{{ t('settings.closeToQuit') }}</el-radio-button>
+          </el-radio-group>
         </div>
         <div class="set-row">
           <div>

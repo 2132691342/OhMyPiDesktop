@@ -80,4 +80,16 @@ export const windowCtl = {
   minimize: () => void App.WindowMinimize(),
   toggleMaximize: () => void App.WindowToggleMaximize(),
   close: () => void App.WindowClose(),
+  /** 真的退出进程（不是收进托盘）。界面上的「退出」必须能真退。 */
+  quit: () => void App.Quit(),
+}
+
+/**
+ * 执行「关窗时做什么」的选择。只由首次收托盘的对话框调用。
+ *
+ * 为什么需要它：关闭按钮第一次被按时，后端不知道用户是想收进托盘还是
+ * 想关掉——两个都合理。与其猜，不如问一次并把选择记住。
+ */
+export async function applyCloseDecision(action: 'tray' | 'quit', remember: boolean): Promise<void> {
+  await App.ApplyCloseDecision(action, remember)
 }

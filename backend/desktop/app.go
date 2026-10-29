@@ -120,13 +120,31 @@ func Run(opts Options) error {
 	app.win = win
 	app.app = a
 
-	// 关窗不退出：收托盘。真正退出走托盘菜单的「退出」。
+	// 关窗行为可配：收托盘（默认）或直接退出。
+	//
+	// 之前的实现固定收托盘，于是“点×没反应”是用户最常抱怨的一条。
+	// 收托盘仍然是有用的默认（正在跑的对话不该被一键弄死），
+	// 但用户必须能关掉它，而且第一次收托盘要告诉他“我还在”。
 	// e.Cancel() 是 v3 的拦截方式——返回 false 不是拦截（v2 才是）。
 	win.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		if app.quitting.Load() {
 			return
 		}
+		if app.closeAction() == service.CloseActionQuit {
+			// 关窗即退出。注意不能只置标志就放行：
+			// v3 在窗口关闭后会先把窗口从表里摘除，而托盘还挂着——
+			// 只剩托盘时消息循环不会自己结束，进程就“关不掉”了。
+			// 所以拦截这次关闭，改走主动退出（requestQuit 会走完整 cleanup）。
+			e.Cancel()
+			app.requestQuit()
+			return
+		}
 		e.Cancel()
+		// 第一次收托盘先问一句：静默躲起来在用户眼里就是「关不掉」。
+		if app.svc != nil && app.svc.TrayHintPending() {
+			app.askCloseDecision()
+			return
+		}
 		app.toTray()
 	})
 
@@ -297,15 +315,82 @@ func (a *App) toTray() {
 	}
 }
 
+// closeAction 读设置里的关窗行为。装配未完成时按默认（收托盘）处理。
+func (a *App) closeAction() string {
+	if a.svc == nil {
+		return service.CloseActionTray
+	}
+	return a.svc.CloseAction()
+}
+
+// askCloseDecision 请求界面就「关闭时做什么」做一次选择。
+//
+// 为什么走事件而不是系统通知：这个版本的 Wails 没有通知 API，
+// 而窗口已经藏起来了——在隐藏的窗口上画弹层用户看不到。
+// 所以先不藏窗口，发一帧事件让界面弹一个选择框，选完再执行。
+func (a *App) askCloseDecision() {
+	if a.hub == nil {
+		a.toTray()
+		return
+	}
+	a.hub.Emit("", "app:close_requested", map[string]any{
+		"close_action": a.closeAction(),
+	})
+}
+
+// ApplyCloseDecision 执行界面对「关窗」的选择。
+//
+// 它是窗口层的动作（隐藏 / 退出都不是业务），所以住在这里而不是 service。
+// remember 为真时把选择写进设置，下次不再问。
+func (a *App) applyCloseDecision(action string, remember bool) error {
+	if action != service.CloseActionQuit {
+		action = service.CloseActionTray
+	}
+	if a.svc != nil {
+		if remember {
+			if err := a.svc.SetCloseAction(action); err != nil {
+				return err
+			}
+		}
+		if err := a.svc.MarkTrayHintShown(); err != nil {
+			pkg.Warnf("app: 记不住托盘提示状态：%v", err)
+		}
+	}
+	if action == service.CloseActionQuit {
+		a.requestQuit()
+		return nil
+	}
+	a.toTray()
+	return nil
+}
+
+// shutdown 退出前的收尾。
+//
+// 它是 Wails 的 OnShutdown 回调，跑在**主线程**上（InvokeSync）：
+// 这里每多停一毫秒，用户看到的就是「点了退出但窗口还在」。
+// 所以两件事必须做对：
+//  1. 先停回收协程（否则它会与 StopAll 抢锁、并试图停已停的引擎）；
+//  2. 停引擎时并发做，并给一个统一短超时——之前是串行 Stop(5s)，
+//     开过三个目录就是十五秒，表现出来就是「退不掉」。
 func (a *App) shutdown() {
 	if a.svc != nil {
-		// 先停回收协程再停引擎：否则它会与 StopAll 抢同一把锁，
-		// 并试图停已经被停掉的实例。
 		a.svc.Engine.Shutdown()
-		a.svc.Engine.StopAll()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			a.svc.Engine.StopAllQuick(quitGrace)
+		}()
+		select {
+		case <-done:
+		case <-time.After(quitGrace + 500*time.Millisecond):
+			pkg.Warnf("app: 引擎未在超时内停完，直接退出")
+		}
 	}
 	if a.srv != nil {
-		a.srv.Stop(context.Background())
+		// SSE 长连接不会自己断：给一个短超时，别让它拖住退出。
+		ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+		a.srv.Stop(ctx)
+		cancel()
 	}
 	if a.store != nil {
 		_ = a.store.Close()

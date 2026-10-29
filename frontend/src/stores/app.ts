@@ -44,6 +44,8 @@ export const useAppStore = defineStore('app', () => {
   // 挂一条可复制的地址——默认浏览器可能打不开，用户需要能看到原文。
   const pendingLink = ref<{ url: string; label: string; instructions: string } | null>(null)
 
+  // 首次按关闭时的确认框：选「收进托盘」还是「退出」。
+  const closePrompt = ref(false)
   const boot = ref<Bootstrap | null>(null)
   let source: EventSource | null = null
   let lastSeq = 0
@@ -308,6 +310,12 @@ export const useAppStore = defineStore('app', () => {
         }
         return
       }
+      case 'app:close_requested': {
+        // 首次按关闭：不静默躲进托盘，而是问一次。
+        // 静默隐藏是「关不掉」这种抱怨的唯一来源。
+        closePrompt.value = true
+        return
+      }
       case 'engine:extension_error':
         return // 扩展自己的报错不该弹给用户
       case 'chat:start':
@@ -465,6 +473,7 @@ export const useAppStore = defineStore('app', () => {
     workspaces,
     sessions,
     pendingLink,
+    closePrompt,
     apps,
     appProgress,
     theme,

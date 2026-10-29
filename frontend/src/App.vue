@@ -1,22 +1,60 @@
 <script setup lang="ts">
 // 应用外壳：自绘标题栏 + 左侧导航 rail + 主区。
 // 启动失败与首屏加载都在这里处理，视图层不需要各自兜底。
-import { nextTick, onMounted } from 'vue'
+import { nextTick, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessageBox } from 'element-plus'
 import AppRail from '@/components/layout/AppRail.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
 import ToastHost from '@/components/common/ToastHost.vue'
 import StartupError from '@/components/common/StartupError.vue'
-import { notifyReady } from '@/api/wails'
+import { applyCloseDecision, notifyReady } from '@/api/wails'
 import { useAppStore } from '@/stores/app'
 import { useViewportScale } from '@/composables/useViewportScale'
 
 const app = useAppStore()
 const { t } = useI18n()
 
+// 首次按关闭时问一句：收进托盘还是退出。
+//
+// 为什么在界面里问而不是在窗口层：窗口层没有可用的通知手段（窗口已经要藏了），
+// 而托盘气泡这个版本的 Wails 不支持。界面里问一次，并把选择记住。
+async function askClose(): Promise<'tray' | 'quit' | ''> {
+  try {
+    await ElMessageBox.confirm(t('app.closePromptBody'), t('app.closePromptTitle'), {
+      confirmButtonText: t('app.closeToTray'),
+      cancelButtonText: t('app.closeToQuit'),
+      distinguishCancelAndClose: true,
+      type: 'info',
+    })
+    return 'tray'
+  } catch (action) {
+    // cancel = 点了“退出”；close = 按了 Esc / 点了右上角叉
+    return action === 'cancel' ? 'quit' : ''
+  }
+}
+
+/** 关闭对话框：用户要求关窗时问一次，然后把选择交给后端执行。 */
+async function settleClose(): Promise<void> {
+  const action = await askClose()
+  app.closePrompt = false
+  // 按 Esc 或点叉也是“我要关窗”的意思：按最保守的处理——收进托盘。
+  // 留着窗口不动是最差的答案：按钮看起来就是失灵了。
+  // 这一种不记住：用户没真正选择，下次还该问。
+  await applyCloseDecision(action || 'tray', Boolean(action))
+}
+
 // 整套刻度随窗口宽度等比缩放：写进 --omp-vw-scale 一个值就够，
 // 组件全走令牌，不必为每个断点写媒体查询。
 useViewportScale()
+
+// 后端发出「用户按了关闭」时弹选择框。
+watch(
+  () => app.closePrompt,
+  (open) => {
+    if (open) void settleClose()
+  },
+)
 
 onMounted(() => {
   void app.load()

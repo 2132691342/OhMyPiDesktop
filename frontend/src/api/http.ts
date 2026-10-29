@@ -114,6 +114,7 @@ export const api = {
   prefs: () => get<AppPrefs>('/prefs'),
   setAutoStart: (enabled: boolean) => post<AppPrefs>('/prefs/autostart', { enabled }),
   setRestoreSession: (enabled: boolean) => post<AppPrefs>('/prefs/restore', { enabled }),
+  setCloseAction: (action: 'tray' | 'quit') => post<AppPrefs>('/prefs/close-action', { action }),
   rememberSession: (engine: EngineKind, sessionFile: string) =>
     post<AppPrefs>('/prefs/session', { engine_kind: engine, session_file: sessionFile }),
   openDataDir: () => post<null>('/prefs/data-dir'),

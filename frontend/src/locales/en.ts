@@ -1,7 +1,11 @@
 // English messages. Mirrors the zh-CN structure key for key.
 export default {
   "app": {
-    "starting": "Starting local service…"
+    "starting": "Starting local service…",
+    "closePromptTitle": "What should closing the window do?",
+    "closePromptBody": "Keep in tray: the app keeps running in the background, conversations are not interrupted, and you can bring it back from the tray icon.\nQuit: end the app and every engine process immediately.\n\nThis choice is remembered and can be changed in Settings.",
+    "closeToTray": "Keep in tray",
+    "closeToQuit": "Quit app"
   },
   "nav": {
     "overview": "Overview",
@@ -15,6 +19,11 @@ export default {
     "usage": "Usage",
     "apps": "Apps",
     "settings": "Settings"
+  },
+  "scope": {
+    "all": "All",
+    "hint": "Which engine this page manages: omp / pi / both side by side. Does not affect the engine used for chatting.",
+    "notInstalled": "{engine} is not installed; install it to manage its contents"
   },
   "overview": {
     "title": "Overview",
@@ -33,7 +42,9 @@ export default {
     "spend": "Spend",
     "tokens": "Tokens",
     "turns": "Sessions",
-    "resources": "Skills + plugins + MCP",
+    "capSkills": "Skills",
+    "capPlugins": "Plugins",
+    "capMcp": "MCP",
     "byDay": "Spend by day",
     "byModel": "Tokens by model",
     "noUsage": "No usage in this window",
@@ -50,6 +61,8 @@ export default {
   "mcp": {
     "title": "MCP",
     "subtitle": "MCP servers give {engine} extra tools. Both engines share the same mcp.json shape, so one page manages both.",
+    "scopedSubtitle": "MCP servers give engines extra tools. Pick the scope above: omp, pi, or both; each engine keeps its own mcp.json.",
+    "probeScopeOnly": "Live probing needs a specific engine: switch the scope to omp or pi first.",
     "subtitleSidebar": "MCP servers for {engine}",
     "file": "Config file",
     "userLevel": "User level",
@@ -116,7 +129,8 @@ export default {
       "uninstall": "{name} uninstalled"
     },
     "boundary": "Nothing here implements installation. What runs is the exact command the engine publishes, so this page follows the engine's own release process."
-  },  "files": {
+  },
+  "files": {
     "up": "Up one level",
     "empty": "This folder is empty",
     "truncated": "Too many entries; showing the first 500",
@@ -172,6 +186,7 @@ export default {
     "delete": "Delete",
     "edit": "Edit",
     "close": "Close",
+    "quitApp": "Quit app",
     "confirm": "Confirm",
     "remove": "Remove",
     "refresh": "Refresh",
@@ -275,6 +290,10 @@ export default {
     "autoCompact": "Auto-compact",
     "current": "Current",
     "noModels": "The engine has not reported any models yet",
+    "modelsLoading": "Fetching model list…",
+    "pickModel": "Switch model",
+    "engineHandoff": "Continuing on {engine} (its context is a fresh session)",
+    "bindFailed": "History is readable, but the engine could not switch to this session ({reason}) — new messages will go to the previous session.",
     "thinkingDefault": "Default",
     "queue": "Queue",
     "queueHint": "Send after this turn finishes",
@@ -334,6 +353,7 @@ export default {
   "models": {
     "title": "Models",
     "subtitle": "Providers and models come from {engine}'s own config. Anything you change here is immediately visible to {engine} in a terminal.",
+    "scopedSubtitle": "Providers and models come from each engine's own config. Pick the scope above: omp, pi, or both side by side. It does not change the engine used for chatting.",
     "providers": "Providers",
     "addProvider": "Add provider",
     "editProvider": "Edit provider",
@@ -351,7 +371,10 @@ export default {
     "contextWindow": "Context window",
     "maxTokens": "Max output",
     "reasoning": "Reasoning",
+    "reasoningHint": "This model supports thinking/reasoning levels; enabling it for a plain model makes the upstream reject requests",
     "input": "Input",
+    "inputText": "Text input",
+    "inputImage": "Image input",
     "login": "Sign in to providers",
     "loginHint": "OAuth providers (Claude / Codex / Copilot …) sign in here; the authorization URL opens automatically.",
     "loggedIn": "Signed in",
@@ -367,6 +390,7 @@ export default {
   "skills": {
     "title": "Skills",
     "subtitle": "A skill is a short instruction set for how to do something. Toggling edits the front matter of SKILL.md.",
+    "scopedSubtitle": "A skill is a short instruction set for how to do something. Pick the scope above: omp, pi, or both; it does not change the engine used for chatting.",
     "create": "New skill",
     "createTitle": "New skill",
     "nameLabel": "Name",
@@ -395,6 +419,8 @@ export default {
   "plugins": {
     "title": "Plugins",
     "subtitle": "A plugin is an npm package or local folder that brings tools, commands and skills. Install and removal go through {engine}'s own plugin command.",
+    "scopedSubtitle": "A plugin is an npm package or local folder that brings tools, commands and skills. Pick the scope above; install and remove use that engine's own command.",
+    "engine": "Engine",
     "unsupported": "This engine has no plugins to manage",
     "unsupportedHint": "{engine} extensions are enabled in its own config files.",
     "installPlaceholder": "Package or local path, e.g. pi-crew or D:\\my-plugin",
@@ -452,6 +478,10 @@ export default {
     "autoStartFailed": "Could not change startup behaviour",
     "restoreSession": "Reopen last session on start",
     "restoreSessionHint": "When off, every start begins a new chat; the working directory is still restored",
+    "closeAction": "When closing the window",
+    "closeActionHint": "Keep in tray: the app and conversations keep running in the background. Quit: end the app and every engine process.",
+    "closeToTray": "Keep in tray",
+    "closeToQuit": "Quit app",
     "lastSession": "Last session",
     "lastSessionNone": "Nothing recorded (it may have been deleted)",
     "dataDir": "Data directory",

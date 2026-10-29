@@ -141,6 +141,8 @@ export interface HealthData {
   engines: EngineHealth[]
   active_kind: string
   workspace: string
+  /** 有后台补验在跑：屏幕上这些数字可能比实际旧一点 */
+  refreshing: boolean
   detected_at: number
   total_sessions: number
   total_skills: number
@@ -201,6 +203,10 @@ export interface AppPrefs {
   last_engine_kind: EngineKind | ''
   data_dir: string
   log_dir: string
+  /** 点窗口关闭按钮时做什么 */
+  close_action: 'tray' | 'quit'
+  /** 还没给过「收托盘」的首次提示 */
+  tray_hint_pending: boolean
 }
 
 /** 一个可查看的引擎配置文件。 */
@@ -364,7 +370,8 @@ export interface SlashCommand {
 }
 
 export interface HistoryTurn {
-  role: 'user' | 'assistant' | 'tool'
+  /** engine-mark 是界面层的分隔标记（切引擎时插的），不是引擎消息 */
+  role: 'user' | 'assistant' | 'tool' | 'engine-mark'
   blocks: ChatBlock[]
   model?: string
 }
@@ -389,6 +396,8 @@ export interface ChatState {
   commands: SlashCommand[]
   profile: string
   caps: EngineCaps
+  /** 没能把引擎切到请求的会话时的原因原话；空表示切好了 */
+  bind_err?: string
 }
 
 // 引擎的提问卡片（四个基元 + ask 工具）
@@ -448,6 +457,8 @@ export interface ModelEntry {
 }
 
 export interface ProviderView {
+  /** 这条服务商属于哪个引擎：两边配置完全独立，同名可以各有一份 */
+  engine_kind: EngineKind
   provider_name: string
   base_url: string
   api: string
@@ -510,6 +521,8 @@ export interface PluginListData {
 
 /** 一个 MCP 服务器。两个引擎共用 mcp.json 的 mcpServers 形状。 */
 export interface McpServer {
+  /** 这条服务器属于哪个引擎：两边读各自的 mcp.json，同名可以各有一条 */
+  engine_kind: EngineKind
   server_name: string
   transport_kind: string
   command_line?: string

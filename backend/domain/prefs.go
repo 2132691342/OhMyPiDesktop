@@ -22,12 +22,22 @@ type AppPrefsVO struct {
 	DataDir string `json:"data_dir"`
 	// LogDir 日志目录
 	LogDir string `json:"log_dir"`
+	// CloseAction 点窗口关闭按钮时做什么：tray / quit
+	CloseAction string `json:"close_action"`
+	// TrayHintPending 是否还没给过「收托盘」的首次提示
+	TrayHintPending bool `json:"tray_hint_pending"`
 }
 
 // AutoStartREQ 开关开机自启。
 type AutoStartREQ struct {
 	// Enabled 目标状态。关掉时删注册表值，打开时写当前 exe 的绝对路径
 	Enabled bool `json:"enabled"`
+}
+
+// CloseActionREQ 改关窗行为。
+type CloseActionREQ struct {
+	// Action 取值 tray（收进托盘）或 quit（退出应用）
+	Action string `json:"action"`
 }
 
 // RestoreSessionREQ 开关「启动时回到上次会话」。

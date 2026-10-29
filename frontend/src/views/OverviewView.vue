@@ -346,7 +346,9 @@ onUnmounted(() => {
         </article>
       </section>
 
-      <!-- 用量 -->
+      <!-- 六个读数：三个是「花了多少」，三个是「装了什么」。
+           最后三个分开算：合成一个「技能+插件+MCP」的合计在界面上无法加——
+           三者不是同一种东西，加起来的那个数字也没有任何行动含义。 -->
       <section class="stat-row">
         <div class="omp-card card-pad">
           <span class="omp-metric-label">{{ t('overview.spend') }}</span>
@@ -361,8 +363,16 @@ onUnmounted(() => {
           <span class="omp-metric">{{ usage.sessions }}</span>
         </div>
         <div class="omp-card card-pad">
-          <span class="omp-metric-label">{{ t('overview.resources') }}</span>
-          <span class="omp-metric">{{ (totals?.total_skills ?? 0) + (totals?.total_plugins ?? 0) + (totals?.total_mcp ?? 0) }}</span>
+          <span class="omp-metric-label">{{ t('overview.capSkills') }}</span>
+          <span class="omp-metric">{{ totals?.total_skills ?? 0 }}</span>
+        </div>
+        <div class="omp-card card-pad">
+          <span class="omp-metric-label">{{ t('overview.capPlugins') }}</span>
+          <span class="omp-metric">{{ totals?.total_plugins ?? 0 }}</span>
+        </div>
+        <div class="omp-card card-pad">
+          <span class="omp-metric-label">{{ t('overview.capMcp') }}</span>
+          <span class="omp-metric">{{ totals?.total_mcp ?? 0 }}</span>
         </div>
       </section>
 
@@ -594,8 +604,18 @@ onUnmounted(() => {
 
 .stat-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  /* 六个读数排成 3 × 2：用固定三列而不是 auto-fit，
+     否则宽屏会排成一行六个（每个只剩 130px，数字换了行），
+     窄屏会变成 5 + 1 的余数行。 */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--omp-sp-3);
+}
+
+/* 窄窗口（800×600 的默认尺寸）下三列会把数字挤成两行：降成两列 */
+@container app (max-width: 900px) {
+  .stat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .stat-row > .omp-card {

@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"OhMyPiDesktop/backend/domain"
@@ -100,29 +99,28 @@ func (a *App) RestartEngines(ctx context.Context, kind engine.Kind) error {
 
 // Health 组装两个引擎的健康快照。
 //
-// 每个引擎的四组事实（探测 / 进程 / 落盘计数 / 配置现状）并发取，
-// 再合并：这一屏要读好几个目录，串行会让首屏明显卡一下。
+// 它是概览页首屏，所以有一条硬约束：**不阻塞在子进程与外网上**。
+// 三个可能慢的动作全部改成「先交旧值 / 交空值 + 后台补」：
 //
-// 最新版走快路径：有上次的结论就先用它、后台补查。
-// 首屏不该为「上游发版了没」等四秒——那是应用页的主动行为。
+//	tab: 探测（pi 要跑 --help，起 Node 实测 2.7 秒）
+//	tab: 落盘计数（四类目录扫描，冷盘 1.6 秒）
+//	tab: 上游最新版（两次外网请求，超时上限 4 秒）
+//
+// 三者叠加就是之前实测的 5.9 秒首屏。语义上它们都是「可以稍后知道」的事实，
+// 而用户打开概览页的第一需求是「能不能开始干活」。
+//
+// refreshing 告诉界面「有后台补验在跑」——它据此显示一个不阻断操作的刷新指示，
+// 而不是把整屏变成骨架屏。
 func (a *App) Health(ctx context.Context) (*domain.HealthVO, error) {
 	a.detectAll(ctx, false)
-	running := a.Engine.Running()
 	latest := engine.QueryLatestFast(ctx)
 
-	byKind := map[engine.Kind]engine.RunRow{}
-	for _, row := range running {
-		// 同一引擎可能在多个目录各有一个进程；健康卡只报「在跑」这一个结论，
-		// 所以取命令数最多的那个（它多半就是用户正在用的那个）。
-		if prev, ok := byKind[row.Kind]; !ok || row.CallCount > prev.CallCount {
-			byKind[row.Kind] = row
-		}
-	}
-
+	byKind := a.runningByKind()
 	out := &domain.HealthVO{
 		Engines:    []domain.EngineHealthVO{},
 		ActiveKind: string(a.ActiveKind()),
 		Workspace:  a.Workspace(),
+		Refreshing: a.bgDetecting.Load(),
 	}
 	kinds := engine.AllKinds()
 	rows := make([]domain.EngineHealthVO, len(kinds))
@@ -146,6 +144,20 @@ func (a *App) Health(ctx context.Context) (*domain.HealthVO, error) {
 	out.LiveEngines, out.MaxEngines = a.Engine.Stats()
 	out.DetectedAt = time.Now().UnixMilli()
 	return out, nil
+}
+
+// runningByKind 把「在跑的实例」按引擎归并成一个代表行。
+//
+// 同一引擎可能在多个目录各有一个进程；健康卡只报「在跑」这一个结论，
+// 所以取命令数最多的那个（它多半就是用户正在用的那个）。
+func (a *App) runningByKind() map[engine.Kind]engine.RunRow {
+	byKind := map[engine.Kind]engine.RunRow{}
+	for _, row := range a.Engine.Running() {
+		if prev, ok := byKind[row.Kind]; !ok || row.CallCount > prev.CallCount {
+			byKind[row.Kind] = row
+		}
+	}
+	return byKind
 }
 
 // healthCounts 是一份「落盘计数」快照。
@@ -201,50 +213,121 @@ func (a *App) countSessions(kind engine.Kind) int {
 	return total
 }
 
-// countsOf 取一份计数快照，命中缓存则直接返回。
+// countsOf 取一份计数快照。
 //
-// 四个计数互相独立，并发取：它们各自扫不同目录，串行会把四段磁盘延迟相加。
-// 冷文件系统上这一步是首屏最重的一段（本机实测：90 个会话文件 + 12 个插件
-// 目录 + 9 个技能 = 1.6 秒），并行之后取最慢的那一项而不是四项相加。
+// 三个纪律：
+//  1. 四个数并发取（各扫不同目录，串行会把四段磁盘延迟相加）；
+//  2. 结果通过 channel 回传，**不并发写同一个 struct**——
+//     四个 goroutine 写四个字段在 Go 里是数据竞争，race detector 会直接报；
+//  3. 不动盘时立即返回旧值 + 后台补，首屏不为一次目录扫描停顿。
 func (a *App) countsOf(kind engine.Kind) healthCounts {
 	a.countsMu.Lock()
-	if c, ok := a.counts[kind]; ok && time.Since(c.at) < countsTTL {
-		a.countsMu.Unlock()
-		return c
-	}
+	cached, ok := a.counts[kind]
 	a.countsMu.Unlock()
+	if ok && time.Since(cached.at) < countsTTL {
+		return cached
+	}
+
+	// 过期或没有：交旧值（可能是零值），后台刷新。
+	// 实测冷扫一次 pi 要 40 毫秒、omp 1 毫秒——但那是这台机器、这点数据量；
+	// 用户有几千个会话时这一步就是秒级，而它只影响四个数字。
+	if ok {
+		a.refreshCountsAsync(kind)
+		return cached
+	}
+	c := a.scanCounts(kind)
+	a.storeCounts(kind, c)
+	return c
+}
+
+// refreshCountsAsync 后台重扫一次计数（同一引擎同时只一颗）。
+func (a *App) refreshCountsAsync(kind engine.Kind) {
+	a.countsBusyMu.Lock()
+	if a.countsBusy == nil {
+		a.countsBusy = map[engine.Kind]bool{}
+	}
+	if a.countsBusy[kind] {
+		a.countsBusyMu.Unlock()
+		return
+	}
+	a.countsBusy[kind] = true
+	a.countsBusyMu.Unlock()
+
+	go func() {
+		defer func() {
+			a.countsBusyMu.Lock()
+			delete(a.countsBusy, kind)
+			a.countsBusyMu.Unlock()
+		}()
+		a.storeCounts(kind, a.scanCounts(kind))
+	}()
+}
+
+// scanCounts 真正扫一遍四类目录。四个 goroutine 各自通过 channel 交结果。
+func (a *App) scanCounts(kind engine.Kind) healthCounts {
+	type slot struct {
+		which int
+		n     int
+	}
+	out := make(chan slot, 4)
+
+	go func() { out <- slot{0, a.countSessions(kind)} }()
+	go func() {
+		if skills, err := a.Skills(kind); err == nil {
+			out <- slot{1, len(skills)}
+			return
+		}
+		out <- slot{1, 0}
+	}()
+	go func() {
+		if plugins, err := a.pluginsOf(kind); err == nil && plugins != nil {
+			out <- slot{2, len(plugins.Plugins)}
+			return
+		}
+		out <- slot{2, 0}
+	}()
+	go func() {
+		if mcp, err := a.McpList(context.Background(), kind, false); err == nil && mcp != nil {
+			out <- slot{3, len(mcp.Servers)}
+			return
+		}
+		out <- slot{3, 0}
+	}()
 
 	c := healthCounts{at: time.Now()}
-	var wg sync.WaitGroup
-	wg.Add(4)
-	go func() {
-		defer wg.Done()
-		c.sessions = a.countSessions(kind)
-	}()
-	go func() {
-		defer wg.Done()
-		if skills, err := a.Skills(kind); err == nil {
-			c.skills = len(skills)
+	for i := 0; i < 4; i++ {
+		s := <-out
+		switch s.which {
+		case 0:
+			c.sessions = s.n
+		case 1:
+			c.skills = s.n
+		case 2:
+			c.plugins = s.n
+		case 3:
+			c.mcp = s.n
 		}
-	}()
-	go func() {
-		defer wg.Done()
-		if plugins, err := a.pluginsOf(kind); err == nil && plugins != nil {
-			c.plugins = len(plugins.Plugins)
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		if mcp, err := a.McpList(context.Background(), kind, false); err == nil && mcp != nil {
-			c.mcp = len(mcp.Servers)
-		}
-	}()
-	wg.Wait()
+	}
+	return c
+}
 
+// storeCounts 写入一份快照。
+func (a *App) storeCounts(kind engine.Kind, c healthCounts) {
 	a.countsMu.Lock()
 	a.counts[kind] = c
 	a.countsMu.Unlock()
-	return c
+}
+
+// invalidateCountsLater 在后台补验之后延迟丢掉计数缓存。
+//
+// 不立刻丢：刚探完的那一刻各引擎目录还没变，立即失效只会多扫一轮；
+// 而计数缓存本身的 TTL 就是 countsTTL，等它自然过期即可。
+// 这里只给「探测刚证明引擎换了版本」这一种情况留一个后手。
+func (a *App) invalidateCountsLater() {
+	go func() {
+		time.Sleep(countsTTL / 2)
+		a.InvalidateCounts()
+	}()
 }
 
 // InvalidateCounts 丢掉计数缓存（装完插件 / 删了会话 / 换了工作目录之后）。

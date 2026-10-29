@@ -109,6 +109,17 @@ func (e *Engine) Messages(ctx context.Context) ([]json.RawMessage, error) {
 	return out.Messages, nil
 }
 
+// CachedSessionFile 只读本地缓存的会话文件，**不发 RPC、不拉起进程**。
+//
+// 与 CurrentSessionFile 的分工：需要绝对正确的写路径（发消息、删会话）用它；
+// 只需要「要不要切一下」的判断用这个——那里为空串最多多切一次，
+// 而多切一次远比「为了判断而拉起一个 pi 进程（3 秒）」便宜。
+func (e *Engine) CachedSessionFile() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.sessionFile
+}
+
 // CurrentSessionFile 返回当前会话文件路径。
 //
 // 优先读本地缓存：State() 与每次会话绑定后都会更新它，而调用它的地方
