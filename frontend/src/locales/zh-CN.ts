@@ -195,6 +195,14 @@ export default {
     abortTitle: '中止当前操作？',
     diffEmpty: '这个文件没有差异',
     diffTruncated: '差异过大，省略了 {n} 行',
+    // 差异视图：折叠未改动区段与并排切换。
+    // 改一个几百行的文件时，不折叠就得把整个文件滚完才找到改动。
+    foldedLines: '展开 {n} 行未改动',
+    foldAll: '全部折叠',
+    unfoldAll: '全部展开',
+    diffMode: '切换内联 / 并排',
+    diffSide: '并排',
+    diffInline: '内联',
     // 版本栏：同步动作
     fetch: '取回',
     pull: '拉取',

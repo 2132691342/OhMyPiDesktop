@@ -6,15 +6,17 @@
 // 没有 git 或不是仓库时，页面显示原因与「初始化」，不显示空表格。
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
 import DiffView from '@/components/workspace/DiffView.vue'
 import FilePanel from '@/components/workspace/FilePanel.vue'
 import GitBar from '@/components/workspace/GitBar.vue'
+import GitChangesPane from '@/components/workspace/GitChangesPane.vue'
+import GitCommitPanel from '@/components/workspace/GitCommitPanel.vue'
 import HistoryPanel from '@/components/workspace/HistoryPanel.vue'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
 import { useToasts } from '@/composables/useToasts'
+import { useGitActions } from '@/composables/useGitActions'
 import type { GitBranch, GitCommit, GitDiff, GitFile, GitStatus } from '@/types/api'
 
 const { t } = useI18n()
@@ -29,9 +31,9 @@ const history = ref<GitCommit[]>([])
 const loadingStatus = ref(false)
 const loadingDiff = ref(false)
 const selected = ref('')
-const message = ref('')
 const committing = ref(false)
-const pending = ref('')
+// 提交框自己持有正在写的说明，这里只需要在提交成功后叫它清空。
+const commitPanel = ref<{ reset: () => void } | null>(null)
 const tab = ref<'changes' | 'history'>('changes')
 // 文件时间线：选中一个文件就看它的历史，空串表示看整个仓库。
 // 它与「差异选中」是同一份 selected——用户点的就是一个文件，不该分两处。
@@ -40,7 +42,6 @@ const historyFile = ref('')
 const unstaged = computed(() => (status.value?.changed_files ?? []).filter((f) => !f.staged))
 const staged = computed(() => (status.value?.changed_files ?? []).filter((f) => f.staged))
 const conflicts = computed(() => (status.value?.changed_files ?? []).filter((f) => f.conflict))
-const canCommit = computed(() => Boolean(message.value.trim()) && staged.value.length > 0 && !committing.value)
 
 async function loadStatus() {
   loadingStatus.value = true
@@ -100,53 +101,37 @@ function showFileHistory(filePath: string) {
   tab.value = 'history'
 }
 
-// 写动作统一走这里：挂 loading、成功刷新状态、失败给原文。
-async function act(name: string, fn: () => Promise<GitStatus | void>) {
-  pending.value = name
-  try {
-    const next = await fn()
-    if (next) status.value = next
-    await loadStatus()
-    await Promise.all([loadDiff(), loadExtras()])
-  } catch (err) {
-    toasts.push('error', err instanceof Error ? err.message : String(err))
-  } finally {
-    pending.value = ''
-  }
-}
+// 写动作全部收口在 useGitActions 里：它们共享同一套后果处理
+// （挂 loading → 重拉 → 失败给原文），散着写迟早有哪个忘了重拉。
+const git = useGitActions(() => status.value, refresh)
 
 async function stageAll() {
-  await act('stage', () => api.gitStage(unstaged.value.map((f) => f.file_path)))
+  await git.stageAll(unstaged.value)
 }
 
 async function stage(file: GitFile) {
-  await act(`stage:${file.file_path}`, () => api.gitStage([file.file_path]))
+  await git.stage(file)
 }
 
 async function unstage(file: GitFile) {
-  await act(`unstage:${file.file_path}`, () => api.gitUnstage([file.file_path]))
+  await git.unstage(file)
 }
 
 async function discard(file: GitFile) {
-  try {
-    await ElMessageBox.confirm(t('workspace.discardConfirm', { path: file.file_path }), t('workspace.discardTitle'), {
-      confirmButtonText: t('workspace.discard'),
-      cancelButtonText: t('common.cancel'),
-      type: 'warning',
-    })
-  } catch {
-    return
-  }
-  await act(`discard:${file.file_path}`, () => api.gitDiscard([file.file_path]))
+  await git.discard(file)
 }
 
-async function commit() {
-  if (!canCommit.value) return
+async function resolveConflicts() {
+  await git.resolveConflicts(conflicts.value)
+}
+
+async function commit(text: string) {
+  if (!text.trim() || !staged.value.length || committing.value) return
   committing.value = true
   try {
-    const result = await api.gitCommit(message.value.trim())
+    const result = await api.gitCommit(text)
     status.value = result.status
-    message.value = ''
+    commitPanel.value?.reset()
     toasts.push('ok', t('workspace.committed', { hash: result.commit_hash.slice(0, 7) }))
     await Promise.all([loadDiff(), loadExtras()])
   } catch (err) {
@@ -154,89 +139,6 @@ async function commit() {
   } finally {
     committing.value = false
   }
-}
-
-async function resolveConflicts() {
-  await act('resolve', () => api.gitResolve(conflicts.value.map((f) => f.file_path)))
-}
-
-async function stateAction(action: 'continue' | 'abort') {
-  if (action === 'abort') {
-    try {
-      await ElMessageBox.confirm(t('workspace.abortConfirm'), t('workspace.abortTitle'), {
-        confirmButtonText: t('workspace.abort'),
-        cancelButtonText: t('common.cancel'),
-        type: 'warning',
-      })
-    } catch {
-      return
-    }
-  }
-  await act(`state:${action}`, () => api.gitState(action))
-}
-
-async function initRepo() {
-  await act('init', () => api.gitInit('main'))
-}
-
-async function switchBranch(name: string) {
-  await act(`switch:${name}`, () => api.gitSwitchBranch(name))
-}
-
-/**
- * 推送。
- *
- * force 分三档：none 普通、lease 带租约、force 无条件。
- * 无条件强推会静默覆盖别人的提交，所以要用户输入分支名确认——
- * 确认文本在 GitBar 里收，这里只负责把它传下去。
- */
-async function push(force = 'none') {
-  const branch = status.value?.branch_name ?? ''
-  const remote = status.value?.remotes?.length === 1 ? status.value.remotes[0].remote_name : ''
-  let confirm = ''
-  if (force === 'force') {
-    try {
-      const { value } = await ElMessageBox.prompt(
-        t('workspace.forceConfirmPlaceholder', { name: branch }),
-        t('workspace.forcePush'),
-        { confirmButtonText: t('workspace.forcePush'), cancelButtonText: t('common.cancel') },
-      )
-      confirm = value
-    } catch {
-      return
-    }
-  }
-  await act(`push:${force}`, () =>
-    api.gitPush(remote, branch, force, !status.value?.upstream_ref, confirm),
-  )
-}
-
-async function pull() {
-  const branch = status.value?.branch_name ?? ''
-  const remote = status.value?.remotes?.length === 1 ? status.value.remotes[0].remote_name : ''
-  await act('pull', () => api.gitPull(remote, branch, false))
-}
-
-async function fetchRemote() {
-  const remote = status.value?.remotes?.length === 1 ? status.value.remotes[0].remote_name : ''
-  await act('fetch', () => api.gitFetch(remote))
-}
-
-async function createBranch() {
-  try {
-    const result = await ElMessageBox.prompt(t('workspace.branchName'), t('workspace.newBranch'), {
-      confirmButtonText: t('common.save'),
-      cancelButtonText: t('common.cancel'),
-    })
-    await act('branch', () => api.gitCreateBranch(result.value))
-  } catch {
-    /* 用户取消 */
-  }
-}
-
-function changeTag(file: GitFile): string {
-  if (file.conflict) return 'U'
-  return file.change_code || '?'
 }
 
 onMounted(refresh)
@@ -272,7 +174,7 @@ onMounted(refresh)
     <div v-else-if="status && !status.is_repo" class="notice">
       <span class="dot warn" />
       <span>{{ t('workspace.notRepo') }}</span>
-      <button class="omp-btn sm" :class="{ 'is-loading': pending === 'init' }" :disabled="Boolean(pending)" @click="initRepo">
+      <button class="omp-btn sm" :class="{ 'is-loading': git.pending.value === 'init' }" :disabled="Boolean(git.pending.value)" @click="git.initRepo">
         {{ t('workspace.init') }}
       </button>
     </div>
@@ -282,13 +184,13 @@ onMounted(refresh)
       <div v-if="status.repo_state !== 'none' || status.conflict" class="notice warn">
         <span class="dot warn" />
         <span>{{ status.repo_state_detail || t('workspace.inProgress') }}</span>
-        <button class="omp-btn sm" :class="{ 'is-loading': pending === 'resolve' }" :disabled="!conflicts.length || Boolean(pending)" @click="resolveConflicts">
+        <button class="omp-btn sm" :class="{ 'is-loading': git.pending.value === 'resolve' }" :disabled="!conflicts.length || Boolean(git.pending.value)" @click="resolveConflicts">
           {{ t('workspace.markResolved') }}
         </button>
-        <button class="omp-btn sm" :class="{ 'is-loading': pending === 'state:continue' }" :disabled="Boolean(pending)" @click="stateAction('continue')">
+        <button class="omp-btn sm" :class="{ 'is-loading': git.pending.value === 'state:continue' }" :disabled="Boolean(git.pending.value)" @click="git.stateAction('continue')">
           {{ t('workspace.continue') }}
         </button>
-        <button class="omp-btn sm danger" :class="{ 'is-loading': pending === 'state:abort' }" :disabled="Boolean(pending)" @click="stateAction('abort')">
+        <button class="omp-btn sm danger" :class="{ 'is-loading': git.pending.value === 'state:abort' }" :disabled="Boolean(git.pending.value)" @click="git.stateAction('abort')">
           {{ t('workspace.abort') }}
         </button>
       </div>
@@ -296,7 +198,7 @@ onMounted(refresh)
       <!-- 版本栏：分支 / 上游 / 领先落后 / 同步动作。
            它放在三栏之上，因为「在哪个分支」决定了下面每一栏的语境。 -->
       <div class="bar-wrap">
-        <GitBar :status="status" :busy="Boolean(pending)" @fetch="fetchRemote" @pull="pull" @push="push" />
+        <GitBar :status="status" :busy="Boolean(git.pending.value)" @fetch="git.fetchRemote" @pull="git.pull" @push="git.push" />
       </div>
 
       <div class="split">
@@ -316,109 +218,29 @@ onMounted(refresh)
             </button>          </div>
 
           <div v-if="tab === 'changes'" class="mid-body">
-            <div v-if="!status.changed_files.length" class="empty-mini">{{ t('workspace.noChanges') }}</div>
+            <GitChangesPane
+              :staged="staged"
+              :unstaged="unstaged"
+              :selected="selected"
+              :pending="git.pending.value"
+              @pick="pick"
+              @stage="stage"
+              @unstage="unstage"
+              @discard="discard"
+              @stage-all="stageAll"
+              @history="(file) => showFileHistory(file.file_path)"
+            />
 
-            <template v-else>
-              <div v-if="staged.length" class="group">
-                <div class="group-head">
-                  <span>{{ t('workspace.staged') }}</span>
-                  <span class="count">{{ staged.length }}</span>
-                </div>
-                <div
-                  v-for="file in staged"
-                  :key="`s:${file.file_path}`"
-                  class="file-line omp-row-click"
-                  :class="{ active: selected === file.file_path }"
-                  @click="pick(file)"
-                >
-                  <span class="chg" :class="`chg-${changeTag(file)}`">{{ changeTag(file) }}</span>
-                  <span class="path">{{ file.file_path }}</span>
-                  <span class="num"><b class="add">+{{ file.additions }}</b><b class="del">−{{ file.deletions }}</b></span>
-                  <button
-                    class="omp-btn text sm"
-                    :title="t('history.forFile')"
-                    @click.stop="showFileHistory(file.file_path)"
-                  >
-                    {{ t('workspace.history') }}
-                  </button>
-                  <button class="omp-btn text sm" :disabled="Boolean(pending)" @click.stop="unstage(file)">
-                    {{ t('workspace.unstage') }}
-                  </button>
-                </div>
-              </div>
-
-              <div v-if="unstaged.length" class="group">
-                <div class="group-head">
-                  <span>{{ t('workspace.unstaged') }}</span>
-                  <span class="count">{{ unstaged.length }}</span>
-                  <button class="omp-btn text sm push" :disabled="Boolean(pending)" @click="stageAll">
-                    {{ t('workspace.stageAll') }}
-                  </button>
-                </div>
-                <div
-                  v-for="file in unstaged"
-                  :key="`u:${file.file_path}`"
-                  class="file-line omp-row-click"
-                  :class="{ active: selected === file.file_path }"
-                  @click="pick(file)"
-                >
-                  <span class="chg" :class="`chg-${changeTag(file)}`">{{ changeTag(file) }}</span>
-                  <span class="path">{{ file.file_path }}</span>
-                  <span class="num"><b class="add">+{{ file.additions }}</b><b class="del">−{{ file.deletions }}</b></span>
-                  <button
-                    class="omp-btn text sm"
-                    :title="t('history.forFile')"
-                    @click.stop="showFileHistory(file.file_path)"
-                  >
-                    {{ t('workspace.history') }}
-                  </button>
-                  <button class="omp-btn text sm" :disabled="Boolean(pending)" @click.stop="stage(file)">
-                    {{ t('workspace.stage') }}
-                  </button>
-                  <button class="omp-btn text sm danger" :disabled="Boolean(pending)" @click.stop="discard(file)">
-                    {{ t('workspace.discard') }}
-                  </button>
-                </div>
-              </div>
-            </template>
-
-            <div class="commit-box">
-              <textarea
-                v-model="message"
-                class="omp-input"
-                rows="3"
-                :placeholder="t('workspace.commitPlaceholder')"
-              />
-              <button
-                class="omp-btn primary"
-                :class="{ 'is-loading': committing }"
-                :disabled="!canCommit"
-                @click="commit"
-              >
-                {{ t('workspace.commit', { n: staged.length }) }}
-              </button>
-            </div>
-
-            <div class="branch-row">
-              <span class="plate">{{ t('workspace.branches') }}</span>
-              <button class="omp-btn text sm" :disabled="Boolean(pending)" @click="createBranch">
-                {{ t('workspace.newBranch') }}
-              </button>
-            </div>
-            <div class="branch-list">
-              <button
-                v-for="branch in branches"
-                :key="`${branch.remote_name}:${branch.branch_name}`"
-                class="branch-line omp-row-click"
-                :class="{ active: branch.current }"
-                :disabled="branch.current || Boolean(pending)"
-                @click="switchBranch(branch.branch_name)"
-              >
-                <span>{{ branch.branch_name }}</span>
-                <span v-if="branch.remote_name" class="tag">{{ branch.remote_name }}</span>
-                <span v-if="branch.ahead || branch.behind" class="readout">↑{{ branch.ahead }} ↓{{ branch.behind }}</span>
-              </button>
-            </div>
+            <GitCommitPanel
+              ref="commitPanel"
+              :branches="branches"
+              :staged-count="staged.length"
+              :committing="committing"
+              :pending="git.pending.value"
+              @commit="commit"
+              @create-branch="git.createBranch"
+              @switch-branch="git.switchBranch"
+            />
           </div>
 
           <div v-else class="mid-body history-body">
@@ -535,133 +357,8 @@ onMounted(refresh)
 .mid-body.history-body {
   overflow: hidden;
 }
-.group-head {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  font-size: var(--omp-fs-2xs);
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--omp-faint);
-  margin-bottom: var(--omp-sp-1);
-}
-.push {
-  margin-left: auto;
-}
-.file-line {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  width: 100%;
-  padding: 3px var(--omp-sp-2);
-  border: none;
-  background: transparent;
-  color: var(--omp-ink);
-  font-size: var(--omp-fs-xs);
-  text-align: left;
-  border-radius: var(--omp-r-sm);
-  cursor: pointer;
-}
-.file-line .path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--omp-font-mono);
-}
-.file-line .num,
-.commit-line .num {
-  display: flex;
-  gap: 6px;
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  flex: none;
-}
-.add {
-  color: var(--omp-ok);
-}
-.del {
-  color: var(--omp-bad);
-}
-.chg {
-  width: 16px;
-  text-align: center;
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  font-weight: 700;
-  flex: none;
-}
-.chg-M { color: var(--omp-warn); }
-.chg-A { color: var(--omp-ok); }
-.chg-D { color: var(--omp-bad); }
-.chg-R,
-.chg-C { color: var(--omp-brand); }
-.chg-U { color: var(--omp-bad); }
-.chg-\? { color: var(--omp-faint); }
-.commit-box {
-  display: flex;
-  flex-direction: column;
-  gap: var(--omp-sp-2);
-  flex: none;
-}
-.branch-row {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  flex: none;
-}
-.branch-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  flex: none;
-}
-.branch-line {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  width: 100%;
-  padding: 3px var(--omp-sp-2);
-  border: none;
-  background: transparent;
-  color: var(--omp-mute);
-  font-size: var(--omp-fs-xs);
-  font-family: var(--omp-font-mono);
-  text-align: left;
-  border-radius: var(--omp-r-sm);
-  cursor: pointer;
-}
-.branch-line.active {
-  color: var(--omp-brand);
-  font-weight: 600;
-}
-.commit-line {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  padding: 3px var(--omp-sp-2);
-  font-size: var(--omp-fs-xs);
-}
-.commit-line .hash {
-  color: var(--omp-brand);
-  font-size: var(--omp-fs-3xs);
-  flex: none;
-}
-.commit-line .subject {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.empty-mini {
-  padding: var(--omp-sp-4);
-  color: var(--omp-faint);
-  font-size: var(--omp-fs-2xs);
-  text-align: center;
-}
+/* 改动清单与提交 / 分支各自的样式都搬进 GitChangesPane 与 GitCommitPanel 了：
+   这一页只管三栏的排布与刷新。 */
 .empty {
   flex: 1;
   display: flex;
