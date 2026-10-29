@@ -6,17 +6,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import ChatComposer from '@/components/chat/ChatComposer.vue'
 import ChatNotices from '@/components/chat/ChatNotices.vue'
-import ContextMeter from '@/components/chat/ContextMeter.vue'
-import TurnBlocks from '@/components/chat/TurnBlocks.vue'
+import ChatHeader from '@/components/chat/ChatHeader.vue'
+import HistoryList from '@/components/chat/HistoryList.vue'
 import AskCard from '@/components/chat/AskCard.vue'
-import MarkdownBlock from '@/components/chat/MarkdownBlock.vue'
 import FilePeekDrawer from '@/components/chat/FilePeekDrawer.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import SessionList from '@/components/sessions/SessionList.vue'
 import AgentPanel from '@/components/agents/AgentPanel.vue'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
-import { openExternal } from '@/api/wails'
 import type { UIResponse } from '@/types/api'
 
 const app = useAppStore()
@@ -48,6 +46,25 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 const hasTurn = computed(() => Boolean(chat.turn))
+
+/**
+ * 拼在历史后面的当前轮。
+ *
+ * 单独算出来交给 HistoryList：那一层才知道「历史最后一行是什么角色」，
+ * 从而决定这一轮要不要出那个「assistant」头。
+ */
+const liveTurn = computed(() => {
+  const turn = chat.turn
+  if (!turn) return null
+  return {
+    userMessage: turn.user_message,
+    blocks: turn.blocks,
+    runId: turn.run_id,
+    model: chat.model?.id,
+    streaming: chat.streaming,
+    errored: Boolean(chat.promptError),
+  }
+})
 
 function nearBottom(): boolean {
   const el = scroller.value
@@ -126,31 +143,6 @@ watch(
   },
 )
 
-const modelLine = computed(() => {
-  if (!chat.model) return ''
-  const parts = [chat.model.provider, chat.model.id]
-  if (chat.tokensPerSecond) parts.push(`${chat.tokensPerSecond.toFixed(1)} tok/s`)
-  return parts.join(' · ')
-})
-
-// 引擎要求浏览器完成授权时，把地址挂在这里给用户复制。
-// 不自动打开：默认浏览器可能打不开，而用户看不到原文就无从补救。
-async function copyLink(url: string) {
-  try {
-    await navigator.clipboard.writeText(url)
-    app.pendingLink = null
-  } catch {
-    // 剪贴板不可用时保留抽屉，用户仍能手动选中复制
-  }
-}
-
-async function openLink(url: string) {
-  try {
-    await openExternal(url)
-  } finally {
-    app.pendingLink = null
-  }
-}
 </script>
 
 <template>
@@ -160,48 +152,10 @@ async function openLink(url: string) {
     </aside>
 
     <section class="chat-main">
-      <header class="chat-head">
-        <div class="chat-head-left">
-          <h1 class="chat-title">{{ t('nav.chat') }}</h1>
-          <span v-if="modelLine" class="chat-sub">{{ modelLine }}</span>
-        </div>
-        <div class="chat-head-right">
-          <button class="omp-btn icon ghost" :title="app.workspace" @click="app.chooseWorkspace()">
-            <AppIcon name="folder" :size="15" />
-          </button>
-          <button
-            class="omp-btn icon ghost"
-            :class="{ 'is-loading': chat.compacting }"
-            :title="t('chat.compact')"
-            :disabled="chat.busy || !app.hasEngine"
-            @click="chat.compact()"
-          >
-            <AppIcon name="refresh" :size="15" />
-          </button>
-          <ContextMeter />
-        </div>
-      </header>
+      <ChatHeader />
 
-      <div v-if="app.pendingLink" class="link-strip">
-        <div class="link-text">
-          <strong>{{ t('chat.openLinkTitle') }}</strong>
-          <span class="link-hint">{{ app.pendingLink.instructions || t('chat.openLinkHint') }}</span>
-          <code class="link-url selectable">{{ app.pendingLink.url }}</code>
-        </div>
-        <div class="link-actions">
-          <button class="omp-btn sm ghost" @click="copyLink(app.pendingLink.url)">
-            {{ t('chat.openLinkCopy') }}
-          </button>
-          <button class="omp-btn primary sm" @click="openLink(app.pendingLink.url)">
-            {{ t('chat.openLinkBrowser') }}
-          </button>
-          <button class="omp-btn sm ghost" @click="app.pendingLink = null">
-            {{ t('chat.openLinkDismiss') }}
-          </button>
-        </div>
-      </div>
-
-      <div ref="scroller" class="chat-scroll" @scroll="onScroll">        <div v-if="!app.hasEngine" class="chat-gate">
+      <div ref="scroller" class="chat-scroll" @scroll="onScroll">
+        <div v-if="!app.hasEngine" class="chat-gate">
           <p class="gate-title">{{ t('chat.noEngine') }}</p>
           <router-link class="omp-btn primary" :to="{ name: 'settings' }">{{ t('nav.settings') }}</router-link>
         </div>
@@ -215,49 +169,8 @@ async function openLink(url: string) {
           <p class="empty-path selectable">{{ app.workspace }}</p>
         </div>
 
-        <div v-else class="msg-col">
-          <article
-            v-for="(item, index) in chat.history"
-            :key="`h-${index}`"
-            class="msg"
-            :class="{ user: item.role === 'user', 'msg-mark': item.role === 'engine-mark' }"
-          >
-            <!-- 切引擎的分隔线：说明下面的内容来自另一个引擎、另一条会话 -->
-            <div v-if="item.role === 'engine-mark'" class="mark-line">
-              <span class="mark-text">{{ t('chat.engineHandoff', { engine: item.blocks[0]?.text ?? '' }) }}</span>
-            </div>
-            <template v-else>
-              <div class="msg-head">
-                <span class="msg-badge" :class="{ user: item.role === 'user' }">{{ item.role === 'user' ? 'you' : 'assistant' }}</span>
-                <span v-if="item.model" class="msg-meta">{{ item.model }}</span>
-              </div>
-              <div class="msg-body">
-                <TurnBlocks :blocks="item.blocks" :run-id="`h-${index}`" />
-              </div>
-            </template>
-          </article>
-
-          <template v-if="chat.turn">
-            <article class="msg user">
-              <div class="msg-head">
-                <span class="msg-badge user">you</span>
-              </div>
-              <div class="msg-body">
-                <MarkdownBlock :text="chat.turn.user_message" :streaming="false" :cache-key="`${chat.turn.run_id}:user`" />
-              </div>
-            </article>
-
-            <article class="msg" :class="{ 'msg-streaming': chat.streaming, 'msg-error': chat.promptError }">
-              <div class="msg-head">
-                <span class="msg-badge">assistant</span>
-                <span v-if="chat.model" class="msg-meta">{{ chat.model.id }}</span>
-              </div>
-              <div class="msg-body">
-                <TurnBlocks :blocks="chat.turn.blocks" :run-id="chat.turn.run_id" :streaming="chat.streaming" />
-              </div>
-            </article>
-          </template>
-
+        <div v-else class="msg-col-wrap">
+          <HistoryList :turns="chat.history" :live="liveTurn" />
           <AskCard v-if="chat.activeAsk" :ask="chat.activeAsk" @answer="answer" />
         </div>
       </div>
@@ -280,44 +193,6 @@ async function openLink(url: string) {
   display: flex;
   flex: 1;
   min-height: 0;
-}
-
-/* 授权链接条：贴在页头下方，不遮消息。用清单底的淡强调色，
-   不和错误提示（危险色）撞。 */
-.link-strip {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--omp-sp-3);
-  padding: var(--omp-sp-3) var(--omp-sp-4);
-  border-bottom: 1px solid var(--omp-line);
-  background: var(--omp-brand-soft);
-  flex: none;
-}
-
-.link-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-  font-size: var(--omp-fs-2xs);
-}
-
-.link-hint {
-  color: var(--omp-mute);
-}
-
-.link-url {
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  word-break: break-all;
-  color: var(--omp-ink);
-}
-
-.link-actions {
-  display: flex;
-  gap: var(--omp-sp-2);
-  flex: none;
 }
 
 .chat-side {
@@ -348,46 +223,8 @@ async function openLink(url: string) {
   min-height: 0;
 }
 
-.chat-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--omp-sp-3);
-  height: 52px;
-  flex: none;
-  padding: 0 var(--omp-sp-6);
-  border-bottom: 1px solid var(--omp-line);
-  background: var(--omp-work);
-}
-
-.chat-head-left {
-  display: flex;
-  align-items: baseline;
-  gap: var(--omp-sp-3);
-  min-width: 0;
-}
-
-.chat-title {
-  margin: 0;
-  font-family: var(--omp-font-display);
-  font-size: var(--omp-fs-lg);
-  font-weight: 650;
-  color: var(--omp-ink);
-}
-
-.chat-sub {
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
-  letter-spacing: 0.02em;
-}
-
-.chat-head-right {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-}
-
+/* 页头与授权链接条都搬进 ChatHeader 了：它们只在对话页出现，
+   而这一页自己只管三栏的排布与滚动。 */
 .chat-scroll {
   flex: 1;
   min-height: 0;
@@ -441,32 +278,11 @@ async function openLink(url: string) {
   color: var(--omp-faint);
 }
 
-/* 切引擎分隔：一条带文字的细线。它不是消息，
-   所以不进气泡、不带头像——只把「上下文在这里断了」说清楚。 */
-.msg-mark {
-  padding: 0;
-}
-
-.mark-line {
+/* 消息列：HistoryList 自己管列宽与间距，这里只给它一个居中的包裹层 */
+.msg-col-wrap {
   display: flex;
-  align-items: center;
-  gap: var(--omp-sp-3);
-  margin: var(--omp-sp-4) 0;
-}
-
-.mark-line::before,
-.mark-line::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--omp-line);
-}
-
-.mark-text {
-  flex: none;
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-mute);
-  font-family: var(--omp-font-mono);
+  flex-direction: column;
+  gap: var(--omp-sp-4);
 }
 
 .jump-bottom {

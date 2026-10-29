@@ -243,30 +243,44 @@ export const useChatStore = defineStore('chat', () => {
   // 而不是「等一次 chat/state 往返」之后才变。
   async function switchEngine(next: EngineKind) {
     if (next === kind.value) return
-    switching.value = 'engine'
-    try {
-      // 先把已看的消息并进历史，否则它们随 turn 一起被丢掉。
-      if (turn.value) finishTurn()
-      const kept = history.value
-      kind.value = next
-      // 立刻换到目标引擎的缓存：下拉里该出现哪个引擎的模型，一眼就该是它。
-      models.value = modelCache.value[next] ?? []
-      levels.value = levelCache.value[next] ?? []
-      const state = await api.chatState(next, undefined)
-      applyState(state)
-      // 流里插一条分隔：告诉用户“以下由 xxx 接续，前面的内容不在新会话里”。
-      // 它不是系统消息，只是界面层的标记，不会发进引擎。
-      // applyState 会用新引擎的历史覆盖，所以拼在它之后。
-      history.value = [
-        ...kept,
-        { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] },
-        ...history.value,
-      ]
-      // 后台补这个引擎的模型清单：切过去时可能是第一次用这个引擎。
-      void loadModels()
-    } finally {
-      switching.value = ''
-    }
+    // 先把已看的消息并进历史，否则它们随 turn 一起被丢掉。
+    if (turn.value) finishTurn()
+    const kept = history.value
+    kind.value = next
+    // 立刻换到目标引擎的缓存：下拉里该出现哪个引擎的模型，一眼就该是它。
+    models.value = modelCache.value[next] ?? []
+    levels.value = levelCache.value[next] ?? []
+
+    // 不等后端往返。
+    //
+    // 之前这里 await 一次 chatState：那条路径在引擎没跑时会顺手拉起进程
+    // （pi 起一次 Node 实测 3 秒），而用户点的只是一个下拉项。
+    // 于是「切引擎」这个高频动作每次都要盯三秒转圈。
+    //
+    // 模型清单与思考档已经按引擎分桶缓存好，界面在这一刻就已经是
+    // 目标引擎的样子了；真正的往返放后台补。
+    void (async () => {
+      try {
+        const state = await api.chatState(next, undefined)
+        // 请求回来时用户可能已经切走了：那就别覆盖当前引擎的状态。
+        if (kind.value !== next) return
+        applyState(state)
+        // 流里插一条分隔：告诉用户“以下由 xxx 接续，前面的内容不在新会话里”。
+        // 它不是系统消息，只是界面层的标记，不会发进引擎。
+        // applyState 会用新引擎的历史覆盖，所以拼在它之后。
+        history.value = [
+          ...kept,
+          { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] },
+          ...history.value,
+        ]
+      } catch {
+        /* 切引擎失败不弹提示：界面已经切过去了，用户能正常用，
+           只是这一轮没拿到引擎的会话状态。 */
+      }
+    })()
+
+    // 后台补这个引擎的模型清单：切过去时可能是第一次用这个引擎。
+    void loadModels()
   }
 
   async function clearQueue() {

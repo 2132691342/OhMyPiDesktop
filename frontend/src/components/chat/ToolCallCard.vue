@@ -93,12 +93,26 @@ const fileName = computed(() => {
 })
 
 /**
+ * 有没有「这个文件被改过」的证据：引擎给的 diff，或它自己报的文件路径。
+ *
+ * 之前只有改文件类工具才带 diff，于是「写入 / 编辑」之外那些动了文件的
+ * 工具（apply_patch、multiedit…）在界面上完全没有差异入口，
+ * 用户只能去工作区页自己找。判据放宽到「有文件路径」——
+ * 触到了文件就给一条路，哪怕这份差异是空的。
+ */
+const touched = computed(() => Boolean(props.block.file_path) || diffLines.value.length > 0)
+
+/**
  * 能不能「看工作区里的真实差异」。
  *
- * 要有文件路径；而路径得在当前工作区里——工作区外的文件 git 读不到，
- * 那种情况下给一个点不动的按钮不如不给。
+ * 只要知道文件路径就行。
+ *
+ * 之前的判据还要求文件落在当前工作区内（抽屉会算相对路径，区外算不出来）。
+ * 但那把最常见的情形挡掉了：引擎常在别的项目目录里改东西，
+ * 那种时候给一个点了报错的按钮确实不如不给——正确的修法不是不给，
+ * 而是让抽屉拿绝对路径也能问到差异（git 认绝对路径）。
  */
-const canPeek = computed(() => Boolean(props.block.file_path))
+const canPeek = computed(() => touched.value)
 </script>
 
 <template>
@@ -130,8 +144,11 @@ const canPeek = computed(() => Boolean(props.block.file_path))
       </svg>
     </button>
     <div v-if="open" class="tool-body">
-      <!-- 差异先于输出：改文件工具的输出只是一句人话 -->
-      <div v-if="diffLines.length">
+      <!-- 差异先于输出：改文件工具的输出只是一句人话。
+           引擎没给 diff 但报了文件路径时也给这一块：
+           那时正文是空的，但「看工作区里的真实差异」这条路仍然通向答案，
+           不给就等于告诉用户「这次改动没法看」。 -->
+      <div v-if="touched">
         <div class="tool-label-row">
           <span class="tool-label">{{ t('chat.toolChanges') }}</span>
           <!-- 「看工作区」：引擎给的是它当时的改动，
@@ -145,7 +162,7 @@ const canPeek = computed(() => Boolean(props.block.file_path))
             {{ t('chat.peekInWorkspace') }}
           </button>
         </div>
-        <div class="tool-diff">
+        <div v-if="diffLines.length" class="tool-diff">
           <div
             v-for="(line, i) in diffLines"
             :key="i"
@@ -162,6 +179,9 @@ const canPeek = computed(() => Boolean(props.block.file_path))
             <span class="tx">{{ line.line_text }}</span>
           </div>
         </div>
+        <!-- 引擎没把 diff 塞进这一帧：别画一个空框，
+             直接把「去工作区看」这条路指出来（上面那个按钮就是）。 -->
+        <p v-else class="tool-nodiff">{{ t('chat.toolNoInlineDiff') }}</p>
       </div>
       <template v-if="args">
         <div>

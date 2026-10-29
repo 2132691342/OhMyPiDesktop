@@ -5,14 +5,12 @@
 // 真实差异是现在工作区的状态——用户可能又改过了，也可能已经提交了。
 // 两者对不上的时候，真实差异才是用户要的。
 import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import DiffView from '@/components/workspace/DiffView.vue'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
 import { useFilePeek } from '@/composables/useFilePeek'
 import type { GitDiff } from '@/types/api'
 
-const { t } = useI18n()
 const app = useAppStore()
 const peek = useFilePeek()
 
@@ -20,26 +18,27 @@ const diff = ref<GitDiff | null>(null)
 const loading = ref(false)
 const error = ref('')
 
-/** 工作区相对路径。绝对路径要折成相对的：git 只认仓库内的路径。 */
-function toRel(target: string): string | null {
+/**
+ * 问 git 要用的路径。
+ *
+ * 工作区内的折成相对路径（界面上短，也和别处显示的一致）；
+ * 工作区外的**原样用绝对路径**——git 本身认绝对路径，
+ * 而引擎常在别的项目目录里改东西，那种时候把入口藏掉等于没法看。
+ *
+ * 判断「在不在工作区」只是为了让界面显示得短一点，不是能不能查的判据。
+ */
+function toRel(target: string): string {
   const root = (app.workspace || '').replace(/[\\/]+$/, '')
   if (!root) return target
   const key = (s: string) => s.replace(/\//g, '\\').toLowerCase()
-  if (!key(target).startsWith(key(root) + '\\')) {
-    return key(target) === key(root) ? '' : null
-  }
+  if (!key(target).startsWith(key(root) + '\\')) return target
   return target.slice(root.length + 1)
 }
 
-const relPath = computed(() => (peek.path.value ? toRel(peek.path.value) : null))
+const relPath = computed(() => (peek.path.value ? toRel(peek.path.value) : ''))
 
 async function load() {
   const rel = relPath.value
-  if (rel === null) {
-    error.value = t('chat.peekOutside')
-    diff.value = null
-    return
-  }
   loading.value = true
   error.value = ''
   try {
@@ -80,7 +79,7 @@ const heading = computed(() => {
     <DiffView
       v-else
       :diff="diff"
-      :path="relPath ?? ''"
+      :path="relPath"
       :loading="loading"
     />
   </el-drawer>
