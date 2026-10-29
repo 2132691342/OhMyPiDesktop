@@ -81,8 +81,8 @@
 
 ## 关窗不退出
 
-`WindowClosing` 钩子里 `e.Cancel()` 把窗口收进托盘（v3 的拦截方式是 `e.Cancel()`；
-返回 `false` 不是拦截，那是 v2 的语义）。真正退出只有托盘「退出」一条路——
+`WindowClosing` 钩子里 `e.Cancel()` 把窗口收进托盘（拦截窗口关闭就是 `e.Cancel()`；
+返回 `false` 不拦截）。真正退出只有托盘「退出」一条路——
 `quitting` 为真时钩子放行。
 
 ## WebView2 缓存放哪

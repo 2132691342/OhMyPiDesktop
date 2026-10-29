@@ -195,6 +195,7 @@ task smoke -- -engine pi  -msg "Reply with exactly: OK"
 | [docs/modules/repo.md](docs/modules/repo.md) | 设置存储（一个 JSON）与系统能力（注册表） |
 | [docs/modules/session.md](docs/modules/session.md) | 会话层：一套读取代码 + 三点适配 |
 | [docs/modules/skill.md](docs/modules/skill.md) | 技能与插件：发现规则、启停语义、CLI 装卸 |
+| [docs/modules/mcp.md](docs/modules/mcp.md) | MCP 服务器：共用的 mcp.json 读写、启用优先级、启停分叉 |
 | [docs/modules/subagents.md](docs/modules/subagents.md) | 子代理观测台：双源数据、字节游标、干预 |
 | [docs/modules/git.md](docs/modules/git.md) | 工作区：版本状态、白名单写入、文件面板 |
 

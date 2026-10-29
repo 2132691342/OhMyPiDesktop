@@ -7,6 +7,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -173,7 +174,7 @@ func TestIndexFileCacheBounded(t *testing.T) {
 	dir := t.TempDir()
 	total := cacheMax + 200
 	for i := 0; i < total; i++ {
-		name := "s" + itoa(i) + ".jsonl"
+		name := "s" + strconv.Itoa(i) + ".jsonl"
 		writeSession(t, dir, name, []string{
 			`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
 			`{"type":"message","message":{"role":"user","content":"hi","timestamp":1}}`,
@@ -209,27 +210,4 @@ func TestIndexInvalidate(t *testing.T) {
 	if got := idx.CacheLen(); got != before-1 {
 		t.Errorf("失效后缓存应减少 1（%d → %d），实际 %d", before, before-1, got)
 	}
-}
-
-// itoa 是测试用的小整数转字符串。
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	var b [20]byte
-	pos := len(b)
-	for i > 0 {
-		pos--
-		b[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	if neg {
-		pos--
-		b[pos] = '-'
-	}
-	return string(b[pos:])
 }

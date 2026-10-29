@@ -33,13 +33,13 @@ func TestMatchKind(t *testing.T) {
 		want                      bool
 	}{
 		{"omp 标准版本号", string(KindOMP), "omp/18.13.1", helpOMP, true},
-		{"omp 改了 bin 名但帮助是 pi", string(KindOMP), "custom/2.0.0", helpPi, false},
+		{"改了 bin 名但帮助是 pi", string(KindOMP), "custom/2.0.0", helpPi, false},
 		{"pi 的版本号不是 omp 形状", string(KindOMP), "pi/1.4.0", helpPi, false},
 		{"pi 裸版本号", string(KindPi), "1.4.0", helpPi, true},
 		{"pi 带预发布后缀", string(KindPi), "1.4.0-beta.2", helpPi, true},
-		{"omp 遗留分支打裸版本号", string(KindPi), "1.4.0", helpOMP, false},
-		{"pi 不可能是带前缀的版本", string(KindPi), "omp/18.13.1", helpOMP, false},
-		{"帮助跑不出来就不认", string(KindPi), "1.4.0", "", false},
+		{"omp 裸版本号不算 pi", string(KindPi), "1.4.0", helpOMP, false},
+		{"pi 不接受带前缀版本", string(KindPi), "omp/18.13.1", helpOMP, false},
+		{"帮助跑不出来不认", string(KindPi), "1.4.0", "", false},
 	}
 	for _, c := range cases {
 		if got := matchKindWithHelp(Kind(c.kind), c.version, c.help); got != c.want {
@@ -55,11 +55,11 @@ func TestDetectChannel(t *testing.T) {
 		name, kind, exe string
 		want            Channel
 	}{
-		{"nipm 全局 node_modules", string(KindPi), `C:\nvm\node_global\node_modules\@earendil-works\pi-coding-agent\dist\cli.js`, ChannelNPM},
+		{"npm 全局", string(KindPi), `C:\nvm\node_global\node_modules\@earendil-works\pi-coding-agent\dist\cli.js`, ChannelNPM},
 		{"pnpm 全局", string(KindPi), `C:\Users\me\AppData\Local\pnpm\node_modules\.pnpm\@earendil-works+pi\dist\cli.js`, ChannelPNPM},
 		{"bun 全局", string(KindPi), `C:\Users\me\.bun\install\global\node_modules\@earendil-works\pi-coding-agent\dist\cli.js`, ChannelBun},
 		{"omp 官方安装器", string(KindOMP), `C:\Users\me\AppData\Local\omp\omp.exe`, ChannelOMPInstaller},
-		{"别处的 omp 目录不是安装器", string(KindOMP), `D:\tools\omp\omp.exe`, ChannelUnknown},
+		{"别处的 omp 不是安装器", string(KindOMP), `D:\tools\omp\omp.exe`, ChannelUnknown},
 		{"空路径", string(KindOMP), "", ChannelUnknown},
 	}
 	for _, c := range cases {
@@ -69,8 +69,7 @@ func TestDetectChannel(t *testing.T) {
 	}
 }
 
-// shim 判定：全局安装是 <prefix>\pi.cmd + 同级 node_modules\<包>，
-// 只看路径段会全判成未知——这是最常见的漏判。
+// 全局 shim 是 <prefix>\pi.cmd + 同级 node_modules，只看路径段会全判成未知。
 func TestDetectChannelSiblingModules(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent"), 0o755)
@@ -339,10 +338,7 @@ func newTestSupervisor() *Supervisor {
 	)
 }
 
-// newTestSupervisorWith 建一个能把事件收下来的监督者。
-//
-// 事件出口在装配完成后才注入（SetEmitter），所以这里先造一个空出口，
-// 再换上收事件的——与真实启动顺序一致。
+// newTestSupervisorWith 建一个能收事件的监督者：事件出口在装配完成后才注入。
 func newTestSupervisorWith(emit Emitter) *Supervisor {
 	s := NewSupervisor(
 		func(string, string, any) {},

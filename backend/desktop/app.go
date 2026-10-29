@@ -192,7 +192,7 @@ type App struct {
 	quitting atomic.Bool
 }
 
-// ServiceStartup 是 v3 的服务生命周期钩子，等价于 v2 的 OnStartup。
+// ServiceStartup 是 Wails 的服务生命周期钩子：装配业务、启动后端。
 func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	a.startup(ctx)
 	return nil

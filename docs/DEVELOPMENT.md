@@ -4,9 +4,9 @@
 
 | 项 | 版本 | 说明 |
 |---|---|---|
-| Go | 1.26+ | 单 module，无 CGO（v3 的 `go.mod` 要求 1.26.0） |
+| Go | 1.26+ | 单 module，无 CGO（`go.mod` 要求 1.26.0） |
 | Node | 18+ | 只用于构建前端 |
-| Wails CLI | v3.0+ | `wails3 task dev` / `wails3 build`；与 v2 的 `wails` 是两个命令，可共存 |
+| Wails CLI | v3.0+ | 命令是 `wails3 task dev` / `wails3 build` |
 | WebView2 | 系统自带 | Win10 1803+ 一般已有 |
 | 引擎 | **用户自己装** | `omp` 或 `pi`，在 PATH 上或被显式指定 |
 

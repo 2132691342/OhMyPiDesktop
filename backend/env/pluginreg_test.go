@@ -73,32 +73,24 @@ func TestReadPluginEntries(t *testing.T) {
 		t.Errorf("第二条: %+v", entries[1])
 	}
 
-	// omp：plugins/package.json 的 dependencies 映射
-	ompPkg := filepath.Join(dir, "pkg.json")
-	if err := os.WriteFile(ompPkg, []byte(`{"name":"x","dependencies":{"a":"^1.0.0","@s/b":"^2.0.0"}}`), 0o644); err != nil {
+	// omp：plugins/package.json 的 dependencies 映射；source 用裸名
+	// （uninstall 认的是包名，拼版本范围会匹配不到）。
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"x","dependencies":{"a":"^1.0.0","@s/b":"^2.0.0"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	entries, _, err = ReadPluginEntries("omp", Layout{})
+	ompEntries, _, err := ReadPluginEntries("omp", Layout{Plugins: dir})
 	if err != nil {
 		t.Fatalf("omp Read: %v", err)
-	}
-	_ = entries
-	ompEntries, _, err := readOMPEntries(ompPkg)
-	if err != nil {
-		t.Fatalf("omp read: %v", err)
 	}
 	names := map[string]bool{}
 	for _, e := range ompEntries {
 		names[e.Name] = true
-	}
-	if !names["a"] || !names["@s/b"] {
-		t.Errorf("omp 条目: %v", names)
-	}
-	// omp 的 source 用裸名：uninstall 认的是包名，拼版本范围会匹配不到
-	for _, e := range ompEntries {
 		if e.Source != e.Name {
 			t.Errorf("omp source 应为裸名: %+v", e)
 		}
+	}
+	if !names["a"] || !names["@s/b"] {
+		t.Errorf("omp 条目: %v", names)
 	}
 }
 

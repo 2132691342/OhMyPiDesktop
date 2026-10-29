@@ -67,10 +67,9 @@ func New(ring int) *Hub {
 // 事件名固定成 `namespace:name` 形态，前端按名字分流；
 // session_id 不进通道名——一个窗口只显示一个会话，按通道分会让重放变复杂。
 //
-// 性能约定：载荷只 marshal 一次。早期实现为了塞 session_id 而做了
-// unmarshal→改字段→再 marshal，而实际所有调用点都传空串，
-// 于是那一次完整的 JSON 往返纯属浪费——在流式帧（每秒几十帧）上是实打实的开销。
-// 现在只有 sessionID 非空时才重编码，且用一次浅层编辑。
+// 性能约定：载荷只 marshal 一次。sessionID 只在非空时才重编码（用一次浅层编辑），
+// 绝大多数帧（传空串）直接共享同一份序列化字节——流式帧每秒几十帧，
+// 多一次完整 JSON 往返都是实打实的开销。
 func (h *Hub) Emit(sessionID, event string, data any) {
 	raw, err := json.Marshal(data)
 	if err != nil {
