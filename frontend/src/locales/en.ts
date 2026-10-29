@@ -571,6 +571,7 @@ export default {
     "workspace": "Current working directory",
     "recentWorkspaces": "Recent directories",
     "recentWorkspacesEmpty": "Nothing yet. Switch once and it will be remembered here.",
+    "recentMissing": "This directory no longer exists",
     "workspaceSwitched": "Switched to this directory",
     "forgetWorkspace": "Remove from recent",
     "workspaceForgotten": "Removed from recent",

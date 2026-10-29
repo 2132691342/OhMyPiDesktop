@@ -586,6 +586,8 @@ export default {
     workspace: '当前工作目录',
     recentWorkspaces: '最近用过的目录',
     recentWorkspacesEmpty: '还没有记录。切一次工作目录，这里就会记住它。',
+    // 记过但目录已经不在了（被删 / 换机器）：划掉并禁掉切换。
+    recentMissing: '这个目录已经不在了',
     workspaceSwitched: '已切到这个目录',
     forgetWorkspace: '从「最近」里去掉',
     workspaceForgotten: '已从「最近」里去掉',
