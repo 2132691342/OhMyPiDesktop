@@ -199,6 +199,30 @@ func (e *Engine) FinishRun(runID, stopReason string) {
 	e.send("", "chat:done", map[string]any{"run_id": runID, "stop_reason": stopReason})
 }
 
+// AbortRun 因引擎进程死亡而中断一轮。
+//
+// 为什么需要它：进程死了之后，正常路径的收尾帧（agent_end / agent_settled）
+// 永远不会来。而 FinishRun 靠 runID 幂等——OnExit 已经把 runID 清空了，
+// 于是那一轮永远收不了尾，前端会一直停在「正在回答」：输入框禁用、
+// 停止按钮转圈、用户以为程序卡死了，只能重启应用。
+//
+// 所以进程死亡这条路径要自己收尾：把这一轮标成出错，推给界面。
+func (e *Engine) AbortRun(reason string) {
+	e.mu.Lock()
+	runID := e.runID
+	e.runID = ""
+	e.mu.Unlock()
+	if runID == "" {
+		return // 空闲时进程退出（回收、手动停止）：没有轮要收
+	}
+	// 先把错误写进这一轮的投影，界面渲染时能看到「这一轮是因为什么断的」。
+	if turn := e.tr.Current(); turn != nil {
+		turn.Error = reason
+	}
+	e.send("", "chat:error", map[string]any{"run_id": runID, "message": reason})
+	e.send("", "chat:done", map[string]any{"run_id": runID, "stop_reason": "engine_exit"})
+}
+
 // EmitTurn 把当前轮整块推一次（工具结果回填后让界面拿到一致快照）。
 func (e *Engine) EmitTurn() {
 	if turn := e.tr.Current(); turn != nil {

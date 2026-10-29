@@ -368,6 +368,24 @@ GET /events?since=41
 | `agents:cleared` | roster 与游标已清空（会话切换后由后端主动发） |
 | `app:progress` | 装 / 升 / 卸的进度：`{kind, action, phase, line?, command?, message?}`。`phase` = `start｜line｜done｜fail`；`start` 帧带 `command`（要跑的命令原文），`line` 帧带一行输出 |
 
+### 一轮对话怎么结束
+
+一轮只有两种结束方式，两种都必须让界面解除「正在回答」：
+
+| 方式 | 触发 | 发什么 |
+|---|---|---|
+| 正常 | 引擎的结束帧（omp `agent_end{yielded}` / pi `agent_settled`） | `chat:done` |
+| 异常 | 引擎进程死了，或被手动停止 / 重启 / 回收 | `chat:error` + `chat:done` |
+
+异常那条路径是必需的：进程死了之后，引擎再也不会发结束帧，
+而 `chat:done` 的幂等靠 `runID`——进程死的时候 `runID` 已经被清掉了，
+那一轮会永远收不了尾。界面于是停在「正在回答」：输入框禁用、停止按钮一直转圈，
+用户只能重启应用。
+
+所以进程退出这条路径要自己收尾：把这一轮标成出错（`chat:error` 带原因），
+再发一次 `chat:done`（`stop_reason` 为 `engine_exit`）。空闲时进程退出
+（回收、手动停止）没有轮要收，不发这两个事件。
+
 ## 契约版本
 
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；

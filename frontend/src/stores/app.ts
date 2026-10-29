@@ -128,7 +128,10 @@ export const useAppStore = defineStore('app', () => {
       }
       await chat.refresh(prefs.last_session_file)
       const current = `#/chat?session=${prefs.last_session_file}`
-      if (hash !== current) await router.replace({ name: 'chat', query: { session: prefs.last_session_file } })    } catch {
+      if (hash !== current) {
+        await router.replace({ name: 'chat', query: { session: prefs.last_session_file } })
+      }
+    } catch {
       /* 恢复失败不该拦启动：落在空会话上一样能用 */
     }
   }

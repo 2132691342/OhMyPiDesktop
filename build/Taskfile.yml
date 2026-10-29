@@ -78,6 +78,10 @@ tasks:
     generates:
       - frontend/bindings/**/*
     cmds:
+      # -clean 会先清空输出目录：生成物的目录名跟着后端包的位置走
+      # （desktop 在 backend/ 下就是 bindings/OhMyPiDesktop/backend/desktop），
+      # 所以清空后重新生成的那一份永远是「现在这个包」的位置。
+      # 前端的 import 必须跟着它走——backend/desktop/bindings_test.go 会盯住这件事。
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true{{if eq .OBFUSCATED "true"}} -obfuscated{{end}} -ts -i
 
   generate:icons:

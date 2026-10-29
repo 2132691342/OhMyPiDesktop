@@ -189,6 +189,12 @@ json tag 同步用 snake_case（`branch_name`）。
 - 后端：`go test ./backend/... -count=1`
 - 前端：`vue-tsc --noEmit` 是硬门禁；没有 UI 单测（成本高、断言脆）
 - 改了协议翻译或会话投影，必须先跑冒烟：真起一个引擎进程跑一轮
+- **Wails 绑定是静默故障**：绑定 id 由「导入路径 + 方法名」算出，
+  挪一下包的位置，全站绑定就全失效，而编译、类型检查、单元测试一律是绿的。
+  所以绑定有两道门：`backend/desktop/bindings_test.go`（比对 id 与导入路径）
+  与 CI 的「Verify bindings are in sync」（比对生成物有没有跟着提交）。
+  改了绑定面（挪包、加方法、删方法）必须重跑
+  `wails3 task common:generate:bindings` 并把结果一起提交
 
 ## 9. 提交
 

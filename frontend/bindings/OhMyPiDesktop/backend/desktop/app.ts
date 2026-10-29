@@ -25,14 +25,14 @@ import * as $models from "./models.js";
  * 然后把「后端没有启动起来」当成永久失败。
  */
 export function Endpoint(): $CancellablePromise<$models.Endpoint> {
-    return $Call.ByID(279391074);
+    return $Call.ByID(1793690431);
 }
 
 /**
  * OpenExternal 用系统默认浏览器打开链接。
  */
 export function OpenExternal(url: string): $CancellablePromise<void> {
-    return $Call.ByID(2717283392, url);
+    return $Call.ByID(3483812393, url);
 }
 
 /**
@@ -42,7 +42,7 @@ export function OpenExternal(url: string): $CancellablePromise<void> {
  * 取消时返回空列表，不是错误。
  */
 export function PickFiles(title: string): $CancellablePromise<string[] | null> {
-    return $Call.ByID(871414725, title);
+    return $Call.ByID(1510218722, title);
 }
 
 /**
@@ -52,14 +52,14 @@ export function PickFiles(title: string): $CancellablePromise<string[] | null> {
  * 取消时返回空串而不是错误（空串就是用户没选，不是失败）。
  */
 export function PickFolder(defaultDir: string): $CancellablePromise<string> {
-    return $Call.ByID(2717136730, defaultDir);
+    return $Call.ByID(2662061519, defaultDir);
 }
 
 /**
  * Quit 退出应用。
  */
 export function Quit(): $CancellablePromise<void> {
-    return $Call.ByID(3576424264);
+    return $Call.ByID(3880122929);
 }
 
 /**
@@ -72,26 +72,26 @@ export function Quit(): $CancellablePromise<void> {
  * 等前端把首屏画完再显示：两个问题一起消失，顺带没有白屏。
  */
 export function Ready(): $CancellablePromise<void> {
-    return $Call.ByID(3692690702);
+    return $Call.ByID(773274081);
 }
 
 /**
  * WindowClose 关窗（收托盘，不退出）。
  */
 export function WindowClose(): $CancellablePromise<void> {
-    return $Call.ByID(2619206981);
+    return $Call.ByID(1989283186);
 }
 
 /**
  * WindowMinimize 最小化。
  */
 export function WindowMinimize(): $CancellablePromise<void> {
-    return $Call.ByID(252424399);
+    return $Call.ByID(3611115174);
 }
 
 /**
  * WindowToggleMaximize 最大化 / 还原。
  */
 export function WindowToggleMaximize(): $CancellablePromise<void> {
-    return $Call.ByID(3656774713);
+    return $Call.ByID(3047290956);
 }

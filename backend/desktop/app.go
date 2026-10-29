@@ -154,7 +154,6 @@ func windowPhysicalSize() (int, int) {
 	scale := displayScale()
 	width := windowLogicalWidth * scale
 	height := windowLogicalHeight * scale
-	println("PROBE width=", width, "height=", height)
 	return width, height
 }
 

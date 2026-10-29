@@ -40,6 +40,25 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Install Wails v3 CLI
+        # 生成绑定要用 wails3。版本跟 go.mod 里依赖的 wails v3 保持一致：
+        # 生成器的输出格式随版本变，不同版本生成的文件不能互认。
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+
+      - name: Verify bindings are in sync
+        shell: pwsh
+        # 绑定漂移是静默故障：前端拿到的绑定 id 与后端注册的对不上时，
+        # 编译、类型检查、单元测试全都绿，只有真在 WebView 里点一下才知道。
+        # 所以这里重新生成一遍，要求工作区干净——
+        # 不干净就说明生成物没跟着代码一起提交。
+        run: |
+          wails3 generate bindings -clean=true -ts -i
+          git diff --exit-code -- frontend/bindings
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "绑定生成物与代码不一致：重新生成后请提交 frontend/bindings"
+            exit 1
+          }
+
       - name: Install frontend dependencies
         run: npm ci
         working-directory: frontend

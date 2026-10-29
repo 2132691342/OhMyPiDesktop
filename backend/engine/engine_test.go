@@ -339,6 +339,21 @@ func newTestSupervisor() *Supervisor {
 	)
 }
 
+// newTestSupervisorWith 建一个能把事件收下来的监督者。
+//
+// 事件出口在装配完成后才注入（SetEmitter），所以这里先造一个空出口，
+// 再换上收事件的——与真实启动顺序一致。
+func newTestSupervisorWith(emit Emitter) *Supervisor {
+	s := NewSupervisor(
+		func(string, string, any) {},
+		map[Kind]Dialect{KindOMP: fakeDialect{}, KindPi: fakeDialect{}},
+		func(Kind) (string, []string, []string) { return "", nil, nil },
+		nil,
+	)
+	s.SetEmitter(emit)
+	return s
+}
+
 func tempDir(i int) string { return "/tmp/probe-" + string(rune('a'+i)) }
 
 func countEngines(s *Supervisor) int {
@@ -459,4 +474,76 @@ func TestShutdownIdempotent(t *testing.T) {
 	s.Engine(KindOMP, tempDir(1))
 	s.Shutdown()
 	s.Shutdown()
+}
+
+// 引擎进程死在对话中途时，那一轮必须自己收尾。
+//
+// 这是会悄无声息错的地方：正常路径的结束帧（agent_end / agent_settled）
+// 永远不会再来了，而收尾函数靠 runID 幂等——进程死的时候 runID 已经被清掉，
+// 于是那一轮永远收不了尾。界面于是停在「正在回答」：输入框禁用、
+// 停止按钮一直转圈，用户只能重启应用。
+//
+// 所以这里钉死：进程退出后必须发出 chat:done（外加一条 chat:error 说明原因）。
+func TestDeadEngineFinishesTurn(t *testing.T) {
+	events := make(chan [2]any, 8)
+	s := newTestSupervisorWith(func(_ string, name string, data any) {
+		events <- [2]any{name, data}
+	})
+	defer s.Shutdown()
+
+	e := s.Engine(KindOMP, tempDir(2))
+	runID, _, _, _ := e.beginRun()
+	e.tr.BeginTurn(runID, "在吗", "omp/x")
+
+	// 模拟进程死亡：OnExit 的那条路径。
+	e.AbortRun("引擎进程意外退出")
+
+	var sawDone, sawError bool
+	for i := 0; i < 4; i++ {
+		select {
+		case ev := <-events:
+			name, _ := ev[0].(string)
+			switch name {
+			case "chat:done":
+				sawDone = true
+			case "chat:error":
+				sawError = true
+			}
+		default:
+		}
+	}
+	if !sawDone {
+		t.Error("引擎死亡后没有发出 chat:done：界面会永远停在「正在回答」")
+	}
+	if !sawError {
+		t.Error("引擎死亡后没有发出 chat:error：用户看不到这一轮为什么断")
+	}
+	if e.RunID() != "" {
+		t.Errorf("收尾后 runID 应清空，实际 %q", e.RunID())
+	}
+}
+
+// 空闲时进程退出（回收、手动停止）不该发出收尾事件。
+//
+// 没有轮要收的时候发 chat:done，会让界面白白收掉一轮不存在的话。
+func TestIdleEngineExitEmitsNoTurnEvents(t *testing.T) {
+	events := make(chan [2]any, 8)
+	s := newTestSupervisorWith(func(_ string, name string, data any) {
+		events <- [2]any{name, data}
+	})
+	defer s.Shutdown()
+
+	e := s.Engine(KindOMP, tempDir(3))
+	e.AbortRun("引擎已停止")
+
+	for {
+		select {
+		case ev := <-events:
+			if name, _ := ev[0].(string); name == "chat:done" || name == "chat:error" {
+				t.Errorf("空闲时不应发 %s", name)
+			}
+		default:
+			return
+		}
+	}
 }

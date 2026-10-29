@@ -91,12 +91,16 @@ func (e *Engine) boot(ctx context.Context) (*Proc, error) {
 		Dialect: e.dialect,
 		OnFrame: e.onFrame,
 		OnExit: func(err error) {
+			reason := errText(err)
+			// 进程死了，先把正在跑的那一轮收尾（它不会自己收到结束帧了），
+			// 再清状态。顺序反了的话 runID 已经被清掉，收尾函数认不出这一轮。
+			e.AbortRun(reason)
 			e.mu.Lock()
 			e.proc = nil
 			e.runID = ""
 			e.mu.Unlock()
 			e.send("", "engine:exit", map[string]any{
-				"kind": kind, "work_dir": dir, "reason": errText(err),
+				"kind": kind, "work_dir": dir, "reason": reason,
 			})
 		},
 	})
@@ -108,6 +112,10 @@ func (e *Engine) boot(ctx context.Context) (*Proc, error) {
 
 // Stop 关闭引擎进程。
 func (e *Engine) Stop() {
+	// 先收尾正在跑的那一轮：停进程之后不会有任何结束帧了，
+	// 而界面靠 chat:done 才会解除「正在回答」状态。
+	// 手动停止、引擎重启、空闲回收三条路径都走这里。
+	e.AbortRun("引擎已停止")
 	e.mu.Lock()
 	// 停掉之后也算「刚用过」：StopKind 之后的实例已被摘除，
 	// 而手动停止的场景（重启引擎）紧接着就会重新拉起，不该被回收抢先。
