@@ -245,6 +245,29 @@ function statusLedClass(engine: EngineHealth): string {
   return 'omp-led--warn'
 }
 
+/**
+ * 一个计数怎么显示。
+ *
+ * 没读到的那一格必须显示「—」：拿到的是零值，而零值不等于「有 0 个」。
+ * 之前这里直接显示数字，于是磁盘上有九十个会话、界面说 0 个——
+ * 那不是「没刷新」，是一个反的断言。
+ */
+function countLabel(n: number, known: boolean): string {
+  return known ? String(n) : '—'
+}
+
+/** 「检测中」之外，探测没能给出结论的原因要各自说清下一步。 */
+function probeReasonLabel(engine: EngineHealth): string {
+  switch (engine.probe_unknown_reason) {
+    case 'bad-path':
+      return t('overview.probeBadPath')
+    case 'timeout':
+      return t('overview.probeTimeout')
+    default:
+      return ''
+  }
+}
+
 /** 版本号那一行：装了就显示版本，没装且还在探就显示「检测中」。 */
 function versionLabel(engine: EngineHealth): string {
   if (engine.version) return engine.version
@@ -278,6 +301,22 @@ watch(
   () => app.detecting,
   (value, prev) => {
     if (prev && !value) void load()
+  },
+)
+
+// detected_at 是第二道兜底。
+//
+// 前面那条 watching 只认 app.detecting 的真假翻转，而那一翻转依赖
+// engine:detected 这一帧真的到达。Bootstrap 自己会触发一轮探测，
+// 那一轮可能跑完在 SSE 连接建立之前——帧发在没有订阅者的总线上，
+// 于是 detecting 永远不变，概览页停在旧值不动。
+//
+// 时间戳是存在后端的事实，不依赖任何一帧有没有送到：它变了就说明
+// 探测出了新结论，而这一屏拿的可能还是上一轮的。
+watch(
+  () => app.lastDetectedAt,
+  (value, prev) => {
+    if (prev && value && value !== prev) void load()
   },
 )
 
@@ -353,27 +392,37 @@ onUnmounted(() => {
           </div>
 
           <div v-else-if="!engine.installed" class="engine-missing">
-            <p class="engine-hint">{{ t('overview.installHint') }}</p>
+            <!-- 「没装」有三种不同的原因，下一步完全不同。
+                 混成一句「未安装」会让用户去装一个其实已经装好的引擎。 -->
+            <p v-if="probeReasonLabel(engine)" class="engine-hint">{{ probeReasonLabel(engine) }}</p>
+            <p v-else class="engine-hint">{{ t('overview.installHint') }}</p>
             <code v-if="engine.install_hint" class="engine-cmd selectable">{{ engine.install_hint }}</code>
             <button class="omp-btn sm primary" @click="app.openApps()">{{ t('overview.goInstall') }}</button>
+            <button
+              v-if="engine.probe_unknown_reason === 'bad-path'"
+              class="omp-btn sm"
+              @click="app.openSettings()"
+            >
+              {{ t('overview.fixEnginePath') }}
+            </button>
           </div>
 
           <template v-else>
             <div class="engine-stats">
               <div class="stat">
-                <span class="stat-num">{{ engine.session_count }}</span>
+                <span class="stat-num">{{ countLabel(engine.session_count, engine.session_count_known) }}</span>
                 <span class="stat-label">{{ t('nav.sessions') }}</span>
               </div>
               <div class="stat">
-                <span class="stat-num">{{ engine.skill_count }}</span>
+                <span class="stat-num">{{ countLabel(engine.skill_count, engine.skill_count_known) }}</span>
                 <span class="stat-label">{{ t('nav.skills') }}</span>
               </div>
               <div class="stat">
-                <span class="stat-num">{{ engine.plugin_count }}</span>
+                <span class="stat-num">{{ countLabel(engine.plugin_count, engine.plugin_count_known) }}</span>
                 <span class="stat-label">{{ t('nav.plugins') }}</span>
               </div>
               <div class="stat">
-                <span class="stat-num">{{ engine.mcp_count }}</span>
+                <span class="stat-num">{{ countLabel(engine.mcp_count, engine.mcp_count_known) }}</span>
                 <span class="stat-label">{{ t('nav.mcp') }}</span>
               </div>
             </div>

@@ -53,6 +53,19 @@ type EngineHealthVO struct {
 	// McpCount MCP 服务器数
 	McpCount int `json:"mcp_count"`
 
+	// SessionCountKnown 会话数是不是真扫出来的。
+	//
+	// 四个 known 与上面的四个计数成对出现：计数拿不到时（落盘布局解不出来、
+	// 目录读不动）必须承认「不知道」，不能拿零值冒充 0 —— 界面显示「0 个会话」
+	// 是一个断言，而实际情况可能是「没读到」。后者显示「—」。
+	SessionCountKnown bool `json:"session_count_known"`
+	// SkillCountKnown 技能数是不是真扫出来的
+	SkillCountKnown bool `json:"skill_count_known"`
+	// PluginCountKnown 插件数是不是真扫出来的
+	PluginCountKnown bool `json:"plugin_count_known"`
+	// McpCountKnown MCP 服务器数是不是真扫出来的
+	McpCountKnown bool `json:"mcp_count_known"`
+
 	// ConfigFiles 配置文件现状（路径 / 在不在 / 多大）
 	ConfigFiles []ConfigFileVO `json:"config_files"`
 	// RootDir 引擎的根目录（~/.omp 或 ~/.pi）
@@ -61,6 +74,20 @@ type EngineHealthVO struct {
 	AgentDir string `json:"agent_dir"`
 	// DirExists agent 目录是否真的存在（「装过」的弱证据）
 	DirExists bool `json:"dir_exists"`
+	// LayoutResolved 落盘布局是否解出来了。
+	//
+	// 解不出来时上面的路径类字段（root_dir / agent_dir / config_files）为空，
+	// 但计数仍然可能有效——两者失败原因不同，不许用一个 early return 一起砍掉。
+	LayoutResolved bool `json:"layout_resolved"`
+	// ProbeUnknownReason 探测没能给出「装没装」这个结论的原因。
+	//
+	// 三种原因给用户的下一步完全不同，混成一句「未安装」会让用户去
+	// 装一个其实已经装好的引擎：
+	//   missing    PATH 与显式路径上都没有候选 —— 真的没装
+	//   bad-path   显式路径配了，但那个文件不可用 —— 去改设置里的路径
+	//   timeout    探测命令超时没能给出版本 —— 可能是装了但跑不起来
+	// 空串表示探测已经给出结论（installed 可信）。
+	ProbeUnknownReason string `json:"probe_unknown_reason,omitempty"`
 
 	// Caps 能力表
 	Caps map[string]bool `json:"caps"`
@@ -99,6 +126,12 @@ type HealthVO struct {
 	TotalPlugins int `json:"total_plugins"`
 	// TotalMcp 两个引擎的 MCP 服务器总数
 	TotalMcp int `json:"total_mcp"`
+	// TotalsPartial 上面四个合计里至少有一项没能读到真实值。
+	//
+	// 未知的那一格在合计里算作 0，于是合计是一个**偏小的真话**而不是假话；
+	// 但界面必须知道它是偏小的——否则「共 12 个技能」少了 pi 那一份，
+	// 读的人会当它数全了。
+	TotalsPartial bool `json:"totals_partial"`
 	// LiveEngines 当前存活的引擎实例数（键是「引擎 + 工作目录」）
 	//
 	// 它是「有没有进程泄漏」的唯一可见信号：用户切目录会新建实例，

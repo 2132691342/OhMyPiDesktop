@@ -133,6 +133,16 @@ export interface EngineHealth {
   skill_count: number
   plugin_count: number
   mcp_count: number
+  /** 四个计数各自的「是不是真扫出来的」。false 时显示「—」而不是那个数字：
+   *  拿到的是零值，而零值不等于「有 0 个」。 */
+  session_count_known: boolean
+  skill_count_known: boolean
+  plugin_count_known: boolean
+  mcp_count_known: boolean
+  /** 落盘布局有没有解出来；解不出来时上面三个路径字段为空 */
+  layout_resolved: boolean
+  /** 探测没法给出「装没装」的原因：missing / bad-path / timeout。空串表示结论可信 */
+  probe_unknown_reason?: string
   config_files: ConfigFile[]
   root_dir: string
   agent_dir: string
@@ -155,6 +165,8 @@ export interface HealthData {
   total_skills: number
   total_plugins: number
   total_mcp: number
+  /** 上面四个合计里至少有一项没读到真实值：合计偏小，不是数全了 */
+  totals_partial: boolean
   /** 当前存活的引擎实例数（键是「引擎 + 工作目录」） */
   live_engines: number
   /** 实例数上限 */
@@ -196,6 +208,11 @@ export interface EngineStatus {
   install: Record<string, string>
   /** 探测正在进行（含「从没探过」）：此时不能说「没装」 */
   detecting: boolean
+  /** 上次探测完成的时刻（Unix 毫秒）；0 表示从没探过。
+   *
+   * 它是「要不要重拉」的判据：engine:detected 那一帧可能丢（探测早于 SSE 连接），
+   * 而时间戳是存在后端的事实，不依赖任何一帧有没有送到。 */
+  detected_at: number
 }
 
 export interface WorkspaceRow {

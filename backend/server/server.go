@@ -24,7 +24,10 @@ import (
 )
 
 // ContractVersion 与前端 types/api.ts 同键；改响应字段形态必须 +1。
-const ContractVersion = 10
+//
+// 11：健康卡加 *_known / totals_partial / layout_resolved / probe_unknown_reason，
+// 计数不再用 0 冒充「没读到」；SSE 连接建立时补一帧 engine:status。
+const ContractVersion = 11
 
 // Server 是内嵌 HTTP 服务。
 type Server struct {
@@ -200,6 +203,30 @@ func bind(c *gin.Context, out any) bool {
 
 func query(c *gin.Context, key string) string { return strings.TrimSpace(c.Query(key)) }
 
+// emitEngineStatus 往一条 SSE 上补一张当前引擎状态。
+//
+// 失败不中断连接：这一帧只是「顺便说一声」，而连接本身要继续活下去。
+func (s *Server) emitEngineStatus(write func([]byte) bool) {
+	status, err := s.svc.EngineStatus(context.Background())
+	if err != nil {
+		return
+	}
+	raw, err := json.Marshal(status)
+	if err != nil {
+		return
+	}
+	frame, err := json.Marshal(hub.Event{
+		Event:  "engine:status",
+		Seq:    s.hub.Seq(),
+		SentAt: time.Now().UnixMilli(),
+		Data:   raw,
+	})
+	if err != nil {
+		return
+	}
+	write(frame)
+}
+
 // events 是 SSE 长连接。
 //
 // 帧格式：`id: <seq>\nevent: <name>\ndata: <json>\n\n`。
@@ -253,6 +280,13 @@ func (s *Server) events(c *gin.Context) {
 	if !write(hello) {
 		return
 	}
+	// 补一张引擎状态：这帧盖住了「探测完成早于本连接」那条时序。
+	//
+	// Bootstrap 自己会触发一轮探测，而探测后台跑完之后广播的
+	// engine:detected 可能发在还没有订阅者的那一刻 —— 那一帧被静默丢弃，
+	// 于是前端停在「未安装」不动，而引擎其实早就探到了。
+	// 与其让前端去猜那一帧在不在，不如在连接建立时主动给一份当前结论。
+	s.emitEngineStatus(write)
 
 	ping := time.NewTicker(20 * time.Second)
 	defer ping.Stop()

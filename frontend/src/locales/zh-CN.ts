@@ -47,6 +47,12 @@ export default {
     detectedAt: '检测于',
     installHint: '这台机器上还没装它。装好之后这里会显示版本与落盘位置。',
     goInstall: '去安装',
+    // 「没装」有三种不同的原因，下一步完全不同。混成一句会让用户
+    // 去装一个其实已经装好的引擎，或者反复重试一条根本不成的路径。
+    probeBadPath: '设置里填的引擎路径不可用（文件不存在，或它不是这个引擎）。',
+    probeTimeout: '找到了可执行文件，但探测命令超时没能返回版本。它可能装了但跑不起来。',
+    fixEnginePath: '去改路径',
+    totalsPartial: '部分引擎没读到',
     channel: '安装渠道',
     process: '进程',
     agentDir: '配置目录',
@@ -271,7 +277,8 @@ export default {
     expand: '展开',
     collapse: '收起',
     peekInWorkspace: '看工作区',
-    peekOutside: '这个文件在工作区之外，版本面板读不到工作区里的文件。',
+    // 引擎没把 diff 塞进这一帧：别画空框，直接指路。
+  toolNoInlineDiff: '这一帧没带差异正文，点「看工作区」看它现在的真实改动。',
     emptyTitle: '开始一轮对话',
     emptyHint: '这个工作目录下的工具、技能与规则都会生效。',
     pickWorkspace: '选择目录',
@@ -291,6 +298,9 @@ export default {
     slashTitle: '命令',
     slashHint: '↑↓ 选择，Enter 补全，Esc 关闭',
     slashBuiltin: '内置',
+    // 引擎命令只是把名字填进输入框，由引擎去执行；内置命令是界面直接跑的动作。
+    // 两者后果不同，标签必须分开。
+    slashEngine: '引擎',
     slashNew: '新建会话',
     slashNewDesc: '开一个空会话，工作目录不变',
     slashModel: '切换模型',

@@ -4,7 +4,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"strings"
 	"sync"
@@ -46,12 +45,25 @@ type App struct {
 	// detectMu 是探测的单飞锁：首屏三个请求同时到达时只探测一轮。
 	// 它与 a.mu 分开：探测要起子进程（几秒），持 a.mu 会把读缓存的人也堵住。
 	detectMu sync.Mutex
+	// detectWait 在每轮探测开始时换上新的、结束时关掉。
+	//
+	// 它给「愿意等」的调用方一个正确的等待点。没有它，调用方只能靠
+	// SSE 上那帧 engine:detected 得知探测完了——而那一帧可能发在还没有
+	// 订阅者的时刻（Bootstrap 的探测早于 SSE 连接），于是被静默丢弃，
+	// 前端再也不会刷新，概览页就停在「未安装」不动。
+	detectWait chan struct{}
 	// bgDetecting 保证同一时刻只有一颗后台补验在跑。
 	bgDetecting atomic.Bool
 
 	// countsMu / counts 是「落盘计数」的短 TTL 缓存（概览页首屏用）。
 	countsMu sync.Mutex
 	counts   map[engine.Kind]healthCounts
+	// probeReason 是「为什么没探到」的逐引擎答案（探到了就是空串）。
+	//
+	// 它与 ids 一起写、一起读：只留结论不留原因，界面就只能把「超时没探出来」
+	// 说成「没装」，而这两件事的下一步完全相反。
+	probeReason map[engine.Kind]string
+
 	// countsBusy 保证同一引擎同时只有一颗后台重扫在跑。
 	countsBusyMu sync.Mutex
 	countsBusy   map[engine.Kind]bool
@@ -121,7 +133,7 @@ func (a *App) resolveEngine(kind engine.Kind) (string, []string, []string) {
 	a.mu.RLock()
 	envForKind := a.envForLocked(kind)
 	a.mu.RUnlock()
-	id, err := env.Detect(a.Store.Get(domain.KeyEngineExePrefix+string(kind)), kind)
+	id, err := env.Detect(context.Background(), a.Store.Get(domain.KeyEngineExePrefix+string(kind)), kind)
 	if err != nil || id.Exe == "" {
 		return "", nil, envForKind
 	}
@@ -159,7 +171,15 @@ const detectTTL = time.Minute
 // 抽成变量是为了让测试不必依赖「这台机器上装了什么」：
 // 探测要起子进程（pi 的 --help 要起一次 Node，几秒），而单元测试
 // 断言的是「响应形态对不对」，不是「机器上有没有装 pi」。
-var detectFunc = env.Detect
+//
+// 返回值第二项是「为什么没探到」（见 env.DetectReason）：空串表示结论可信。
+var detectFunc = env.DetectReason
+
+// detectResult 是一颗探测的产出：结论 + 「没探到」的原因。
+type detectResult struct {
+	id     engine.Identity
+	reason string
+}
 
 // detectAll 探测所有引擎并把结果记下来。fore 为真时忽略缓存。
 //
@@ -189,8 +209,34 @@ func (a *App) detectAll(ctx context.Context, fore bool) {
 		a.detectMu.Unlock()
 		return
 	}
+	a.openDetectWait()
+	defer close(a.detectWait)
 	a.detectOnce(ctx)
 	a.detectMu.Unlock()
+}
+
+// openDetectWait 为本轮探测换一个新的等待点。
+//
+// 每轮都新建一个 channel 而不是复用并清空：在关掉与重开之间
+// 阻塞着的调用方要保证能确切地收到「这一轮结束了」，复用会让他们
+// 要么错过唤醒，要么被下一轮提前唤醒。
+func (a *App) openDetectWait() {
+	a.mu.Lock()
+	a.detectWait = make(chan struct{})
+	a.mu.Unlock()
+}
+
+// DetectWait 返回本轮探测的等待点（可能已经关掉 = 探测已完成）。
+func (a *App) DetectWait() <-chan struct{} {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.detectWait == nil {
+		// 从未探测过：给一个已关闭的，等它等于不等。
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+	return a.detectWait
 }
 
 // detectInBackground 在后台补一次真探测，不阻塞调用方。
@@ -205,8 +251,13 @@ func (a *App) detectInBackground() {
 		defer a.bgDetecting.Store(false)
 		a.detectMu.Lock()
 		defer a.detectMu.Unlock()
+		a.openDetectWait()
+		defer close(a.detectWait)
 		// 后台补验用不带超时的 context：请求自己的 ctx 会随响应结束而取消，
 		// 而探测结果是要落盘的，不该被一个客户端断开打断。
+		//
+		// 但探测命令本身仍有上限（engine.ProbeTimeout）：那是给「候选卡死」
+		// 兜底的，与「客户端断开」不是一回事。
 		a.detectOnce(context.Background())
 		a.invalidateCountsLater()
 	}()
@@ -246,21 +297,22 @@ func (a *App) detectFresh(fore bool) bool {
 // detectOnce 实际探测一轮并写入结果。调用方持有 detectMu。
 func (a *App) detectOnce(ctx context.Context) {
 	type result struct {
-		kind engine.Kind
-		id   engine.Identity
+		kind   engine.Kind
+		id     engine.Identity
+		reason string
 	}
 	kinds := engine.AllKinds()
 	ch := make(chan result, len(kinds))
 	for _, kind := range kinds {
 		go func(kind engine.Kind) {
-			id, err := detectFunc(a.Store.Get(domain.KeyEngineExePrefix+string(kind)), kind)
-			if err != nil || id.Exe == "" {
+			id, reason := detectFunc(ctx, a.Store.Get(domain.KeyEngineExePrefix+string(kind)), kind)
+			if id.Exe == "" {
 				// 没装不是「不知道」：记下空 Exe 的条目。
 				// 不记的话 detectFresh 永远认为「有引擎还没探过」，
 				// 于是每次请求都重探一遍。
 				id = engine.Identity{Kind: kind, Caps: engine.CapsFor(kind)}
 			}
-			ch <- result{kind: kind, id: id}
+			ch <- result{kind: kind, id: id, reason: reason}
 		}(kind)
 	}
 	// 先把两个结果收齐，再持锁写入。
@@ -270,15 +322,18 @@ func (a *App) detectOnce(ctx context.Context) {
 	// 全部堵在 RLock 上——界面上表现就是「打开应用卡四秒」，
 	// 而日志里探测明明已经改成后台了。
 	collected := make(map[engine.Kind]engine.Identity, len(kinds))
+	reasons := make(map[engine.Kind]string, len(kinds))
 	for range kinds {
 		r := <-ch
 		collected[r.kind] = r.id
+		reasons[r.kind] = r.reason
 	}
 
 	a.mu.Lock()
 	for k, v := range collected {
 		a.ids[k] = v
 	}
+	a.probeReason = reasons
 	a.detectedAt = time.Now()
 	snapshot := make(map[engine.Kind]engine.Identity, len(a.ids))
 	for k, v := range a.ids {
@@ -319,98 +374,13 @@ func (a *App) DetectedAt() int64 {
 	return a.detectedAt.UnixMilli()
 }
 
-// identityCacheKey 是探测结果的落盘键。
-func identityCacheKey(kind engine.Kind) string {
-	return "cache.identity." + string(kind)
-}
-
-// loadCachedIdentities 在启动时用上次的探测结果填满 ids。
-//
-// 只在没有任何结果时填；它只是「首屏先有个显示」，
-// 真正的判定仍是第一次 detectAll（并会被它的结果覆盖）。
-//
-// 没装（可执行文件不在了）的引擎也要留一个空 Exe 的条目：
-// detectFresh 靠「ids 非空」判断「上次探过」，缺条目会被当成没探过而重探。
-func (a *App) loadCachedIdentities() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for _, kind := range engine.AllKinds() {
-		raw := a.Store.Get(identityCacheKey(kind))
-		if raw == "" {
-			continue
-		}
-		var id engine.Identity
-		if err := json.Unmarshal([]byte(raw), &id); err != nil || id.Exe == "" {
-			continue
-		}
-		// 可执行文件已经不在了就不算数：那是卸载或换机器之后的残留。
-		if !pkg.FileExists(id.Exe) {
-			continue
-		}
-		id.Caps = engine.CapsFor(kind)
-		a.ids[kind] = id
-	}
-}
-
-// persistIdentities 把探测结果写进设置文件。
-//
-// 写不进去不影响使用：它只是为了让下次启动快一点。
-func (a *App) persistIdentities(ids map[engine.Kind]engine.Identity) {
-	for kind, id := range ids {
-		if id.Exe == "" {
-			_ = a.Store.Set(identityCacheKey(kind), "")
-			continue
-		}
-		raw, err := json.Marshal(id)
-		if err != nil {
-			continue
-		}
-		if err := a.Store.Set(identityCacheKey(kind), string(raw)); err != nil {
-			pkg.Warnf("app: 探测结果落盘失败: %v", err)
-		}
-	}
-}
-
-// latestCacheKey 是「上游最新版」的落盘键。
-func latestCacheKey(kind engine.Kind) string {
-	return "cache.latest." + string(kind)
-}
-
-// wireLatestPersistence 把「最新版」的落盘与读回接到 engine 层。
-//
-// engine 层不 import repo（那会让它反向依赖），所以只给两个回调。
-func (a *App) wireLatestPersistence() {
-	engine.SetLatestPersister(func(kind engine.Kind, row engine.Latest) {
-		if row.Version == "" {
-			return // 「查不到」不值得落盘，下次还得再查
-		}
-		raw, err := json.Marshal(row)
-		if err != nil {
-			return
-		}
-		_ = a.Store.Set(latestCacheKey(kind), string(raw))
-	})
-}
-
-// loadCachedLatest 用上次落盘的最新版填缓存，让首屏不必等外网。
-func (a *App) loadCachedLatest() {
-	for _, kind := range engine.AllKinds() {
-		raw := a.Store.Get(latestCacheKey(kind))
-		if raw == "" {
-			continue
-		}
-		var row engine.Latest
-		if err := json.Unmarshal([]byte(raw), &row); err != nil || row.Version == "" {
-			continue
-		}
-		engine.SeedLatest(kind, row)
-	}
-}
-
 // SetDetector 换掉探测引擎的动作，返回恢复用的函数。
 //
-// 只有测试用。生产代码走默认的 env.Detect。
-func SetDetector(fn func(string, engine.Kind) (engine.Identity, error)) func() {
+// 只有测试用。生产代码走默认的 env.DetectReason。
+//
+// 签名带 ctx 与 reason：探测的真实成本（起子进程）与「为什么没探到」
+// 都是被测行为的一部分，去掉任一个测试就只能测出一个假的形态。
+func SetDetector(fn func(context.Context, string, engine.Kind) (engine.Identity, string)) func() {
 	prev := detectFunc
 	detectFunc = fn
 	return func() { detectFunc = prev }
@@ -512,4 +482,17 @@ func (a *App) Identity(kind engine.Kind) engine.Identity {
 		return id
 	}
 	return engine.Identity{Kind: kind, Caps: engine.CapsFor(kind)}
+}
+
+// ProbeReason 返回「为什么没探到这个引擎」的答案。
+//
+// 空串表示这一轮的结论可信（installed 说的是真的）。
+// 非空只有三种：missing / bad-path / timeout，见 env.DetectReason。
+func (a *App) ProbeReason(kind engine.Kind) string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if id, ok := a.ids[kind]; ok && id.Exe != "" {
+		return "" // 探到了，没什么要解释的
+	}
+	return a.probeReason[kind]
 }

@@ -28,6 +28,13 @@ type EngineStatus struct {
 	// 界面据此说「检测中」而不是「未安装」——两者都是「不知道」，
 	// 但只有前者是对的：装没装要等探测说了算。
 	Detecting bool `json:"detecting"`
+	// DetectedAt 上次探测完成的时刻（Unix 毫秒）；从没探过时为 0。
+	//
+	// 它是「要不要再拉一次」的判据。engine:detected 那一帧可能丢——
+	// Bootstrap 触发的那轮探测可能跑完在 SSE 连接建立之前，
+	// 帧发在没有订阅者的总线上就被静默丢弃。时间戳是存在后端的事实，
+	// 不依赖任何一帧有没有送到。
+	DetectedAt int64 `json:"detected_at"`
 }
 
 // EngineInfo 是单个引擎的探测结果与落盘位置。
@@ -52,10 +59,11 @@ type envLayoutVO struct {
 func (a *App) EngineStatus(ctx context.Context) (*EngineStatus, error) {
 	a.detectAll(ctx, false)
 	out := &EngineStatus{
-		Engines:   []EngineInfo{},
-		Running:   a.Engine.Running(),
-		Install:   map[string]string{},
-		Detecting: a.bgDetecting.Load() || a.DetectedAt() == 0,
+		Engines:    []EngineInfo{},
+		Running:    a.Engine.Running(),
+		Install:    map[string]string{},
+		Detecting:  a.bgDetecting.Load() || a.DetectedAt() == 0,
+		DetectedAt: a.DetectedAt(),
 	}
 	if out.Running == nil {
 		out.Running = []engine.RunRow{}
@@ -150,6 +158,22 @@ func (a *App) Health(ctx context.Context) (*domain.HealthVO, error) {
 		out.TotalSkills += row.SkillCount
 		out.TotalPlugins += row.PluginCount
 		out.TotalMcp += row.McpCount
+		// 四个合计各自「有没有哪一项是没读到的」。
+		//
+		// 未知的那一格贡献了 0，于是合计是一个偏小的真话而不是假话——
+		// 但界面得知道它是偏小的，否则「12 个技能」少了 pi 那一份也没人说。
+		if !row.SessionCountKnown {
+			out.TotalsPartial = true
+		}
+		if !row.SkillCountKnown {
+			out.TotalsPartial = true
+		}
+		if !row.PluginCountKnown {
+			out.TotalsPartial = true
+		}
+		if !row.McpCountKnown {
+			out.TotalsPartial = true
+		}
 	}
 	out.LiveEngines, out.MaxEngines = a.Engine.Stats()
 	return out, nil
@@ -181,6 +205,21 @@ type healthCounts struct {
 	plugins  int
 	mcp      int
 	at       time.Time
+	// known 逐位标记上面四个数是不是真扫出来的。
+	//
+	// 为什么不能用一个整包的 ok bool：四类目录各自的失败原因不同
+	// （会话目录读不动、技能判定要遍历插件的 node_modules 被跳过、
+	// 落盘布局本身解不出来）。整包判据会让「技能没扫到」把「会话明明读到了」
+	// 也一起抹成未知——而用户要的恰恰是「这个数是可信的」。
+	known knownFlags
+}
+
+// knownFlags 是四个计数的「是否可信」标记。
+type knownFlags struct {
+	sessions bool
+	skills   bool
+	plugins  bool
+	mcp      bool
 }
 
 // countsTTL 是计数快照的保鲜期。
@@ -195,14 +234,14 @@ const countsTTL = 30 * time.Second
 // 列表由会话页自己去取。
 //
 // 目录结构是 <会话目录>/<目录 slug>/<文件>.jsonl，只需两层 ReadDir，不读文件内容。
-func (a *App) countSessions(kind engine.Kind) int {
+func (a *App) countSessions(kind engine.Kind) (int, bool) {
 	layout, err := a.Layout(kind)
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	dirs, err := os.ReadDir(layout.Sessions)
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	total := 0
 	for _, d := range dirs {
@@ -219,7 +258,7 @@ func (a *App) countSessions(kind engine.Kind) int {
 			}
 		}
 	}
-	return total
+	return total, true
 }
 
 // countsOf 取一份计数快照。
@@ -273,34 +312,41 @@ func (a *App) refreshCountsAsync(kind engine.Kind) {
 }
 
 // scanCounts 真正扫一遍四类目录。四个 goroutine 各自通过 channel 交结果。
+//
+// 每个槽除了数字还交回一个 ok：调用方只读规定 RMS 的目录（它可能在网络盘上、
+// 可能被权限挡住），失败就是「没读到」，不是一个 0。
 func (a *App) scanCounts(kind engine.Kind) healthCounts {
 	type slot struct {
 		which int
 		n     int
+		ok    bool
 	}
 	out := make(chan slot, 4)
 
-	go func() { out <- slot{0, a.countSessions(kind)} }()
+	go func() {
+		n, ok := a.countSessions(kind)
+		out <- slot{0, n, ok}
+	}()
 	go func() {
 		if skills, err := a.Skills(kind); err == nil {
-			out <- slot{1, len(skills)}
+			out <- slot{1, len(skills), true}
 			return
 		}
-		out <- slot{1, 0}
+		out <- slot{1, 0, false}
 	}()
 	go func() {
 		if plugins, err := a.pluginsOf(kind); err == nil && plugins != nil {
-			out <- slot{2, len(plugins.Plugins)}
+			out <- slot{2, len(plugins.Plugins), true}
 			return
 		}
-		out <- slot{2, 0}
+		out <- slot{2, 0, false}
 	}()
 	go func() {
 		if mcp, err := a.McpList(context.Background(), kind, false); err == nil && mcp != nil {
-			out <- slot{3, len(mcp.Servers)}
+			out <- slot{3, len(mcp.Servers), true}
 			return
 		}
-		out <- slot{3, 0}
+		out <- slot{3, 0, false}
 	}()
 
 	c := healthCounts{at: time.Now()}
@@ -308,13 +354,13 @@ func (a *App) scanCounts(kind engine.Kind) healthCounts {
 		s := <-out
 		switch s.which {
 		case 0:
-			c.sessions = s.n
+			c.sessions, c.known.sessions = s.n, s.ok
 		case 1:
-			c.skills = s.n
+			c.skills, c.known.skills = s.n, s.ok
 		case 2:
-			c.plugins = s.n
+			c.plugins, c.known.plugins = s.n, s.ok
 		case 3:
-			c.mcp = s.n
+			c.mcp, c.known.mcp = s.n, s.ok
 		}
 	}
 	return c
@@ -346,7 +392,7 @@ func (a *App) InvalidateCounts() {
 	a.countsMu.Unlock()
 }
 
-// countsFor 返回某引擎的计数（兼容旧调用点）。
+// countsFor 返回某引擎的计数（Bootstrap 用：它只要技能数一个数字）。
 func (a *App) countsFor(kind engine.Kind) (sessions, skills, plugins, mcp int) {
 	c := a.countsOf(kind)
 	return c.sessions, c.skills, c.plugins, c.mcp
@@ -370,6 +416,7 @@ func (a *App) healthOf(kind engine.Kind, run engine.RunRow, latest engine.Latest
 	row.ChannelLabel = channelLabel(engine.Channel(row.ChannelKind))
 	if !row.Installed {
 		row.InstallHint = engine.InstallHint(kind)
+		row.ProbeUnknownReason = a.ProbeReason(kind)
 	}
 	row.Outdated = id.Version != "" && latest.Version != "" &&
 		compareVersion(id.Version, latest.Version) < 0
@@ -382,22 +429,29 @@ func (a *App) healthOf(kind engine.Kind, run engine.RunRow, latest engine.Latest
 	row.CallCount = run.CallCount
 	row.LastError = run.LastError
 
-	layout, err := a.Layout(kind)
-	if err != nil {
-		return row
+	// 落盘布局只喂「路径类」字段。
+	//
+	// 这里**不能**在布局解不出来时提前返回：那会把下面四个计数一起留在零值，
+	// 于是界面显示「已安装 · 0 个会话」，而磁盘上其实有九十个会话 ——
+	// 这不是「没刷新」，是撒了一个反向的谎。布局与计数是两条独立的证据链：
+	// 布局解不出来只该让步于路径类字段，计数该有值还给它。
+	if layout, err := a.Layout(kind); err == nil {
+		row.LayoutResolved = true
+		row.RootDir = layout.Root
+		row.AgentDir = layout.Agent
+		row.DirExists = layout.Exists()
+		row.ConfigFiles = a.configFileRows(kind)
+	} else {
+		row.ConfigFiles = []domain.ConfigFileVO{}
 	}
-	row.RootDir = layout.Root
-	row.AgentDir = layout.Agent
-	row.DirExists = layout.Exists()
-	row.ConfigFiles = a.configFileRows(kind)
 
-	// 四个计数走缓存：它们要扫目录（会话头、技能、插件、MCP），
+	// 四个计数走缓存：它们要扫目录（会话文件、技能、插件、MCP），
 	// 而概览页是首屏，不该为此等一秒。
-	sessions, skills, plugins, mcp := a.countsFor(kind)
-	row.SessionCount = sessions
-	row.SkillCount = skills
-	row.PluginCount = plugins
-	row.McpCount = mcp
+	c := a.countsOf(kind)
+	row.SessionCount, row.SessionCountKnown = c.sessions, c.known.sessions
+	row.SkillCount, row.SkillCountKnown = c.skills, c.known.skills
+	row.PluginCount, row.PluginCountKnown = c.plugins, c.known.plugins
+	row.McpCount, row.McpCountKnown = c.mcp, c.known.mcp
 	return row
 }
 

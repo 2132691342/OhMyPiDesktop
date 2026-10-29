@@ -19,7 +19,7 @@ import (
 // testServer 桩掉探测与查最新版（不依赖本机环境），造一个带令牌的服务。
 func testServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
-	restoreDetect := service.SetDetector(func(_ string, kind engine.Kind) (engine.Identity, error) {
+	restoreDetect := service.SetDetector(func(_ context.Context, _ string, kind engine.Kind) (engine.Identity, string) {
 		return engine.Identity{
 			Kind:    kind,
 			Exe:     `C:\fake\` + string(kind) + `.exe`,
@@ -27,7 +27,7 @@ func testServer(t *testing.T) (*Server, http.Handler) {
 			Source:  "custom",
 			Channel: engine.ChannelNPM,
 			Caps:    engine.CapsFor(kind),
-		}, nil
+		}, ""
 	})
 	t.Cleanup(restoreDetect)
 

@@ -171,8 +171,24 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function refreshEngines() {
-    engines.value = await api.engineStatus()
+    const next = await api.engineStatus()
+    engines.value = next
+    // 记住这一份结论的探测时刻。
+    //
+    // 它是「要不要再拉一次」的判据：事件帧可能丢（探测早于 SSE 连接时），
+    // 而 detecting 只在自己这一份数据里打转。比对时间戳是唯一不依赖
+    // 那一帧的兜底。
+    lastDetectedAt.value = next.detected_at ?? 0
   }
+
+  /**
+   * 后端那边探测完成到哪一刻了。
+   *
+   * 它与 detecting 配合做兜底：前者说「后台在跑」，后者说「跑到哪一轮」。
+   * 概览页据此决定「拿到的这份是不是已经过期了」——engine:detected 那一帧
+   * 丢了也能自己回来。
+   */
+  const lastDetectedAt = ref(0)
 
   /**
    * 引擎探测进行中（含「从没探过」）。
@@ -296,6 +312,13 @@ export const useAppStore = defineStore('app', () => {
     switch (event) {
       case 'stream:open':
         return
+      case 'engine:status': {
+        // SSE 连接建立时后端补的一张当前引擎状态。
+        // 它盖住「探测完成早于本连接」那条时序：那一帧 engine:detected
+        // 发在没有订阅者的时刻会被丢掉，前端就停在「未安装」不动。
+        void refreshEngines()
+        return
+      }
       case 'engine:ready':
       case 'engine:exit':
         void refreshEngines()
@@ -304,6 +327,9 @@ export const useAppStore = defineStore('app', () => {
         // 探测完成了：引擎清单要跟着换。之前只有用户手动点「重新检测」
         // 才会更新，于是首发时概览页一直显示「没装」——
         // 而那只是因为探测还在跑，不是一个事实。
+        //
+        // 这一帧可能永远不来（Bootstrap 触发的那轮探测可能早于 SSE 连接），
+        // 所以 app.detecting 之外还有 detectedAt 那条兜底。
         void refreshEngines()
         return
       case 'engine:commands': {
@@ -496,6 +522,7 @@ export const useAppStore = defineStore('app', () => {
     engines,
     active,
     detecting,
+    lastDetectedAt,
     reDetecting,
     workspaces,
     sessions,

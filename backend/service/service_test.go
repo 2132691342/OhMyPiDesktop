@@ -52,9 +52,9 @@ func (a *App) waitDetect(t *testing.T) {
 func TestDetectSingleFlight(t *testing.T) {
 	app := newTestApp(t)
 	var probes atomic.Int64
-	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
+	restore := SetDetector(func(_ context.Context, _ string, _ engine.Kind) (engine.Identity, string) {
 		probes.Add(1)
-		return engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}, nil
+		return engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}, ""
 	})
 	defer restore()
 
@@ -82,9 +82,9 @@ func TestDetectSingleFlight(t *testing.T) {
 func TestDetectForceBypassesCache(t *testing.T) {
 	app := newTestApp(t)
 	var probes atomic.Int64
-	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
+	restore := SetDetector(func(_ context.Context, _ string, _ engine.Kind) (engine.Identity, string) {
 		probes.Add(1)
-		return engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}, nil
+		return engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}, ""
 	})
 	defer restore()
 
@@ -112,9 +112,9 @@ func TestDetectForceBypassesCache(t *testing.T) {
 func TestDetectNeverBlocksFirstScreen(t *testing.T) {
 	app := newTestApp(t)
 	release := make(chan struct{})
-	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
+	restore := SetDetector(func(_ context.Context, _ string, _ engine.Kind) (engine.Identity, string) {
 		<-release // 卡住探测，模拟“pi 正在起 Node”
-		return engine.Identity{}, nil
+		return engine.Identity{}, ""
 	})
 	defer restore()
 
@@ -134,9 +134,9 @@ func TestDetectNeverBlocksFirstScreen(t *testing.T) {
 func TestIdentityNotBlockedByDetect(t *testing.T) {
 	app := newTestApp(t)
 	release := make(chan struct{})
-	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
+	restore := SetDetector(func(_ context.Context, _ string, _ engine.Kind) (engine.Identity, string) {
 		<-release
-		return engine.Identity{Exe: "x", Caps: engine.CapsFor(engine.KindPi)}, nil
+		return engine.Identity{Exe: "x", Caps: engine.CapsFor(engine.KindPi)}, ""
 	})
 	defer restore()
 
@@ -168,8 +168,8 @@ func TestIdentityReadableDuringDetect(t *testing.T) {
 	app.ids[engine.KindPi] = engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}
 	app.detectedAt = app.detectedAt.Add(-2 * detectTTL) // 让缓存过期
 	app.mu.Unlock()
-	restore := SetDetector(func(_ string, _ engine.Kind) (engine.Identity, error) {
-		return engine.Identity{}, context.DeadlineExceeded
+	restore := SetDetector(func(_ context.Context, _ string, _ engine.Kind) (engine.Identity, string) {
+		return engine.Identity{}, "timeout"
 	})
 	defer restore()
 
@@ -257,8 +257,8 @@ func tinyPNG() []byte {
 // 判据用「完成时刻」而不是「响应时刻」：后者会让界面永远显示「刚刚检测过」。
 func TestDetectedAtOnlyAfterProbe(t *testing.T) {
 	app := newTestApp(t)
-	restore := SetDetector(func(_ string, k engine.Kind) (engine.Identity, error) {
-		return engine.Identity{Kind: k, Exe: "x", Caps: engine.CapsFor(k)}, nil
+	restore := SetDetector(func(_ context.Context, _ string, k engine.Kind) (engine.Identity, string) {
+		return engine.Identity{Kind: k, Exe: "x", Caps: engine.CapsFor(k)}, ""
 	})
 	defer restore()
 
@@ -274,8 +274,8 @@ func TestDetectedAtOnlyAfterProbe(t *testing.T) {
 // 探测完成要广播事件：界面靠它把「检测中」换成真结果。
 func TestDetectEmitsEvent(t *testing.T) {
 	app := newTestApp(t)
-	restore := SetDetector(func(_ string, k engine.Kind) (engine.Identity, error) {
-		return engine.Identity{Kind: k, Exe: "x", Caps: engine.CapsFor(k)}, nil
+	restore := SetDetector(func(_ context.Context, _ string, k engine.Kind) (engine.Identity, string) {
+		return engine.Identity{Kind: k, Exe: "x", Caps: engine.CapsFor(k)}, ""
 	})
 	defer restore()
 
@@ -300,8 +300,8 @@ func TestDetectEmitsEvent(t *testing.T) {
 // 从没探过时，引擎状态要报「还在探测」而不是「没装」。
 func TestEngineStatusDetectingBeforeProbe(t *testing.T) {
 	app := newTestApp(t)
-	restore := SetDetector(func(_ string, k engine.Kind) (engine.Identity, error) {
-		return engine.Identity{Kind: k, Exe: "x", Caps: engine.CapsFor(k)}, nil
+	restore := SetDetector(func(_ context.Context, _ string, k engine.Kind) (engine.Identity, string) {
+		return engine.Identity{Kind: k, Exe: "x", Caps: engine.CapsFor(k)}, ""
 	})
 	defer restore()
 
@@ -329,8 +329,8 @@ func TestEngineStatusDetectingBeforeProbe(t *testing.T) {
 // 探测失败（引擎没装）也要算「探过了」：否则每次请求都会重探。
 func TestDetectFailureCountsAsProbed(t *testing.T) {
 	app := newTestApp(t)
-	restore := SetDetector(func(_ string, k engine.Kind) (engine.Identity, error) {
-		return engine.Identity{}, context.Canceled
+	restore := SetDetector(func(_ context.Context, _ string, k engine.Kind) (engine.Identity, string) {
+		return engine.Identity{}, "timeout"
 	})
 	defer restore()
 

@@ -216,6 +216,16 @@ func sameFile(a, b string) bool {
 
 func hideWindow(cmd *exec.Cmd) { hideWindowImpl(cmd) }
 
+// FileUsable 判断一个候选路径能不能拿去当引擎跑。
+//
+// 它回答的是「这个文件在不在、是不是个文件」——比 Stat 多一层的是目录判定：
+// 用户把路径指到一个目录（而不是可执行文件）时，探测会一直失败，
+// 而界面只能说「没找到」，于是用户一遍遍重试一个根本不可能成的路径。
+func FileUsable(exe string) bool {
+	st, err := os.Stat(exe)
+	return err == nil && !st.IsDir()
+}
+
 // ErrMissing 是「没找到引擎」的统一错误。
 func ErrMissing(kind Kind) error {
 	return pkg.New(pkg.CodeEngineUnsupported,
