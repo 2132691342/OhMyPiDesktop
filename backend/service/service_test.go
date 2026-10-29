@@ -312,6 +312,9 @@ func TestEngineStatusDetectingBeforeProbe(t *testing.T) {
 	if !status.Detecting {
 		t.Fatal("还没探过时 Detecting 应为真")
 	}
+	// 等前面那次后台补验跑完：否则它仍占着 bgDetecting，
+	// 后面同步强探完之后 Detecting 还会被它误报成真。
+	app.waitDetect(t)
 
 	app.detectAll(context.Background(), true)
 	status, err = app.EngineStatus(context.Background())
