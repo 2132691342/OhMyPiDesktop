@@ -159,6 +159,9 @@
 3. **`model_change` 字段不同**：pi `{provider, modelId}`，omp `{model:"provider/id", role}`，
    归一化成 `(provider, modelId)`。
 
+会话的 `version` 字段不被解析或校验：读取只看 `type`，引擎升级 major 时旧会话照样能列能看，
+读不到的字段回落默认值（标题回落到 `会话 · <model>`）。
+
 ### 目录编码不能自己拼
 
 | | 规则 |

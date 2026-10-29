@@ -96,7 +96,7 @@
 
 ## 绑定面
 
-只有 9 个方法。少一个绑定方法就少一处需要重新生成的东西。
+只有 10 个方法。少一个绑定方法就少一处需要重新生成的东西。
 
 | 方法 | 用途 |
 |---|---|
@@ -107,6 +107,7 @@
 | `OpenExternal(url)` | 用默认浏览器打开链接 |
 | `WindowMinimize()` / `WindowToggleMaximize()` / `WindowClose()` | 自绘标题栏的三个按钮 |
 | `Quit()` | 退出（托盘菜单与本方法共用） |
+| `ApplyCloseDecision(action, remember)` | 首次收到「关窗收托盘」提示时，记录用户的选择（tray / quit，remember 为真则写进设置） |
 
 其余一切业务走 HTTP。为什么不把 gin handler 嵌进来：嵌入会把它们的导出方法
 一起绑成前端永远调不通的 JS 方法（签名带 `*gin.Context`）。
