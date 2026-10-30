@@ -27,7 +27,11 @@ import (
 //
 // 11：健康卡加 *_known / totals_partial / layout_resolved / probe_unknown_reason，
 // 计数不再用 0 冒充「没读到」；SSE 连接建立时补一帧 engine:status。
-const ContractVersion = 11
+//
+// 12：健康快照加 ready（探测与后台补验都完成时才能把数字当结论）；
+// 探测链补上「官方安装器的落点」——omp 装进 %LOCALAPPDATA%\omp 且不写 PATH，
+// 只看 PATH 会在已装的机器上报「未安装」。
+const ContractVersion = 12
 
 // Server 是内嵌 HTTP 服务。
 type Server struct {

@@ -16,18 +16,12 @@ import (
 
 // 会话索引：直接读引擎写的 JSONL 会话文件。
 //
-// 为什么读文件而不是问引擎：列表要能列出「别的终端里聊过的会话」，
-// 那些会话没有进程在跑。文件是唯一同时覆盖「这里聊的」与「那边聊的」的来源。
-// 引擎自己的 get_messages 只覆盖当前进程里的那一个会话，用它做列表会漏。
-//
-// 读的纪律：
-//   - 只读不写。格式是引擎的私有契约，改名 / 换模型一律走 RPC。
-//   - 列表只要头几行 + 尾部的用量，不整文件解析（一个会话可能几 MB）。
-//
+// 列表要能覆盖「别的终端里聊过的会话」，而文件是唯一同时包含这些的来源
+// （引擎的 get_messages 只覆盖当前进程里的那一个）。只读不写：改名 / 换模型走 RPC。
 // 两个引擎的会话文件同源不同代，一套代码靠三点适配同时读：
-//  1. omp 首行是 256B 固定宽度的 title 槽位，pi 首行就是 session 头；
-//  2. 未知条目跳过而不报错（各有十几种私有类型）；
-//  3. model_change 的字段不同：omp `{model:"provider/id"}`，pi `{provider, modelId}`。
+//  1. omp 首行是固定宽度的 title 槽位，pi 首行就是 session 头；
+//  2. 未知条目跳过而不报错；
+//  3. model_change 的字段不同（omp 用 model，pi 用 provider+modelId）。
 
 // Session 是会话列表项。
 type Session struct {
@@ -160,6 +154,13 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 	}
 	defer f.Close()
 
+	// firstUser 记下第一条用户消息，作为没有标题时的兜底。
+	//
+	// 两个引擎默认都不写标题条目，于是列表里每一条都长得一模一样
+	// （「会话 · 模型名」）——一屏十几行全是同一个字符串，
+	// 用户根本认不出哪条是哪个。第一条用户消息是用户自己写的，
+	// 比模型名有用得多。
+	firstUser := ""
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 8*1024*1024)
 	count := 0
@@ -174,9 +175,10 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 			CWD       string `json:"cwd"`
 			Timestamp string `json:"timestamp"`
 			Message   struct {
-				Role  string `json:"role"`
-				Model string `json:"model"`
-				Usage *struct {
+				Role    string          `json:"role"`
+				Model   string          `json:"model"`
+				Content json.RawMessage `json:"content"`
+				Usage   *struct {
 					TotalTokens int `json:"totalTokens"`
 					Cost        struct {
 						Total float64 `json:"total"`
@@ -208,6 +210,9 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 				meta.Title = *head.Name
 			}
 		case "message":
+			if head.Message.Role == "user" && firstUser == "" {
+				firstUser = firstUserText(head.Message.Content)
+			}
 			if head.Message.Usage != nil {
 				meta.Tokens += head.Message.Usage.TotalTokens
 				meta.Cost += head.Message.Usage.Cost.Total
@@ -239,7 +244,7 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 		meta.CWD = meta.WorkDir
 	}
 	if meta.Title == "" {
-		meta.Title = defaultTitle(meta)
+		meta.Title = titleFromText(firstUser, meta)
 	}
 
 	ix.mu.Lock()
@@ -448,20 +453,6 @@ func idFromName(name string) string {
 	return base
 }
 
-// slugToPath 把 omp 的目录 slug 还原成路径（-D-edgeFiles- → D:\edgeFiles）。
-// slug 有歧义（真实路径里也可能有 -），所以只用于展示；真实路径从文件头的 cwd 取。
-func slugToPath(slug string) string {
-	s := slug
-	s = strings.TrimPrefix(s, "--")
-	s = strings.TrimSuffix(s, "--")
-	if len(s) >= 3 && s[0] == '-' {
-		drive := s[1:2]
-		rest := s[3:]
-		return strings.ToUpper(drive) + ":\\" + strings.ReplaceAll(rest, "-", "\\")
-	}
-	return strings.ReplaceAll(s, "-", "/")
-}
-
 func normalizeDir(dir string) string {
 	if dir == "" {
 		return ""
@@ -471,11 +462,4 @@ func normalizeDir(dir string) string {
 		return dir
 	}
 	return strings.TrimRight(strings.ToLower(abs), `\/`)
-}
-
-func defaultTitle(s Session) string {
-	if s.Model != "" {
-		return "会话 · " + s.Model
-	}
-	return "未命名会话"
 }

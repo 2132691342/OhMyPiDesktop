@@ -1,14 +1,14 @@
 <script setup lang="ts">
 // 输入区的两个弹出菜单：`/` 命令 与 `@` 文件引用。
 //
-// 搬自WorkBaby 的两个关键交互，这两条在原实现里都是真的失效的：
+// 两个关键交互必须自己实现，否则会静默失效：
 //
 //  1. 键盘高亮必须自己算 scrollTop，不能用 scrollIntoView ——
 //     后者会把外层页面一起滚，用户的视口被菜单带着跑。
 //  2. 在菜单里滚轮 / 拖滚动条 / 点选项时不许让输入框丢焦点 ——
 //     焦点一跑到按钮上，↑↓ 与回车就不再送到输入框了，等于导航失效。
 //
-// 菜单的其他部分（Escape 关、两套来源合并）沿用原实现。
+// 菜单的其他部分（Escape 关、两套来源合并）走标准实现。
 import { nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MentionBrowser from '@/components/chat/MentionBrowser.vue'
@@ -67,7 +67,7 @@ function onMentionPick(relPath: string, name: string): void {
  * 按住不放：不要让输入框丢焦点。
  *
  * 一旦焦点跑到按钮上，↑↓ 与回车就不再送到输入框，
- * 键盘导航整套失效（这是 WorkBaby 专门用 keepFocus 挡掉的坑）。
+ * 键盘导航整套失效（keepFocus 专门挡掉这个坑）。
  */
 function keepFocus(event: PointerEvent): void {
   const el = event.target as HTMLElement | null

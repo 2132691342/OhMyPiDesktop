@@ -7,7 +7,7 @@
 .msg-col {
   display: flex;
   flex-direction: column;
-  gap: var(--omp-sp-5);
+  gap: var(--omp-sp-3);
   width: 100%;
   max-width: var(--omp-col);
   margin: 0 auto;
@@ -60,22 +60,20 @@
   letter-spacing: 0.02em;
 }
 
-/* 助手正文面板：左侧 2px 脊线是「助手列」的身份线 */
+/* 助手正文：不再套一整张带脊线的卡片。
+   长会话里每一轮都套一层边框时，一屏会出现十几个相同的圆角矩形，
+   读到第三轮就分不清“哪里是新的”。分层交给角色头像行与间距：
+   头像列出了“这是新的一轮”，正文本身保持平面。 */
 .msg-body {
-  padding: var(--omp-sp-3) var(--omp-sp-4);
-  border: 1px solid var(--omp-line);
-  border-left: 2px solid var(--omp-brand-2);
-  border-radius: var(--omp-r-lg);
-  background: var(--omp-raised);
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--omp-fs-base);
   line-height: 1.72;
   color: var(--omp-ink);
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
-/* 用户那一侧走右对齐气泡：与助手的左脊线形成明确的左右分栏。
-   之前两边都用同一种面板，于是长会话里「哪段是我说的、哪段是它答的」
-   要靠徽章去找——那是一个每轮都要做的额外动作。 */
+
+/* 用户那一侧走右对齐气泡：与助手的左对齐正文形成明确的左右分栏。
+   两侧都用同一种平面时，“哪段是我说的”要靠徒劳去找徒劳。 */
 .msg.user {
   align-items: flex-end;
 }
@@ -84,32 +82,20 @@
 }
 .msg.user .msg-body {
   max-width: min(78%, 640px);
-  background: var(--omp-brand-soft);
-  border-color: var(--omp-brand-3);
-  border-left-color: var(--omp-brand-3);
+  padding: var(--omp-sp-2) var(--omp-sp-3);
+  border-radius: var(--omp-r-lg);
   border-top-right-radius: var(--omp-r-xs);
+  background: var(--omp-brand-soft);
 }
 .msg-error .msg-body {
-  border-left-color: var(--omp-bad);
-  background: var(--omp-bad-soft);
+  padding-left: var(--omp-sp-3);
+  border-left: 2px solid var(--omp-bad);
 }
 
-/* 流式光标 */
-.msg-streaming .msg-body::after {
-  content: '';
-  display: inline-block;
-  width: 7px;
-  height: 15px;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  background: var(--omp-brand-2);
-  border-radius: 1px;
-  animation: omp-caret 1.05s steps(2, start) infinite;
-}
-@keyframes omp-caret {
-  to {
-    visibility: hidden;
-  }
+/* 流式中的那一轮：左侧一条细标记，说明“这段还在长” */
+.msg-streaming .msg-body {
+  padding-left: var(--omp-sp-3);
+  border-left: 2px solid var(--omp-brand-2);
 }
 
 /* ============================================================
@@ -292,15 +278,19 @@
 
 /* ============================================================
    工具卡
+   头是严格一行：状态点 / 工具名 / 摘要 / 增删 / 耗时 / 箭头。
+   工具名与耗时都 flex: none，被挤的只能是摘要——
+   少这一条时，长工具名（powershell）会被压成一字一行竖排。
    ============================================================ */
 .tool {
   border: 1px solid var(--omp-line);
-  border-radius: var(--omp-r-lg);
+  border-radius: var(--omp-r);
   background: var(--omp-surface);
   overflow: hidden;
+  transition: border-color var(--omp-dur-fast) var(--omp-ease);
 }
 .tool.running {
-  border-color: var(--omp-brand-2);
+  border-color: var(--omp-brand-line);
 }
 .tool.error {
   border-color: var(--omp-bad);
@@ -310,7 +300,7 @@
   align-items: center;
   gap: var(--omp-sp-2);
   width: 100%;
-  padding: 6px var(--omp-sp-3);
+  padding: 5px var(--omp-sp-3);
   border: none;
   background: transparent;
   text-align: left;
@@ -342,7 +332,7 @@
 }
 .tool-body {
   border-top: 1px solid var(--omp-line);
-  padding: var(--omp-sp-2) var(--omp-sp-3);
+  padding: var(--omp-sp-2) var(--omp-sp-3) var(--omp-sp-3);
   display: flex;
   flex-direction: column;
   gap: var(--omp-sp-2);

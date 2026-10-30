@@ -5,11 +5,13 @@
 // 「都在哪儿改的」这个信息被拍没了——而那正是判断「这次改动范围对不对」
 // 的第一眼。折叠起来后一眼看到的是几个目录，点开才是文件。
 //
-// 本组件只渲染与派发事件，不自己发任何写请求：暂存 / 丢弃 / 取消暂存
-// 都是不可逆或影响别人的动作，由父组件统一挂 loading 并在失败时给原文。
+// 本组件只管分组与折叠状态；一行的样子与行内动作都在 GitFileRows 里
+// （两组共用同一份，改一处就够）。它也不发任何写请求：
+// 暂存 / 丢弃 / 取消暂存都由父组件统一挂 loading 并在失败时给原文。
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
+import GitFileRows from '@/components/workspace/GitFileRows.vue'
 import type { GitFile } from '@/types/api'
 
 const props = defineProps<{
@@ -26,6 +28,7 @@ const emit = defineEmits<{
   stage: [file: GitFile]
   unstage: [file: GitFile]
   discard: [file: GitFile]
+  resolve: [file: GitFile]
   stageAll: []
   history: [file: GitFile]
 }>()
@@ -35,7 +38,6 @@ const { t } = useI18n()
 /** 被折叠的目录集合。默认全展开：改动通常不多，先全看到。 */
 const collapsed = ref<Set<string>>(new Set())
 
-/** 一个目录分组。 */
 interface Group {
   dir: string
   files: GitFile[]
@@ -75,11 +77,6 @@ function toggle(key: string): void {
   collapsed.value = next
 }
 
-function changeTag(file: GitFile): string {
-  if (file.conflict) return 'U'
-  return file.change_code || '?'
-}
-
 /** 目录里改动的合计，折叠时也能看到规模。 */
 function groupStat(files: GitFile[]): { adds: number; dels: number } {
   let adds = 0
@@ -106,48 +103,23 @@ function groupStat(files: GitFile[]): { adds: number; dels: number } {
         </div>
         <div v-for="g in stagedGroups" :key="`s-${g.dir}`" class="dir">
           <button class="dir-head" @click="toggle(`s-${g.dir}`)">
-            <AppIcon
-              name="chevron"
-              :size="11"
-              class="dir-ic"
-              :class="{ collapsed: isCollapsed(`s-${g.dir}`) }"
-            />
-            <AppIcon name="folder" :size="12" />
+            <AppIcon name="chevron" :size="10" class="dir-ic" :class="{ collapsed: isCollapsed(`s-${g.dir}`) }" />
             <span class="dir-name">{{ g.dir }}</span>
             <span class="dir-stat">
               <b class="add">+{{ groupStat(g.files).adds }}</b>
               <b class="del">−{{ groupStat(g.files).dels }}</b>
             </span>
           </button>
-          <template v-if="!isCollapsed(`s-${g.dir}`)">
-            <div
-              v-for="file in g.files"
-              :key="`s:${file.file_path}`"
-              class="file-line omp-row-click"
-              :class="{ active: props.selected === file.file_path }"
-              @click="emit('pick', file)"
-            >
-              <span class="chg" :class="`chg-${changeTag(file)}`">{{ changeTag(file) }}</span>
-              <span class="path">{{ file.file_path.split(/[\\/]/).pop() }}</span>
-              <span class="num">
-                <b class="add">+{{ file.additions }}</b><b class="del">−{{ file.deletions }}</b>
-              </span>
-              <button
-                class="omp-btn text sm"
-                :title="t('history.forFile')"
-                @click.stop="emit('history', file)"
-              >
-                {{ t('workspace.history') }}
-              </button>
-              <button
-                class="omp-btn text sm"
-                :disabled="Boolean(props.pending)"
-                @click.stop="emit('unstage', file)"
-              >
-                {{ t('workspace.unstage') }}
-              </button>
-            </div>
-          </template>
+          <GitFileRows
+            v-if="!isCollapsed(`s-${g.dir}`)"
+            :files="g.files"
+            :selected="props.selected"
+            :pending="props.pending"
+            staged
+            @pick="emit('pick', $event)"
+            @unstage="emit('unstage', $event)"
+            @history="emit('history', $event)"
+          />
         </div>
       </section>
 
@@ -155,65 +127,31 @@ function groupStat(files: GitFile[]): { adds: number; dels: number } {
         <div class="group-head">
           <span>{{ t('workspace.unstaged') }}</span>
           <span class="count">{{ props.unstaged.length }}</span>
-          <button
-            class="omp-btn text sm push"
-            :disabled="Boolean(props.pending)"
-            @click="emit('stageAll')"
-          >
+          <button class="act push" :disabled="Boolean(props.pending)" @click="emit('stageAll')">
             {{ t('workspace.stageAll') }}
           </button>
         </div>
         <div v-for="g in unstagedGroups" :key="`u-${g.dir}`" class="dir">
           <button class="dir-head" @click="toggle(`u-${g.dir}`)">
-            <AppIcon
-              name="chevron"
-              :size="11"
-              class="dir-ic"
-              :class="{ collapsed: isCollapsed(`u-${g.dir}`) }"
-            />
-            <AppIcon name="folder" :size="12" />
+            <AppIcon name="chevron" :size="10" class="dir-ic" :class="{ collapsed: isCollapsed(`u-${g.dir}`) }" />
             <span class="dir-name">{{ g.dir }}</span>
             <span class="dir-stat">
               <b class="add">+{{ groupStat(g.files).adds }}</b>
               <b class="del">−{{ groupStat(g.files).dels }}</b>
             </span>
           </button>
-          <template v-if="!isCollapsed(`u-${g.dir}`)">
-            <div
-              v-for="file in g.files"
-              :key="`u:${file.file_path}`"
-              class="file-line omp-row-click"
-              :class="{ active: props.selected === file.file_path }"
-              @click="emit('pick', file)"
-            >
-              <span class="chg" :class="`chg-${changeTag(file)}`">{{ changeTag(file) }}</span>
-              <span class="path">{{ file.file_path.split(/[\\/]/).pop() }}</span>
-              <span class="num">
-                <b class="add">+{{ file.additions }}</b><b class="del">−{{ file.deletions }}</b>
-              </span>
-              <button
-                class="omp-btn text sm"
-                :title="t('history.forFile')"
-                @click.stop="emit('history', file)"
-              >
-                {{ t('workspace.history') }}
-              </button>
-              <button
-                class="omp-btn text sm"
-                :disabled="Boolean(props.pending)"
-                @click.stop="emit('stage', file)"
-              >
-                {{ t('workspace.stage') }}
-              </button>
-              <button
-                class="omp-btn text sm danger"
-                :disabled="Boolean(props.pending)"
-                @click.stop="emit('discard', file)"
-              >
-                {{ t('workspace.discard') }}
-              </button>
-            </div>
-          </template>
+          <GitFileRows
+            v-if="!isCollapsed(`u-${g.dir}`)"
+            :files="g.files"
+            :selected="props.selected"
+            :pending="props.pending"
+            :staged="false"
+            @pick="emit('pick', $event)"
+            @stage="emit('stage', $event)"
+            @discard="emit('discard', $event)"
+            @resolve="emit('resolve', $event)"
+            @history="emit('history', $event)"
+          />
         </div>
       </section>
     </template>
@@ -231,17 +169,36 @@ function groupStat(files: GitFile[]): { adds: number; dels: number } {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
-  font-size: var(--omp-fs-2xs);
-  font-weight: 650;
-  letter-spacing: 0.06em;
+  font-size: var(--omp-fs-3xs);
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--omp-faint);
-  margin-bottom: var(--omp-sp-1);
+  margin-bottom: 2px;
 }
 
 .count {
   font-family: var(--omp-font-mono);
   color: var(--omp-mute);
+  letter-spacing: 0;
+}
+
+/* 「全部加入」：与行内动作同一套刻度，但它常驻（组级操作不该藏起来） */
+.act {
+  padding: 0 5px;
+  height: calc(18px * var(--omp-vw-scale));
+  border: none;
+  border-radius: var(--omp-r-xs);
+  background: transparent;
+  color: var(--omp-mute);
+  font-size: var(--omp-fs-3xs);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color var(--omp-dur-fast) var(--omp-ease);
+}
+
+.act:hover:not(:disabled) {
+  color: var(--omp-brand);
 }
 
 .push {
@@ -254,7 +211,7 @@ function groupStat(files: GitFile[]): { adds: number; dels: number } {
   align-items: center;
   gap: var(--omp-sp-2);
   width: 100%;
-  padding: 3px var(--omp-sp-2);
+  padding: 2px var(--omp-sp-2);
   border: 0;
   background: transparent;
   color: var(--omp-mute);
@@ -294,6 +251,7 @@ function groupStat(files: GitFile[]): { adds: number; dels: number } {
   gap: var(--omp-sp-2);
   font-family: var(--omp-font-mono);
   flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .dir-stat .add {
@@ -302,75 +260,6 @@ function groupStat(files: GitFile[]): { adds: number; dels: number } {
 
 .dir-stat .del {
   color: var(--omp-bad);
-}
-
-.file-line {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  width: 100%;
-  padding: 3px var(--omp-sp-2);
-  border: none;
-  background: transparent;
-  color: var(--omp-ink);
-  font-size: var(--omp-fs-xs);
-  text-align: left;
-  border-radius: var(--omp-r-sm);
-  cursor: pointer;
-}
-
-.file-line .path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--omp-font-mono);
-}
-
-.num {
-  display: flex;
-  gap: 6px;
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  flex: none;
-}
-
-.num .add {
-  color: var(--omp-ok);
-}
-
-.num .del {
-  color: var(--omp-bad);
-}
-
-.chg {
-  width: 16px;
-  text-align: center;
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  font-weight: 700;
-  flex: none;
-}
-
-.chg-M {
-  color: var(--omp-warn);
-}
-.chg-A {
-  color: var(--omp-ok);
-}
-.chg-D {
-  color: var(--omp-bad);
-}
-.chg-R,
-.chg-C {
-  color: var(--omp-brand);
-}
-.chg-U {
-  color: var(--omp-bad);
-}
-.chg-\? {
-  color: var(--omp-faint);
 }
 
 .empty-mini {

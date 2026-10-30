@@ -38,6 +38,9 @@ export function useComposerActions() {
   }
 
   // 切引擎：只换「这句话发给谁」。不切目录、不切会话。
+  //
+  // setEngine 已经不阻塞在往返上（本地先切、后台落盘），
+  // 所以这条路径现在是一次瞬时的状态变更，不再需要按钮扛三秒转圈。
   async function pickEngine(kind: EngineKind): Promise<void> {
     if (kind === chat.kind) return
     await guard(async () => {

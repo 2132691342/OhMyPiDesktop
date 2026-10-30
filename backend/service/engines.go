@@ -1,16 +1,14 @@
 package service
 
-// 引擎状态：探测结果、落盘布局、重启。
+// 引擎状态：探测结果、落盘布局、重启、健康快照。
 //
 // 探测不安装。缺引擎时这里只回答「缺什么」与「装它的命令原文」，
 // 界面的其余部分照常可用。
+//
+// 本文件不做什么：不扫目录计四个数（见 counts.go）、不发外网请求（见 engine/latest.go）。
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
 
 	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
@@ -134,18 +132,9 @@ func (a *App) RestartEngines(ctx context.Context, kind engine.Kind) error {
 
 // Health 组装两个引擎的健康快照。
 //
-// 它是概览页首屏，所以有一条硬约束：**不阻塞在子进程与外网上**。
-// 三个可能慢的动作全部改成「先交旧值 / 交空值 + 后台补」：
-//
-//	tab: 探测（pi 要跑 --help，起 Node 实测 2.7 秒）
-//	tab: 落盘计数（四类目录扫描，冷盘 1.6 秒）
-//	tab: 上游最新版（两次外网请求，超时上限 4 秒）
-//
-// 三者叠加就是之前实测的 5.9 秒首屏。语义上它们都是「可以稍后知道」的事实，
-// 而用户打开概览页的第一需求是「能不能开始干活」。
-//
-// refreshing 告诉界面「有后台补验在跑」——它据此显示一个不阻断操作的刷新指示，
-// 而不是把整屏变成骨架屏。
+// 它是概览页首屏，硬约束是不阻塞在子进程与外网上：探测、落盘计数、上游最新版
+// 都改成「先交旧值 / 空值 + 后台补」。refreshing 告诉界面「有后台补验在跑」，
+// 据此显示不阻断操作的刷新指示，而不是骨架屏。
 func (a *App) Health(ctx context.Context) (*domain.HealthVO, error) {
 	a.detectAll(ctx, false)
 	latest := engine.QueryLatestFast(ctx)
@@ -183,20 +172,17 @@ func (a *App) Health(ctx context.Context) (*domain.HealthVO, error) {
 		//
 		// 未知的那一格贡献了 0，于是合计是一个偏小的真话而不是假话——
 		// 但界面得知道它是偏小的，否则「12 个技能」少了 pi 那一份也没人说。
-		if !row.SessionCountKnown {
-			out.TotalsPartial = true
-		}
-		if !row.SkillCountKnown {
-			out.TotalsPartial = true
-		}
-		if !row.PluginCountKnown {
-			out.TotalsPartial = true
-		}
-		if !row.McpCountKnown {
+		if !row.SessionCountKnown || !row.SkillCountKnown ||
+			!row.PluginCountKnown || !row.McpCountKnown {
 			out.TotalsPartial = true
 		}
 	}
 	out.LiveEngines, out.MaxEngines = a.Engine.Stats()
+	// Ready 的判据只有两条：探过了，且没有后台补验在跑。
+	//
+	// 不看 counts 的 age：计数有 30 秒缓存，但它是一份「已完成的观测」，
+	// 而不是「还在算」。把它算进来会让 Ready 在没任何变化的情况下自己变假。
+	out.Ready = !out.Detecting && !out.Refreshing
 	return out, nil
 }
 
@@ -214,198 +200,11 @@ func (a *App) runningByKind() map[engine.Kind]engine.RunRow {
 	return byKind
 }
 
-// healthCounts 是一份「落盘计数」快照。
+// healthOf 组装单个引擎的健康行。
 //
-// 为什么单独缓存：这四个数要扫目录（会话头、技能文件、插件清单、MCP 配置），
-// 而它们的变化频率远低于查看频率——用户不会为了看到一个数字变化而反复刷新。
-// 不缓存的话，每次 Health / Bootstrap 都重新扫一遍，
-// 而概览页是首屏——用户看到的就是「打开应用卡一秒」。
-type healthCounts struct {
-	sessions int
-	skills   int
-	plugins  int
-	mcp      int
-	at       time.Time
-	// known 逐位标记上面四个数是不是真扫出来的。
-	//
-	// 为什么不能用一个整包的 ok bool：四类目录各自的失败原因不同
-	// （会话目录读不动、技能判定要遍历插件的 node_modules 被跳过、
-	// 落盘布局本身解不出来）。整包判据会让「技能没扫到」把「会话明明读到了」
-	// 也一起抹成未知——而用户要的恰恰是「这个数是可信的」。
-	known knownFlags
-}
-
-// knownFlags 是四个计数的「是否可信」标记。
-type knownFlags struct {
-	sessions bool
-	skills   bool
-	plugins  bool
-	mcp      bool
-}
-
-// countsTTL 是计数快照的保鲜期。
-//
-// 短到足够跟上「刚装完插件 / 刚建了会话」，长到能把首屏的多个请求合成一次扫描。
-const countsTTL = 30 * time.Second
-
-// countSessions 数会话文件数量。
-//
-// 不调 Index.List：那会逐个读文件头解析标题与用量（本机 90 个会话冷启动要 1.5 秒，
-// 而这里只需要一个数字）。概览页的「会话数」是一个指标，不是列表——
-// 列表由会话页自己去取。
-//
-// 目录结构是 <会话目录>/<目录 slug>/<文件>.jsonl，只需两层 ReadDir，不读文件内容。
-func (a *App) countSessions(kind engine.Kind) (int, bool) {
-	layout, err := a.Layout(kind)
-	if err != nil {
-		return 0, false
-	}
-	dirs, err := os.ReadDir(layout.Sessions)
-	if err != nil {
-		return 0, false
-	}
-	total := 0
-	for _, d := range dirs {
-		if !d.IsDir() {
-			continue
-		}
-		files, err := os.ReadDir(filepath.Join(layout.Sessions, d.Name()))
-		if err != nil {
-			continue
-		}
-		for _, f := range files {
-			if !f.IsDir() && strings.HasSuffix(f.Name(), ".jsonl") {
-				total++
-			}
-		}
-	}
-	return total, true
-}
-
-// countsOf 取一份计数快照。
-//
-// 三个纪律：
-//  1. 四个数并发取（各扫不同目录，串行会把四段磁盘延迟相加）；
-//  2. 结果通过 channel 回传，**不并发写同一个 struct**——
-//     四个 goroutine 写四个字段在 Go 里是数据竞争，race detector 会直接报；
-//  3. 不动盘时立即返回旧值 + 后台补，首屏不为一次目录扫描停顿。
-func (a *App) countsOf(kind engine.Kind) healthCounts {
-	a.countsMu.Lock()
-	cached, ok := a.counts[kind]
-	a.countsMu.Unlock()
-	if ok && time.Since(cached.at) < countsTTL {
-		return cached
-	}
-
-	// 过期或没有：交旧值（可能是零值），后台刷新。
-	// 实测冷扫一次 pi 要 40 毫秒、omp 1 毫秒——但那是这台机器、这点数据量；
-	// 用户有几千个会话时这一步就是秒级，而它只影响四个数字。
-	if ok {
-		a.refreshCountsAsync(kind)
-		return cached
-	}
-	c := a.scanCounts(kind)
-	a.storeCounts(kind, c)
-	return c
-}
-
-// refreshCountsAsync 后台重扫一次计数（同一引擎同时只一颗）。
-func (a *App) refreshCountsAsync(kind engine.Kind) {
-	a.countsBusyMu.Lock()
-	if a.countsBusy == nil {
-		a.countsBusy = map[engine.Kind]bool{}
-	}
-	if a.countsBusy[kind] {
-		a.countsBusyMu.Unlock()
-		return
-	}
-	a.countsBusy[kind] = true
-	a.countsBusyMu.Unlock()
-
-	go func() {
-		defer func() {
-			a.countsBusyMu.Lock()
-			delete(a.countsBusy, kind)
-			a.countsBusyMu.Unlock()
-		}()
-		a.storeCounts(kind, a.scanCounts(kind))
-	}()
-}
-
-// scanCounts 真正扫一遍四类目录。四个 goroutine 各自通过 channel 交结果。
-//
-// 每个槽除了数字还交回一个 ok：调用方只读规定 RMS 的目录（它可能在网络盘上、
-// 可能被权限挡住），失败就是「没读到」，不是一个 0。
-func (a *App) scanCounts(kind engine.Kind) healthCounts {
-	type slot struct {
-		which int
-		n     int
-		ok    bool
-	}
-	out := make(chan slot, 4)
-
-	go func() {
-		n, ok := a.countSessions(kind)
-		out <- slot{0, n, ok}
-	}()
-	go func() {
-		if skills, err := a.Skills(kind); err == nil {
-			out <- slot{1, len(skills), true}
-			return
-		}
-		out <- slot{1, 0, false}
-	}()
-	go func() {
-		if plugins, err := a.pluginsOf(kind); err == nil && plugins != nil {
-			out <- slot{2, len(plugins.Plugins), true}
-			return
-		}
-		out <- slot{2, 0, false}
-	}()
-	go func() {
-		if mcp, err := a.McpList(context.Background(), kind, false); err == nil && mcp != nil {
-			out <- slot{3, len(mcp.Servers), true}
-			return
-		}
-		out <- slot{3, 0, false}
-	}()
-
-	c := healthCounts{at: time.Now()}
-	for i := 0; i < 4; i++ {
-		s := <-out
-		switch s.which {
-		case 0:
-			c.sessions, c.known.sessions = s.n, s.ok
-		case 1:
-			c.skills, c.known.skills = s.n, s.ok
-		case 2:
-			c.plugins, c.known.plugins = s.n, s.ok
-		case 3:
-			c.mcp, c.known.mcp = s.n, s.ok
-		}
-	}
-	return c
-}
-
-// storeCounts 写入一份快照。
-func (a *App) storeCounts(kind engine.Kind, c healthCounts) {
-	a.countsMu.Lock()
-	a.counts[kind] = c
-	a.countsMu.Unlock()
-}
-
-// InvalidateCounts 丢掉计数缓存（装完插件 / 删了会话 / 换了工作目录之后）。
-func (a *App) InvalidateCounts() {
-	a.countsMu.Lock()
-	a.counts = map[engine.Kind]healthCounts{}
-	a.countsMu.Unlock()
-}
-
-// countsFor 返回某引擎的计数（Bootstrap 用：它只要技能数一个数字）。
-func (a *App) countsFor(kind engine.Kind) (sessions, skills, plugins, mcp int) {
-	c := a.countsOf(kind)
-	return c.sessions, c.skills, c.plugins, c.mcp
-}
+// 这里的每一条都是在回答「界面上这一句话说错了会被当成什么」：
+// 「已安装 · 0 个会话」在磁盘上躺着九十个会话时会让人不再相信任何一个数字；
+// 「未安装」在一台其实装好的机器上会让人去装第二遍。
 func (a *App) healthOf(kind engine.Kind, run engine.RunRow, latest engine.Latest) domain.EngineHealthVO {
 	id := a.Identity(kind)
 	row := domain.EngineHealthVO{
@@ -438,12 +237,9 @@ func (a *App) healthOf(kind engine.Kind, run engine.RunRow, latest engine.Latest
 	row.CallCount = run.CallCount
 	row.LastError = run.LastError
 
-	// 落盘布局只喂「路径类」字段。
-	//
-	// 这里**不能**在布局解不出来时提前返回：那会把下面四个计数一起留在零值，
-	// 于是界面显示「已安装 · 0 个会话」，而磁盘上其实有九十个会话 ——
-	// 这不是「没刷新」，是撒了一个反向的谎。布局与计数是两条独立的证据链：
-	// 布局解不出来只该让步于路径类字段，计数该有值还给它。
+	// 布局解不出来时不能提前返回：否则四个计数也被一起留在零值，
+	// 界面会显示「已安装 · 0 个会话」而磁盘上其实有九十个会话。
+	// 布局与计数是两条独立证据链，各解各的。
 	if layout, err := a.Layout(kind); err == nil {
 		row.LayoutResolved = true
 		row.RootDir = layout.Root

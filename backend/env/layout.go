@@ -108,3 +108,99 @@ func (l Layout) Exists() bool {
 	st, err := os.Stat(l.Agent)
 	return err == nil && st.IsDir()
 }
+
+// InstallCandidates 列出某引擎「官方安装器会把可执行文件放在哪」的候选路径。
+//
+// 为什么需要它：两个引擎的官方安装器都**不往 PATH 里写东西**（omp 装进
+// `%LOCALAPPDATA%\omp`，pi 装进托管布局的 releases 目录），用户按官方文档
+// 一路装完、终端里也能跑，而只看 PATH 的应用会报「未安装」——
+// 然后建议用户再装一遍。这是最容易被当成「这个软件连装没装都看不出来」的那种错。
+//
+// 候选只包含「按官方安装器的落点推出来的确切路径」，不做目录扫描：
+// 扫盘会把别的项目里同名的二进制也当成引擎。
+func InstallCandidates(kind engine.Kind) []string {
+	if kind == engine.KindOMP {
+		dirs := []string{}
+		if dir := strings.TrimSpace(os.Getenv("PI_INSTALL_DIR")); dir != "" {
+			dirs = append(dirs, dir)
+		}
+		if local := localAppData(); local != "" {
+			dirs = append(dirs, filepath.Join(local, "omp"))
+		}
+		if home, err := os.UserHomeDir(); err == nil {
+			dirs = append(dirs, filepath.Join(home, ".omp", "bin"))
+		}
+		out := make([]string, 0, len(dirs))
+		for _, dir := range dirs {
+			out = append(out, filepath.Join(dir, engine.ExeName(kind)))
+		}
+		return out
+	}
+	return piManagedExeCandidates()
+}
+
+// piManagedExeCandidates 按 pi 官方安装器的托管布局列出候选。
+//
+// 布局是 `<root>/releases/<version>/node_modules/.bin/pi.cmd` + `<root>/current-version`，
+// 而 `current-version` 里写着当前启用的是哪一个 release。先读它、再回退到
+// 目录里最新的那个，与引擎自己的选版规则一致——猜错版本号比猜错目录更常见。
+func piManagedExeCandidates() []string {
+	roots := []string{}
+	if root := strings.TrimSpace(os.Getenv("PI_MANAGED_INSTALL_ROOT")); root != "" {
+		roots = append(roots, root)
+	}
+	if local := localAppData(); local != "" {
+		roots = append(roots, filepath.Join(local, "pi"))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, filepath.Join(home, ".pi", "install"))
+	}
+	out := make([]string, 0, len(roots)*2)
+	for _, root := range roots {
+		if !dirExists(root) {
+			continue
+		}
+		if version := strings.TrimSpace(readSmallFile(filepath.Join(root, "current-version"))); version != "" {
+			out = append(out, filepath.Join(root, "releases", version, "node_modules", ".bin", "pi.cmd"))
+		}
+		if latest := newestReleaseDir(filepath.Join(root, "releases")); latest != "" {
+			out = append(out, filepath.Join(latest, "node_modules", ".bin", "pi.cmd"))
+		}
+	}
+	return out
+}
+
+// newestReleaseDir 返回 releases 目录里名字排序最大的那一项。
+//
+// 版本号是 `1.4.0` 这种形如 semver 的字符串，字典序在同层级版本上正确；
+// 用不上完整排序——它只是 current-version 缺失时的个兜底。
+func newestReleaseDir(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	best := ""
+	for _, e := range entries {
+		if e.IsDir() && e.Name() > best {
+			best = e.Name()
+		}
+	}
+	if best == "" {
+		return ""
+	}
+	return filepath.Join(dir, best)
+}
+
+// readSmallFile 读一个只用来放一行字的文件；读不到返回空串。
+func readSmallFile(path string) string {
+	raw, err := os.ReadFile(path)
+	if err != nil || len(raw) > 128 {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func dirExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
+}

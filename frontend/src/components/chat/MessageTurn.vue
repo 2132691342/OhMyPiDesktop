@@ -7,10 +7,11 @@
 // 每轮都顶一行「assistant」会把一次回答切成几块，
 // 读的人得自己去想「这几段其实是一件事」。消掉重复头之后，
 // 同一次回答在视觉上就是一坨。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TurnBlocks from '@/components/chat/TurnBlocks.vue'
 import MarkdownBlock from '@/components/chat/MarkdownBlock.vue'
+import AppIcon from '@/components/common/AppIcon.vue'
 import type { ChatBlock, EngineKind } from '@/types/api'
 
 const props = defineProps<{
@@ -46,6 +47,35 @@ const isUser = computed(() => props.role === 'user')
 const handoffEngine = computed<EngineKind | ''>(() =>
   props.role === 'engine-mark' ? ((props.blocks[0]?.text ?? '') as EngineKind) : '',
 )
+
+/** 这一轮的纯文本（复制用）。 */
+const plainText = computed(() =>
+  props.blocks
+    .filter((b) => b.kind === 'text' && b.text)
+    .map((b) => b.text)
+    .join('\n\n'),
+)
+
+const copied = ref(false)
+
+/**
+ * 复制这一轮的回答。
+ *
+ * 放在轮尾而不是每一段上：用户要的通常是「这次回答的全文」，
+ * 而逐段复制会让他按段拼一遍。按钮只在悬停时出现，平时不占视觉重量。
+ */
+async function copyTurn(): Promise<void> {
+  if (!plainText.value.trim()) return
+  try {
+    await navigator.clipboard.writeText(plainText.value)
+    copied.value = true
+    window.setTimeout(() => {
+      copied.value = false
+    }, 1400)
+  } catch {
+    /* 剪贴板不可用时不打扰：用户可以手动选中 */
+  }
+}
 </script>
 
 <template>
@@ -77,6 +107,14 @@ const handoffEngine = computed<EngineKind | ''>(() =>
         :cache-key="`${props.runId}:user`"
       />
       <TurnBlocks v-else :blocks="props.blocks" :run-id="props.runId" :streaming="props.streaming" />
+
+      <!-- 轮尾动作：悬停才出现，平时不占位置 -->
+      <div v-if="!isUser" class="msg-acts">
+        <button class="msg-act" type="button" :disabled="copied" @click="copyTurn">
+          <AppIcon :name="copied ? 'check' : 'file'" :size="11" />
+          {{ copied ? t('common.copied') : t('common.copy') }}
+        </button>
+      </div>
     </div>
   </article>
 </template>
@@ -91,7 +129,7 @@ const handoffEngine = computed<EngineKind | ''>(() =>
 /* 连续同一角色：取消与上一条之间的间距，视觉上合成一坨。
    头与正文之间的间距留着——那一坨内部还是看得出结构。 */
 .msg.is-continued {
-  margin-top: calc(-1 * var(--omp-sp-2));
+  margin-top: calc(-1 * var(--omp-sp-3));
 }
 
 .msg-head {
@@ -100,22 +138,18 @@ const handoffEngine = computed<EngineKind | ''>(() =>
   gap: var(--omp-sp-2);
 }
 
+/* 角色徽章：一行人名，不画胶囊。
+   长会话里每一轮都顶一个描边胶囊时，一屏会多出十几个相同形状的框。 */
 .msg-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 7px;
-  border-radius: var(--omp-r-full);
-  background: var(--omp-hover);
-  color: var(--omp-mute);
   font-family: var(--omp-font-mono);
   font-size: var(--omp-fs-3xs);
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--omp-faint);
 }
 
 .msg-badge.user {
-  background: var(--omp-brand-soft);
   color: var(--omp-brand);
 }
 
@@ -132,15 +166,41 @@ const handoffEngine = computed<EngineKind | ''>(() =>
   min-width: 0;
 }
 
-/* 流式中的那一轮：左边一条细标记，说明「这段还在长」 */
-.msg-streaming .msg-body {
-  border-left: 2px solid var(--omp-brand-2);
-  padding-left: var(--omp-sp-3);
-  margin-left: 1px;
+/* 轮尾动作：默认透明，悬停整个回合才浮现 */
+.msg-acts {
+  display: flex;
+  justify-content: flex-end;
+  height: 18px;
+  opacity: 0;
+  transition: opacity var(--omp-dur-fast) var(--omp-ease);
 }
 
-.msg-error .msg-body {
-  border-left-color: var(--omp-bad);
+.msg:hover .msg-acts {
+  opacity: 1;
+}
+
+.msg-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--omp-faint);
+  font-size: var(--omp-fs-3xs);
+  font-weight: 600;
+  transition:
+    color var(--omp-dur-fast) var(--omp-ease),
+    transform var(--omp-dur-fast) var(--omp-ease);
+}
+
+.msg-act:hover:not(:disabled) {
+  color: var(--omp-brand);
+  transform: scale(var(--omp-press-hover));
+}
+
+.msg-act:active:not(:disabled) {
+  transform: scale(var(--omp-press-active));
 }
 
 .mark-line {

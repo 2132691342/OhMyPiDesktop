@@ -13,19 +13,15 @@ import (
 	"OhMyPiDesktop/backend/pkg"
 )
 
-// 探测：找出机器上装了哪些引擎、各是什么版本。
+// 探测：找出机器上装了哪些引擎、各是什么版本（全部只读、无副作用）。
 //
-// 两步判据（全部只读、无副作用）：
-//  1. `<bin> --version`：omp 打 `omp/18.13.1`（`${bin}/${version}`），
-//     pi 打裸 `1.4.0`。前者一眼可判，后者只算「疑似 pi」。
-//  2. 疑似 pi 时复核 `--help`：omp 的根帮助首行是 `omp v<ver>` 且有小节标题
-//     `USAGE`（大写），pi 的是 `Usage:`。omp 的遗留 launch 分支会打裸版本号，
-//     不复核就会把 omp 认成 pi。
+// 两步判据：
+//  1. `<bin> --version`：omp 打 `omp/18.13.1`，pi 打裸 `1.4.0`（只算疑似 pi）；
+//  2. 疑似 pi 时复核 `--help`：omp 的小节标题是 `USAGE`（大写），pi 是 `Usage:`；
+//     omp 的遗留 launch 分支会打裸版本号，不复核会把 omp 认成 pi。
 //
-// 不靠可执行文件名判种：用户可能重命名它，omp 还允许用 `OMP_APP_NAME` 改 bin。
-//
-// 「没版本输出」就是「没找到」——界面显示安装命令，不猜、也不退化成
-// 「版本未知」这种半吊子状态。
+// 不靠文件名判种（用户可能改名，omp 还允许用 OMP_APP_NAME 改 bin）；
+// 「没版本输出」就是「没找到」，界面显示安装命令，不退化成「版本未知」。
 
 var (
 	rePrefixed = regexp.MustCompile(`^[A-Za-z][\w.-]*/\d+\.\d+\.\d+`)
@@ -39,29 +35,41 @@ const ProbeTimeout = 5 * time.Second
 // Candidate 是一个待探测的可执行文件。
 type Candidate struct {
 	Exe    string
-	Source string // custom / path
+	Source string // custom / path / install
 }
 
-// Candidates 按「显式路径 → PATH」列出所有候选。
+// Candidates 按「显式路径 → npm 全局 shim → PATH → 官方安装器的落点」列出所有候选。
 //
-// 只有这两个来源：本应用不装引擎，所以不存在「我们自己放的那一份」。
-func Candidates(custom string, bin string) []Candidate {
-	out := make([]Candidate, 0, 2)
-	if strings.TrimSpace(custom) != "" {
-		out = append(out, Candidate{Exe: strings.TrimSpace(custom), Source: "custom"})
-	}
-	if found, err := exec.LookPath(bin); err == nil {
-		// 显式路径可能就是 PATH 上那一个，去重让界面只显示一次。
-		dup := false
+// 为什么要有「官方安装器的落点」这一档：omp 的安装器把它装进
+// `%LOCALAPPDATA%\omp\omp.exe` 并且**不往 PATH 里放东西**（PID 需要手动加）。
+// 只查 PATH 的后果是：机器上明明装着 omp，界面说「未安装」并让用户再去装一遍。
+//
+// 落点由调用方给（install，可空）：本包不读环境变量、不猜用户目录，
+// 那是 env 包的事。这里只负责按优先级排好并去重。
+func Candidates(custom string, bin string, install ...string) []Candidate {
+	out := make([]Candidate, 0, 4)
+	add := func(exe, source string) {
+		if strings.TrimSpace(exe) == "" {
+			return
+		}
 		for _, c := range out {
-			if sameFile(c.Exe, found) {
-				dup = true
-				break
+			if sameFile(c.Exe, exe) {
+				return
 			}
 		}
-		if !dup {
-			out = append(out, Candidate{Exe: found, Source: "path"})
-		}
+		out = append(out, Candidate{Exe: exe, Source: source})
+	}
+	add(custom, "custom")
+	// npm 全局安装的 shim 先于 PATH：Windows 上 PATH 里可能是一个坏掉的
+	// `pi.ps1` 而不是 `pi.cmd`，而 shim 的兄弟目录判定（channel.go）也要看它。
+	if exe, ok := NpmShimPath(bin); ok {
+		add(exe, "path")
+	}
+	if found, err := exec.LookPath(bin); err == nil {
+		add(found, "path")
+	}
+	for _, exe := range install {
+		add(exe, "install")
 	}
 	return out
 }
@@ -72,6 +80,30 @@ func ExeName(kind Kind) string {
 		return string(kind) + ".exe"
 	}
 	return string(kind)
+}
+
+// NpmShimPath 返回 npm 全局目录里那个 shim 的盘上真身。
+//
+// 只在 Windows 上做这件事，而且只往「明确存在的文件」上落：
+// `%APPDATA%\npm\pi.cmd` 是 npm 生成的批处理壳，`%APPDATA%\npm\pi.ps1` 是它的
+// PowerShell 兄弟；而 PATH 里排在前面、又不可执行的同名文件会让 LookPath 直接失败。
+// 这里按 .cmd → .exe 的顺序回退，仍不做任何写盘动作。
+func NpmShimPath(bin string) (string, bool) {
+	if runtime.GOOS != "windows" {
+		return "", false
+	}
+	appData := os.Getenv("APPDATA")
+	if appData == "" {
+		return "", false
+	}
+	dir := filepath.Join(appData, "npm")
+	for _, name := range []string{bin + ".cmd", bin + ".exe"} {
+		exe := filepath.Join(dir, name)
+		if st, err := os.Stat(exe); err == nil && !st.IsDir() {
+			return exe, true
+		}
+	}
+	return "", false
 }
 
 // Detect 探测一个候选，返回 Identity。找不到或版本读不出时 Exe 为空。

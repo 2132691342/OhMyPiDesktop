@@ -38,6 +38,9 @@ const tab = ref<'changes' | 'history'>('changes')
 // 文件时间线：选中一个文件就看它的历史，空串表示看整个仓库。
 // 它与「差异选中」是同一份 selected——用户点的就是一个文件，不该分两处。
 const historyFile = ref('')
+// 文件树默认展开：它是“我要看哪个文件”最快的入口。但窗口窄时三栏挤不下，
+// 容器查询会把它整个收起来，需要时再用页头的按钮叫回来。
+const filesOpen = ref(true)
 
 const unstaged = computed(() => (status.value?.changed_files ?? []).filter((f) => !f.staged))
 const staged = computed(() => (status.value?.changed_files ?? []).filter((f) => f.staged))
@@ -125,6 +128,10 @@ async function resolveConflicts() {
   await git.resolveConflicts(conflicts.value)
 }
 
+async function resolveOne(file: GitFile) {
+  await git.resolve(file)
+}
+
 async function commit(text: string) {
   if (!text.trim() || !staged.value.length || committing.value) return
   committing.value = true
@@ -159,6 +166,14 @@ onMounted(refresh)
         <span v-if="status?.is_repo && status.upstream_ref" class="readout">
           ↑{{ status.ahead }} ↓{{ status.behind }}
         </span>
+        <button
+          class="omp-btn icon ghost"
+          :class="{ on: filesOpen }"
+          :title="t('workspace.fileTree')"
+          @click="filesOpen = !filesOpen"
+        >
+          <AppIcon name="folder" :size="15" />
+        </button>
         <button class="omp-btn icon ghost" :class="{ 'is-loading': loadingStatus }" :title="t('common.refresh')" @click="refresh">
           <AppIcon name="refresh" :size="15" />
         </button>
@@ -201,9 +216,10 @@ onMounted(refresh)
         <GitBar :status="status" :busy="Boolean(git.pending.value)" @fetch="git.fetchRemote" @pull="git.pull" @push="git.push" />
       </div>
 
-      <div class="split">
-        <!-- 左：文件树 -->
-        <FilePanel class="pane-files" />
+      <div class="split" :class="{ 'no-files': !filesOpen }">
+        <!-- 左：文件树。默认展开，但只是一个“找文件”的入口：
+             真正看改动的地方是右边两栏。 -->
+        <FilePanel v-if="filesOpen" class="pane-files" />
 
         <!-- 中：改动 + 提交 -->
         <div class="pane-mid">
@@ -227,6 +243,7 @@ onMounted(refresh)
               @stage="stage"
               @unstage="unstage"
               @discard="discard"
+              @resolve="resolveOne"
               @stage-all="stageAll"
               @history="(file) => showFileHistory(file.file_path)"
             />
@@ -315,10 +332,15 @@ onMounted(refresh)
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 220px minmax(280px, 1fr) minmax(320px, 1.2fr);
+  grid-template-columns: 210px minmax(280px, 1fr) minmax(320px, 1.2fr);
   gap: var(--omp-sp-3);
   padding: var(--omp-sp-4) var(--omp-sp-6) var(--omp-sp-5);
   overflow: hidden;
+}
+
+/* 文件树收起来时把那一列让给改动与差异 */
+.split.no-files {
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.3fr);
 }
 
 /* 版本栏的位置：贴着页头，横跨整个内容区 */
@@ -327,12 +349,15 @@ onMounted(refresh)
   flex: none;
 }
 
-/* 窄窗口下三栏放不下：文件树压到最小，diff 让出宽度。
-   低于 820px 时中间栏允许收缩到 200px，否则 diff 会被挤成一条。 */
+/* 窄窗口下三栏放不下：文件树让出宽度，diff 保住最小可用宽度。
+   低于 980px 时左栏只剩 176px（只够看目录名），再窄就完全交给用户自己收。 */
 @container app (max-width: 980px) {
   .split {
-    grid-template-columns: 176px minmax(200px, 1fr) minmax(240px, 1fr);
+    grid-template-columns: 168px minmax(200px, 1fr) minmax(240px, 1fr);
     padding: var(--omp-sp-3) var(--omp-sp-4);
+  }
+  .split.no-files {
+    grid-template-columns: minmax(200px, 1fr) minmax(240px, 1fr);
   }
 }
 .pane-files,

@@ -42,6 +42,8 @@ export default {
     "notInstalled": "Not installed",
     "detecting": "Detecting…",
     "detectedAt": "Detected at",
+    "collecting": "Checking engines, sessions and usage… numbers show as — until that settles.",
+    "redetect": "Detect again",
     "installHint": "This engine is not installed on this machine. Version and on-disk location appear here once it is.",
     "goInstall": "Install it",
     "probeBadPath": "The engine path in settings is unusable (file missing, or it is not this engine).",
@@ -204,7 +206,8 @@ export default {
     "forceTrueHint": "Silently overwrites other people's commits.",
     "forceConfirmPlaceholder": "Type the branch name {name} to confirm",
     "forceConfirmHint": "The branch name must match exactly.",
-    "noRemote": "This repository has no remote yet"
+    "noRemote": "This repository has no remote yet",
+    "fileTree": "File tree"
   },
   "history": {
     "forFile": "History of this file",

@@ -14,6 +14,7 @@
 ```
 backend/env/
 ├── layout.go     Layout：一个引擎的落盘布局（按 kind 分叉的唯一处）
+│                  + InstallCandidates：官方安装器的落点候选
 ├── detect.go     Detect：候选路径 → engine.Identity（复用 engine.Detect）
 ├── ompcfg/       models.yml 的 YAML 节点级读写
 └── picfg/        models.json 的 JSONC 键级读写
@@ -21,10 +22,20 @@ backend/env/
 ### 探测
 
 ```
-对每个 kind：候选 = [设置里的 engine.path.<kind>] + [PATH 上的 <kind>]
+对每个 kind：候选 = [设置里的 engine.path.<kind>]
+                   + [npm 全局 shim（%APPDATA%\npm\<bin>.cmd）]
+                   + [PATH 上的 <kind>]
+                   + [InstallCandidates(kind)：官方安装器的落点]
 对每个候选跑 engine.Detect → Identity（判据见 [ENGINE-MATRIX.md](../ENGINE-MATRIX.md)）
 最后按可执行文件的位置判安装渠道（engine.DetectChannel）
 ```
+
+**为什么必须有「安装落点」这一档**：omp 的安装器把它放进
+`%LOCALAPPDATA%\omp\omp.exe` 且**不往 PATH 里写东西**；pi 的官方安装器用
+托管布局（`<root>/releases/<version>/node_modules/.bin/pi.cmd`，当前版本写在
+`current-version`）。只查 PATH 时这两个都可能被漏掉——而用户看到的是一台装好的
+机器上写着「未安装」。落点只按官方规则推确切路径、不扫盘，
+整条链有 6 秒总预算（`detectBudget`）。
 
 三种结果，界面各有各的样子：
 

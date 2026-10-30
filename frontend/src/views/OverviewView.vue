@@ -14,6 +14,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppIcon from '@/components/common/AppIcon.vue'
 import EngineHealthCard from '@/components/overview/EngineHealthCard.vue'
+import RecentSessions from '@/components/overview/RecentSessions.vue'
 import UsageCharts from '@/components/overview/UsageCharts.vue'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
@@ -32,7 +33,22 @@ const rows = ref<SessionRow[]>([])
 
 const engines = computed(() => health.value?.engines ?? [])
 const recent = computed(() => rows.value.slice(0, 6))
-const detecting = computed(() => health.value?.detecting ?? false)
+// 「能不能把数字当结论看」：探测完成且没有后台补验才算就绪。
+//
+// 之前只看 detecting，而 detecting 只描述「探测那一条链路」；
+// 计数、最新版这些后台补验仍在跑时，界面已经摆出一串 0。
+// 0 是一个断言，而那时它只是「还没数完」。
+const ready = computed(() => Boolean(health.value?.ready))
+const detecting = computed(() => !ready.value || Boolean(health.value?.detecting))
+
+/** 还不可信时就话「—」：零值不等于「有 0 个」。 */
+const pendingMark = '—'
+
+/** 一个读数怎么显示：没就绪的那一格不把 0 抛出去。 */
+function readout(formatted: string): string {
+  if (!ready.value) return pendingMark
+  return formatted === '' ? pendingMark : formatted
+}
 
 /**
  * 三个「花了多少」的合计。
@@ -54,7 +70,6 @@ const usage = computed(() => {
   }
   return { tokens, cost, sessions }
 })
-
 function formatCost(v: number): string {
   if (!v) return '$0'
   return v < 0.01 ? `$${v.toFixed(5)}` : `$${v.toFixed(3)}`
@@ -157,6 +172,16 @@ onMounted(() => void load())
     </header>
 
     <div class="page-body">
+      <!-- 未就绪的横幅：说清「屏幕上这些东西还在数」。
+           缺了它，用户看到一屏「—」只能以为界面坏了。 -->
+      <div v-if="!ready" class="notice-row">
+        <span class="dot busy" />
+        <span>{{ t('overview.collecting') }}</span>
+        <button class="omp-btn text sm" :disabled="loading" @click="app.detectEngines()">
+          {{ t('overview.redetect') }}
+        </button>
+      </div>
+
       <!-- 引擎健康卡：一屏看两个引擎 -->
       <section class="engine-grid">
         <EngineHealthCard
@@ -169,36 +194,37 @@ onMounted(() => void load())
       </section>
 
       <!-- 六个读数：三个是「花了多少」，三个是「装了什么」。
-           后者由后端直接给合计，界面不重算。 -->
-      <section class="stat-row">
+           后者由后端直接给合计，界面不重算。
+           全部读数在就绪前显示「—」：那一串 0 会被当成结论。 -->
+      <section class="stat-row" :class="{ 'is-pending': !ready }">
         <div class="omp-card card-pad">
           <span class="omp-metric-label">{{ t('overview.spend') }}</span>
-          <span class="omp-metric">{{ formatCost(usage.cost) }}</span>
+          <span class="omp-metric">{{ readout(formatCost(usage.cost)) }}</span>
         </div>
         <div class="omp-card card-pad">
           <span class="omp-metric-label">{{ t('overview.tokens') }}</span>
-          <span class="omp-metric">{{ formatTokens(usage.tokens) }}</span>
+          <span class="omp-metric">{{ readout(formatTokens(usage.tokens)) }}</span>
         </div>
         <div class="omp-card card-pad">
           <span class="omp-metric-label">{{ t('overview.turns') }}</span>
-          <span class="omp-metric">{{ usage.sessions }}</span>
+          <span class="omp-metric">{{ readout(String(usage.sessions)) }}</span>
         </div>
         <div class="omp-card card-pad">
           <span class="omp-metric-label">{{ t('overview.capSkills') }}</span>
           <span class="omp-metric">
-            {{ totalLabel(health?.total_skills ?? 0, Boolean(health?.totals_partial)) }}
+            {{ ready ? totalLabel(health?.total_skills ?? 0, Boolean(health?.totals_partial)) : pendingMark }}
           </span>
         </div>
         <div class="omp-card card-pad">
           <span class="omp-metric-label">{{ t('overview.capPlugins') }}</span>
           <span class="omp-metric">
-            {{ totalLabel(health?.total_plugins ?? 0, Boolean(health?.totals_partial)) }}
+            {{ ready ? totalLabel(health?.total_plugins ?? 0, Boolean(health?.totals_partial)) : pendingMark }}
           </span>
         </div>
         <div class="omp-card card-pad">
           <span class="omp-metric-label">{{ t('overview.capMcp') }}</span>
           <span class="omp-metric">
-            {{ totalLabel(health?.total_mcp ?? 0, Boolean(health?.totals_partial)) }}
+            {{ ready ? totalLabel(health?.total_mcp ?? 0, Boolean(health?.totals_partial)) : pendingMark }}
           </span>
         </div>
       </section>
@@ -206,37 +232,13 @@ onMounted(() => void load())
       <UsageCharts :span="span" :rows="rows" />
 
       <!-- 最近会话 -->
-      <section class="omp-card card-pad">
-        <div class="omp-sec-head">
-          <span class="omp-sec-title">{{ t('overview.recent') }}</span>
-          <button class="omp-btn text sm" @click="router.push({ name: 'sessions' })">
-            {{ t('overview.all') }}
-            <AppIcon name="chevron" :size="12" />
-          </button>
-        </div>
-        <div v-if="recent.length" class="recent-list">
-          <button
-            v-for="row in recent"
-            :key="row.id"
-            class="recent-row omp-row-click"
-            @click="openSession(row.path)"
-          >
-            <span class="omp-tile omp-tile--sm omp-tile--neutral">
-              <AppIcon name="chat" :size="14" />
-            </span>
-            <span class="recent-title">{{ row.title || t('common.untitled') }}</span>
-            <span class="recent-meta omp-mono">{{ row.model || '—' }}</span>
-            <span class="recent-time omp-mono">{{ row.updated_at?.slice(5, 16) }}</span>
-          </button>
-        </div>
-        <div v-else class="omp-empty">
-          <p class="omp-empty-title">{{ t('overview.noSessions') }}</p>
-          <p class="omp-empty-hint">{{ t('overview.noSessionsHint') }}</p>
-          <button class="omp-btn sm primary" @click="router.push({ name: 'chat' })">
-            {{ t('overview.startChat') }}
-          </button>
-        </div>
-      </section>
+      <RecentSessions
+        :rows="recent"
+        :ready="ready"
+        @open="openSession"
+        @all="router.push({ name: 'sessions' })"
+        @start="router.push({ name: 'chat' })"
+      />
     </div>
   </div>
 </template>
@@ -319,59 +321,9 @@ onMounted(() => void load())
   gap: 4px;
 }
 
-.recent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.recent-row {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  width: 100%;
-  padding: var(--omp-sp-2);
-  border: none;
-  background: transparent;
-  text-align: left;
-  border-radius: var(--omp-r-sm);
-}
-
-.recent-title {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--omp-fs-sm);
-  color: var(--omp-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.recent-meta,
-.recent-time {
-  flex: none;
-  font-size: var(--omp-fs-3xs);
+/* 未就绪时读数走弱色：一眼能看出「这些还不是结论」 */
+.stat-row.is-pending .omp-metric {
   color: var(--omp-faint);
 }
 
-.omp-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  padding: var(--omp-sp-6);
-  text-align: center;
-}
-
-.omp-empty-title {
-  margin: 0;
-  font-size: var(--omp-fs-sm);
-  color: var(--omp-ink);
-}
-
-.omp-empty-hint {
-  margin: 0;
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-faint);
-}
 </style>

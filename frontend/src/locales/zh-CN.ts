@@ -45,6 +45,9 @@ export default {
     // 首发时探测要几秒，那段时间里说「未安装」会让用户去装一个已经装好的引擎。
     detecting: '检测中…',
     detectedAt: '检测于',
+    // 就绪前不把数字当结论：这一行解释屏幕上那些「—」是什么。
+    collecting: '正在核对引擎、会话与用量…数完之前那些数字先显示为「—」。',
+    redetect: '重新检测',
     installHint: '这台机器上还没装它。装好之后这里会显示版本与落盘位置。',
     goInstall: '去安装',
     // 「没装」有三种不同的原因，下一步完全不同。混成一句会让用户
@@ -216,6 +219,7 @@ export default {
     forceConfirmPlaceholder: '输入分支名 {name} 以确认',
     forceConfirmHint: '分支名必须完全一致才会生效。',
     noRemote: '这个仓库还没有远端',
+    fileTree: '文件树',
   },
   history: {
     forFile: '看这个文件的历史',

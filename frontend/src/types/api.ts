@@ -159,6 +159,9 @@ export interface HealthData {
   refreshing: boolean
   /** 引擎探测进行中（含「从没探过」）：此时不能说「没装」 */
   detecting: boolean
+  /** 这一屏的事实已经全部到手（探测完成 + 没有后台补验）。
+   *  为假时界面显示「—」而不是 0：「0 个会话」是一个断言，而那时只是还没数完。 */
+  ready: boolean
   /** 上次探测完成的时刻；0 表示从没探过 */
   detected_at: number
   total_sessions: number

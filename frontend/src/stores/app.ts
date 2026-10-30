@@ -229,13 +229,21 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // 切当前引擎：写设置 + 换对话通道。切引擎不切目录、不切会话。
+  //
+  // 先切本地、再落盘。以前这里是 `await api.setEngine(...)` 之后才切通道，
+  // 于是用户点一下引擎名要等一次往返才看到它被选中——而“当前引擎”
+  // 在界面这一侧是本地状态（后端只在下一句话发出去时读它）。
+  // 用户看到的那一下不该为一次写设置付钱。
   async function setEngine(kind: EngineKind) {
     if (kind === active.value) return
-    await api.setEngine(kind)
     active.value = kind
     // 先同步过滤目标再切通道：反过来的话，切换期间到达的旧引擎帧会被放进来。
     setActiveKind(kind)
-    await chat.switchEngine(kind)
+    void chat.switchEngine(kind)
+    // 会话列表跟着引擎走：它是一份非当前引擎的数据，切完就该换。
+    void refreshSessions()
+    // 落盘失败不影响这一次切换：下次启动还能用上一次的选择。
+    void api.setEngine(kind).catch(() => undefined)
   }
 
   async function saveSettings(kv: Record<string, string>) {
@@ -377,6 +385,13 @@ export const useAppStore = defineStore('app', () => {
       case 'chat:turn': {
         const runID = asString(data.run_id)
         const blocks = readBlocks(data.blocks)
+        // 已经收过尾的那一轮，之后的权威快照丢掉。
+        //
+        // 引擎在 chat:done 之后还会补一帧整表快照，而那时这一轮已被并进历史——
+        // 再接受一次，界面尾部会多出一条重复的回复。
+        // 判据是「这一轮是不是已经结束过」而不是「当前没在流式」：
+        // 断流重连时 streaming 可能还是 false，但那是一轮真的在跑的快照。
+        if (!chat.streaming && runID && runID === chat.lastFinishedRunId) return
         if (!chat.turn || chat.turn.run_id !== runID) {
           chat.turn = { run_id: runID, user_message: asString(data.user_message), blocks }
         } else if (!chat.turn.user_message) {

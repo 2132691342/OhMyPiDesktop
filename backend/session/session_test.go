@@ -108,31 +108,6 @@ func TestSessionSnapshotEquivalence(t *testing.T) {
 	}
 }
 
-// 两种日志格式都要读得出来标题。
-func TestReadOmpAndPiBothFormats(t *testing.T) {
-	omp := t.TempDir()
-	writeSession(t, omp, "a.jsonl", []string{
-		`{"type":"title","title":"我的会话"}`,
-		`{"type":"session","cwd":"/r","model":"p/m"}`,
-		`{"type":"message","message":{"role":"user","content":"x","timestamp":1}}`,
-	})
-	list, err := NewIndex(omp, engine.KindOMP).List("")
-	if err != nil || len(list) != 1 || list[0].Title != "我的会话" {
-		t.Fatalf("omp 标题读取失败: %v %+v", err, list)
-	}
-
-	pi := t.TempDir()
-	writeSession(t, pi, "b.jsonl", []string{
-		`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
-		`{"type":"session_info","name":"第一个问题"}`,
-		`{"type":"message","message":{"role":"user","content":"x","timestamp":1}}`,
-	})
-	list2, err := NewIndex(pi, engine.KindPi).List("")
-	if err != nil || len(list2) != 1 || list2[0].Title != "第一个问题" {
-		t.Fatalf("pi 标题读取失败: %v %+v", err, list2)
-	}
-}
-
 // 读不出来的私有条目一律跳过，不能报错也不能漏掉有用会话。
 func TestSkipUnknownEntriesDoesNotError(t *testing.T) {
 	dir := t.TempDir()
@@ -186,6 +161,26 @@ func TestIndexFileCacheBounded(t *testing.T) {
 	}
 	if got := idx.CacheLen(); got > cacheMax {
 		t.Fatalf("文件缓存 %d 超过上限 %d", got, cacheMax)
+	}
+}
+
+// 没有标题条目的会话：拿第一句话当标题。
+//
+// 两个引擎默认都不写 title / session_info，于是整个列表全是「会话 · 模型名」——
+// 一屏十几行同一个字符串，用户认不出哪条是哪个。这一条钉住那条兜底。
+func TestTitleFallsBackToFirstUserMessage(t *testing.T) {
+	dir := t.TempDir()
+	writeSession(t, dir, "a.jsonl", []string{
+		`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
+		`{"type":"message","message":{"role":"user","content":[{"type":"text","text":"帮我把这个页面的按钮五态补齐\n第二行不算标题"}],"timestamp":1}}`,
+		`{"type":"message","message":{"role":"assistant","content":"ok","timestamp":2}}`,
+	})
+	list, err := NewIndex(dir, engine.KindPi).List("")
+	if err != nil || len(list) != 1 {
+		t.Fatalf("List: %v %+v", err, list)
+	}
+	if list[0].Title != "帮我把这个页面的按钮五态补齐 第二行不算标题" {
+		t.Fatalf("标题应取第一句话并压成一行，得到 %q", list[0].Title)
 	}
 }
 

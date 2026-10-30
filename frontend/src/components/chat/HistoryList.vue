@@ -79,7 +79,7 @@ const liveContinued = computed(() => {
 .msg-col {
   display: flex;
   flex-direction: column;
-  gap: var(--omp-sp-4);
+  gap: var(--omp-sp-3);
   max-width: var(--omp-col);
   margin: 0 auto;
   width: 100%;

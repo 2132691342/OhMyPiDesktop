@@ -99,6 +99,11 @@ export function useGitActions(
     await act('resolve', () => api.gitResolve(files.map((f) => f.file_path)))
   }
 
+  /** 标记单个文件已解决（冲突时逐个处理比一批更常见）。 */
+  async function resolve(file: GitFile): Promise<void> {
+    await act(`resolve:${file.file_path}`, () => api.gitResolve([file.file_path]))
+  }
+
   async function stateAction(action: 'continue' | 'abort'): Promise<void> {
     if (action === 'abort') {
       const ok = await confirmDanger(
@@ -175,6 +180,7 @@ export function useGitActions(
     stage,
     unstage,
     discard,
+    resolve,
     resolveConflicts,
     stateAction,
     initRepo,

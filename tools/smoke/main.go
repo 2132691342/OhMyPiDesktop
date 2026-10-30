@@ -1,186 +1,125 @@
-// 冒烟：真起一个引擎进程，跑一轮对话，打印事件目录与投影结果。
+// 冒烟：真起一个引擎进程跑一轮对话，确认协议翻译与会话投影没坏。
 //
-// 用法：
+// 为什么需要它：单元测试里引擎是桩，而「一轮对话能不能真的收尾」
+// 只在真进程上成立——握手、帧顺序、结束帧、会话落盘，这四件事任一坏了
+// 单元测试都是绿的。改了协议翻译或会话投影之后跑一次。
 //
-//	go run ./tools/smoke -engine omp -msg "Reply with exactly: OK"
-//	go run ./tools/smoke -engine pi  -dir C:\path\to\repo -msg "hi"
+// 用法（本机装了 pi 或 omp）：
 //
-// 它不写测试断言：这里要回答的是「真引擎跑通了吗、事件顺序对不对」，
-// 那件事只能靠人看一眼输出。
+//	go run ./tools/smoke -engine pi -message "Reply with exactly: OK"
+//
+// 它只读设置里的引擎路径、只跑一轮、只打印帧序列；不改任何设置文件，
+// 也不走 HTTP。会话文件是引擎自己写的，所以这条路径同时验证了
+// 「界面读到的历史」与「引擎写下的账本」是同一份。
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"strings"
+	"sync"
 	"time"
 
-	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
-	"OhMyPiDesktop/backend/hub"
-	"OhMyPiDesktop/backend/pkg"
-	"OhMyPiDesktop/backend/repo"
-	"OhMyPiDesktop/backend/service"
+	"OhMyPiDesktop/backend/engine/omp"
+	"OhMyPiDesktop/backend/engine/pi"
+	"OhMyPiDesktop/backend/env"
 )
 
 func main() {
-	engineName := flag.String("engine", "omp", "引擎种类：omp / pi")
-	dir := flag.String("dir", os.TempDir(), "工作目录")
-	msg := flag.String("msg", "Reply with exactly: OK", "发出去的那句话")
-	exe := flag.String("exe", "", "引擎可执行文件路径（默认从 PATH 探测）")
+	kindName := flag.String("engine", "pi", "引擎：omp / pi")
+	message := flag.String("message", "Reply with exactly: OK", "要发的一句话")
+	dir := flag.String("dir", "", "工作目录（默认当前目录）")
+	timeout := flag.Duration("timeout", 180*time.Second, "整轮超时")
 	flag.Parse()
 
-	kind := engine.Kind(*engineName)
+	kind := engine.Kind(*kindName)
 	if !kind.Valid() {
-		fmt.Println("未知引擎:", *engineName)
-		os.Exit(2)
+		fmt.Println("未知引擎：", *kindName)
+		os.Exit(1)
 	}
-	dirPath, msgText, exePath := *dir, *msg, *exe
-
-	dbPath := dirPath + string(os.PathSeparator) + "smoke-" + string(kind) + ".json"
-	_ = os.Remove(dbPath)
-	store, err := repo.Open(dbPath)
-	must(err)
-	defer store.Close()
-	h := hub.New(512)
-	svc, err := service.New(service.Options{Store: store, Hub: h, DataDir: dirPath, Version: "smoke"})
-	must(err)
-
-	if exePath != "" {
-		must(store.Set(domain.KeyEngineExePrefix+string(kind), exePath))
+	workDir := *dir
+	if workDir == "" {
+		workDir, _ = os.Getwd()
 	}
-	must(svc.SetWorkspace(dirPath))
-	must(svc.SetActive(kind))
 
-	events := map[string]int{}
+	var mu sync.Mutex
 	var order []string
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
-	defer cancel()
-
-	sub, _, cancelSub := h.Subscribe(0)
-	defer cancelSub()
 	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			var frame []byte
-			select {
-			case f := <-sub.Stream():
-				frame = f.Raw()
-			case <-sub.Done():
-				return
-			}
-			var ev struct {
-				Event string `json:"event"`
-			}
-			if json.Unmarshal(frame, &ev) != nil {
-				continue
-			}
-			events[ev.Event]++
-			if ev.Event == "chat:blocks" {
-				continue
-			}
-			order = append(order, ev.Event)
+	var once sync.Once
+	emit := func(_ string, event string, data any) {
+		mu.Lock()
+		order = append(order, event)
+		mu.Unlock()
+		switch event {
+		case "chat:start", "chat:done", "chat:error", "chat:settled", "engine:ready", "engine:exit":
+			fmt.Printf("  帧 %-14s %s\n", event, brief(data))
 		}
-	}()
+		if event == "chat:done" {
+			once.Do(func() { close(done) })
+		}
+	}
 
-	runID, err := svc.Send(ctx, kind, "", domain.ChatSendREQ{Message: msgText})
-	fmt.Println("send ->", runID, "err:", errText(err))
+	sup := engine.NewSupervisor(emit,
+		map[engine.Kind]engine.Dialect{
+			engine.KindOMP: omp.Dialect{},
+			engine.KindPi:  pi.Dialect{},
+		},
+		func(k engine.Kind) (string, []string, []string) {
+			id, err := env.Detect(context.Background(), "", k)
+			if err != nil || id.Exe == "" {
+				return "", nil, nil
+			}
+			return id.Exe, nil, nil
+		},
+		func(engine.Kind) engine.SubagentStore { return nil },
+	)
+	defer sup.Shutdown()
+	defer sup.StopAll()
+
+	ctx := context.Background()
+	e := sup.Engine(kind, workDir)
+	if _, err := e.Client(ctx); err != nil {
+		fmt.Println("拉起引擎失败：", err)
+		os.Exit(1)
+	}
+	fmt.Printf("引擎 %s 已就绪，目录=%s\n", kind, e.WorkDir)
+
+	runID, err := e.Prompt(ctx, engine.PromptPayload{Message: *message})
 	if err != nil {
+		fmt.Println("发送失败：", err)
+		os.Exit(1)
+	}
+	fmt.Printf("run_id = %s\n发送：%s\n", runID, *message)
+
+	select {
+	case <-done:
+		fmt.Println("一轮收尾：chat:done")
+	case <-time.After(*timeout):
+		fmt.Println("超时：这一轮没有收尾")
 		os.Exit(1)
 	}
 
-	deadline := time.Now().Add(150 * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(400 * time.Millisecond)
-		st, err := svc.ChatState(ctx, kind, "")
-		if err != nil {
-			fmt.Println("state err:", errText(err))
-			continue
-		}
-		if !st.Streaming && len(st.Messages) > 0 {
-			break
-		}
-	}
-
-	st, err := svc.ChatState(ctx, kind, "")
-	must(err)
-	fmt.Printf("\n事件计数: %v\n", events)
-	fmt.Printf("事件顺序: %s\n", strings.Join(dedupe(order), " → "))
-	fmt.Printf("会话: %s  文件: %s\n", st.Session, st.SessionFile)
-	if st.Stats != nil {
-		fmt.Printf("用量: in=%d out=%d cacheRead=%d 花费=%.6f 上下文=%v\n",
-			st.Stats.Tokens.Input, st.Stats.Tokens.Output, st.Stats.Tokens.CacheRead,
-			st.Stats.Cost, percent(st.Context))
-	}
-	fmt.Printf("消息条数: %d  历史轮次: %d\n", len(st.Messages), len(st.History))
-	if len(st.History) > 0 {
-		last := st.History[len(st.History)-1]
-		fmt.Printf("最后一轮: role=%s blocks=%d\n", last.Role, len(last.Blocks))
-	}
-	// 工具块可能落在任何一轮（模型可能先调工具再补一句正文），
-	// 所以扫全部轮次，而不是只看最后一轮。
-	for i, turn := range st.History {
-		for _, b := range turn.Blocks {
-			if b.Kind != engine.BlockTool {
-				continue
-			}
-			fmt.Printf("轮 %d 工具 %s 状态=%s 耗时=%dms\n", i, b.ToolName, b.Status, b.DurationMS)
-			// 差异是这一版要验的东西：引擎改了什么，界面要看得见。
-			if len(b.Diff) > 0 {
-				fmt.Printf("  差异 %d 行  文件=%s\n", len(b.Diff), b.FilePath)
-				for _, l := range b.Diff {
-					fmt.Printf("    [%s] %s\n", l.LineKind, truncate(l.LineText, 100))
-				}
-			}
-		}
-	}
-	svc.Engine.StopAll()
-	cancelSub()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
+	mu.Lock()
+	defer mu.Unlock()
+	fmt.Printf("共 %d 帧，事件顺序：\n", len(order))
+	for _, name := range order {
+		fmt.Println("  ", name)
 	}
 }
 
-func percent(c *engine.ContextUsage) string {
-	if c == nil || c.Percent == nil {
-		return "?"
+// brief 只留载荷里最有用的几个键，把日志压在单行。
+func brief(data any) string {
+	m, ok := data.(map[string]any)
+	if !ok {
+		return ""
 	}
-	return fmt.Sprintf("%.0f%%", *c.Percent)
-}
-
-func dedupe(in []string) []string {
-	var out []string
-	for _, s := range in {
-		if len(out) == 0 || out[len(out)-1] != s {
-			out = append(out, s)
+	out := ""
+	for _, key := range []string{"run_id", "status", "message", "reason"} {
+		if v, ok := m[key]; ok && v != nil {
+			out += fmt.Sprintf("%s=%v ", key, v)
 		}
 	}
 	return out
-}
-
-func must(err error) {
-	if err != nil {
-		fmt.Println("fatal:", err)
-		os.Exit(1)
-	}
-}
-
-func errText(err error) string {
-	if err == nil {
-		return "<nil>"
-	}
-	return pkg.As(err).Message + " " + pkg.As(err).Detail
-}
-
-func truncate(s string, n int) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }

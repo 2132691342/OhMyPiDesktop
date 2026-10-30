@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 输入区：多行输入 + 待发送附件 + @ 引用 + / 命令菜单 + 工具行 + 发送/停止。
 //
-// 分区照搬 WorkBaby：
+// 布局要点：
 //   - 输入块给 68px 的最小高度，空态也有一个大目标可点，点空白即落光标；
 //   - 工具行与输入块之间有一条分隔线，工具行不再抢输入框的横向空间；
 //   - 待发送附件占独立一行，超过两行就在区内滚动，不把输入框顶出屏。
@@ -219,7 +219,7 @@ async function stopTurn(): Promise<void> {
 const actions = useComposerActions()
 
 // 切引擎的 loading 单独挂在这一层：用户点的是状态条上的那颗按钮，
-// 而 setEngine 是一次真往返（工程师是瞬时的，后端那一跳还在）。
+// 而 setEngine 现在只写本地 + 后台落盘，所以这里几乎不会看到转圈。
 async function pickEngine(kind: EngineKind): Promise<void> {
   if (kind === chat.kind) return
   pickingEngine.value = true

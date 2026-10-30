@@ -1,17 +1,21 @@
 <script setup lang="ts">
-// 差异视图：把后端折好的行结构渲染成等宽行。
+// 差异视图：折叠未改动区段 + 内联 / 并排切换，行渲染交给 DiffRows。
 //
-// 比原来多两件事，都是「改一个几百行的文件」时真的会用到的：
+// 两件事是「改一个几百行的文件」时真的会用到的：
 //
 //  1. 折叠未改动区段。上下文行默认只留 hunk 前后各 3 行，
 //     中间那段折叠成一行「展开 N 行」——否则改一行要看完整个文件。
-//  2. 并排 / 内联切换。内联（旧行在上、新行在下）适合窄栏，
-//     并排适合看「这一行到底改成了什么」。
+//  2. 并排 / 内联切换。内联适合窄栏，并排适合看「这一行到底改成了什么」。
+//
+// 并排是真的配对：一段连续的删除后面跟着一段连续的新增时，第 i 条删除与
+// 第 i 条新增摆在同一行。只把列切成四段、行还按原样堆着，读到的是
+// 「左边一片空、右边一片空」——那比内联更难读，也是这里最容易做错的一步。
 //
 // 只做展示——提交与回滚都交给版本工具，界面不替用户决定不可逆操作。
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
+import DiffRows from '@/components/common/DiffRows.vue'
 import type { DiffLine, GitDiff } from '@/types/api'
 
 const props = defineProps<{
@@ -39,23 +43,21 @@ watch(
 /** 上下文保留行数：hunk 前后各留这么多行，多的折起来。 */
 const contextLines = 3
 
-interface Row {
-  kind: 'line' | 'fold'
-  line?: DiffLine
-  /** 折叠段：藏了多少行，从第几行开始（用于 key 与展开） */
-  count?: number
-  at?: number
+interface Fold {
+  count: number
+  at: number
 }
 
 /**
- * 把原始行折成「行 / 折叠段」的序列。
+ * 把上下文行折成「可见行 / 折叠段」。
  *
  * 只折连续的上下文行：增删行永远要显示——那正是用户要看的东西。
  * 头尾各留 contextLines 行作为锚点，中间的折起来。
+ * 返回的是「显示序列」，元素要么是一行原文，要么是一个折叠段。
  */
-const rows = computed<Row[]>(() => {
+const blocks = computed<Array<DiffLine | Fold>>(() => {
   const src = props.diff?.diff_lines ?? []
-  const out: Row[] = []
+  const out: Array<DiffLine | Fold> = []
   let run: { start: number; items: DiffLine[] } | null = null
 
   const flush = (): void => {
@@ -63,11 +65,11 @@ const rows = computed<Row[]>(() => {
     const n = run.items.length
     // 短到不值得折：折起来只省一两行，还多一次点击。
     if (n <= contextLines * 2 + 1) {
-      for (const item of run.items) out.push({ kind: 'line', line: item })
+      for (const item of run.items) out.push(item)
     } else {
-      for (const item of run.items.slice(0, contextLines)) out.push({ kind: 'line', line: item })
-      out.push({ kind: 'fold', count: n - contextLines * 2, at: run.start + contextLines })
-      for (const item of run.items.slice(n - contextLines)) out.push({ kind: 'line', line: item })
+      for (const item of run.items.slice(0, contextLines)) out.push(item)
+      out.push({ count: n - contextLines * 2, at: run.start + contextLines })
+      for (const item of run.items.slice(n - contextLines)) out.push(item)
     }
     run = null
   }
@@ -79,9 +81,37 @@ const rows = computed<Row[]>(() => {
       return
     }
     flush()
-    out.push({ kind: 'line', line })
+    out.push(line)
   })
   flush()
+  return out
+})
+
+/**
+ * 并排的行对：一段删除 + 紧跟的一段新增配成对。
+ *
+ * 配对的规则与所有并排差异视图一致：连续的 - 块与紧随其后的 + 块逐行对齐，
+ * 行数不等时短的一侧留空。上下文行与文件头两侧都画同一行。
+ */
+const pairs = computed<DiffLine[][]>(() => {
+  const src = props.diff?.diff_lines ?? []
+  const out: DiffLine[][] = []
+  let i = 0
+  while (i < src.length) {
+    const line = src[i]
+    if (line.line_kind === 'del') {
+      const dels: DiffLine[] = []
+      while (i < src.length && src[i].line_kind === 'del') dels.push(src[i++])
+      const adds: DiffLine[] = []
+      while (i < src.length && src[i].line_kind === 'add') adds.push(src[i++])
+      for (let k = 0; k < Math.max(dels.length, adds.length); k++) {
+        out.push([dels[k], adds[k]].filter((x): x is DiffLine => Boolean(x)))
+      }
+      continue
+    }
+    out.push([line])
+    i++
+  }
   return out
 })
 
@@ -93,6 +123,10 @@ const dels = computed(
 )
 const blank = computed(() => !props.loading && (props.diff?.diff_lines?.length ?? 0) === 0)
 const blankText = computed(() => (props.path ? t('workspace.diffEmpty') : t('workspace.noChanges')))
+
+function isFold(row: DiffLine | Fold): row is Fold {
+  return (row as Fold).count !== undefined
+}
 
 /** 折叠段是不是展开的。 */
 function isOpen(at: number): boolean {
@@ -106,41 +140,30 @@ function toggle(at: number): void {
   opened.value = next
 }
 
-/** 展开全部 / 全部收起。 */
-const allFolds = computed(() => rows.value.filter((r) => r.kind === 'fold'))
-const allOpen = computed(() => allFolds.value.every((r) => isOpen(r.at ?? -1)))
+const folds = computed(() => blocks.value.filter(isFold))
+const allOpen = computed(() => folds.value.every((f) => isOpen(f.at)))
 
 function toggleAll(): void {
-  if (allOpen.value) {
-    opened.value = new Set()
-    return
-  }
-  opened.value = new Set(allFolds.value.map((r) => r.at ?? -1))
+  opened.value = allOpen.value ? new Set() : new Set(folds.value.map((f) => f.at))
 }
 
 /**
- * 可见行：把展开的折叠段还原回原始行。
- *
- * 折叠段只记录「藏了多少行」与起始下标，展开时按这两个数把原始行切回来，
- * 不必在 Row 里再存一份副本。
+ * 内联可见行：把「显示序列」摊平成纯行，展开的折叠段按 (at, count)
+ * 从原文切回来——折叠段只记这两个数，不再存一份副本。
  */
-const visible = computed<Row[]>(() =>
-  rows.value.flatMap((row) => {
-    if (row.kind !== 'fold') return [row]
-    if (!isOpen(row.at ?? -1)) return [row]
-    const from = row.at ?? 0
-    const src = props.diff?.diff_lines ?? []
-    return src.slice(from, from + (row.count ?? 0)).map((line) => ({ kind: 'line' as const, line }))
-  }),
-)
-
-function rowClass(line: DiffLine): string {
-  if (line.line_kind === 'add') return 'is-add'
-  if (line.line_kind === 'del') return 'is-del'
-  if (line.line_kind === 'hunk') return 'is-hunk'
-  if (line.line_kind === 'file') return 'is-file'
-  return ''
-}
+const visibleLines = computed<DiffLine[]>(() => {
+  const src = props.diff?.diff_lines ?? []
+  const out: DiffLine[] = []
+  for (const row of blocks.value) {
+    if (!isFold(row)) {
+      out.push(row)
+      continue
+    }
+    if (!isOpen(row.at)) continue
+    out.push(...src.slice(row.at, row.at + row.count))
+  }
+  return out
+})
 </script>
 
 <template>
@@ -152,18 +175,14 @@ function rowClass(line: DiffLine): string {
         <b class="is-del">−{{ dels }}</b>
       </span>
       <button
-        v-if="allFolds.length"
+        v-if="!sideBySide && folds.length"
         class="omp-btn text sm"
         :title="allOpen ? t('workspace.foldAll') : t('workspace.unfoldAll')"
         @click="toggleAll"
       >
         {{ allOpen ? t('workspace.foldAll') : t('workspace.unfoldAll') }}
       </button>
-      <button
-        class="omp-btn text sm"
-        :title="t('workspace.diffMode')"
-        @click="sideBySide = !sideBySide"
-      >
+      <button class="omp-btn text sm" :title="t('workspace.diffMode')" @click="sideBySide = !sideBySide">
         {{ sideBySide ? t('workspace.diffInline') : t('workspace.diffSide') }}
       </button>
     </header>
@@ -175,18 +194,20 @@ function rowClass(line: DiffLine): string {
 
     <div v-else-if="blank" class="dc-state">{{ blankText }}</div>
 
-    <div v-else class="diff dc-body" :class="{ 'is-side': sideBySide }">
-      <template v-for="(row, i) in visible" :key="`${row.kind}-${row.at ?? i}`">
-        <!-- 折叠段：一行说明藏了多少行，点一下展开 -->
-        <button v-if="row.kind === 'fold'" class="fold-row" @click="toggle(row.at ?? -1)">
+    <div v-else class="dc-body">
+      <DiffRows v-if="sideBySide" :pairs="pairs" />
+      <template v-else>
+        <DiffRows :lines="visibleLines" />
+        <!-- 折叠段：一条可点的横条，点一下把中间那段展回来 -->
+        <button
+          v-for="fold in folds.filter((f) => !isOpen(f.at))"
+          :key="fold.at"
+          class="fold-row"
+          @click="toggle(fold.at)"
+        >
           <AppIcon name="chevron" :size="11" class="fold-ic" />
-          {{ t('workspace.foldedLines', { n: row.count }) }}
+          {{ t('workspace.foldedLines', { n: fold.count }) }}
         </button>
-        <div v-else-if="row.line" class="diff-row" :class="rowClass(row.line)">
-          <span class="ln">{{ row.line.old_no || '' }}</span>
-          <span class="ln">{{ row.line.new_no || '' }}</span>
-          <span class="tx">{{ row.line.line_text }}</span>
-        </div>
       </template>
     </div>
 
@@ -241,9 +262,6 @@ function rowClass(line: DiffLine): string {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-2xs);
-  line-height: 1.5;
 }
 .dc-state {
   display: flex;
@@ -253,56 +271,6 @@ function rowClass(line: DiffLine): string {
   padding: var(--omp-sp-10) var(--omp-sp-5);
   color: var(--omp-faint);
   font-size: var(--omp-fs-sm);
-}
-
-.diff-row {
-  display: grid;
-  grid-template-columns: 48px 48px 1fr;
-  padding: 0 var(--omp-sp-2);
-  white-space: pre;
-}
-
-/* 并排：行号列收窄，正文分左右两栏。
-   增删行在并排下只占自己那一半，另一半留空——
-   这正是并排比内联好读的地方：一眼看出「改成了什么」。 */
-.dc-body.is-side .diff-row {
-  grid-template-columns: 40px 1fr 40px 1fr;
-}
-.dc-body.is-side .diff-row.is-add {
-  grid-template-columns: 40px 1fr;
-}
-.dc-body.is-side .diff-row.is-add .ln:first-child {
-  display: none;
-}
-
-.diff-row .ln {
-  color: var(--omp-faint);
-  text-align: right;
-  padding-right: var(--omp-sp-2);
-  user-select: none;
-}
-.diff-row .tx {
-  word-break: break-all;
-  white-space: pre-wrap;
-}
-.diff-row.is-add {
-  background: color-mix(in srgb, var(--omp-ok) 10%, transparent);
-}
-.diff-row.is-add .tx {
-  color: var(--omp-ink);
-}
-.diff-row.is-del {
-  background: color-mix(in srgb, var(--omp-bad) 10%, transparent);
-}
-.diff-row.is-del .tx {
-  color: var(--omp-ink);
-}
-.diff-row.is-hunk {
-  color: var(--omp-brand);
-  background: var(--omp-hover);
-}
-.diff-row.is-file {
-  color: var(--omp-faint);
 }
 
 /* 折叠段：一条可点的横条，说明藏了多少行 */
@@ -317,7 +285,8 @@ function rowClass(line: DiffLine): string {
   border-bottom: 1px solid var(--omp-line);
   background: var(--omp-hover);
   color: var(--omp-mute);
-  font: inherit;
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-2xs);
   text-align: left;
   cursor: pointer;
   transition:

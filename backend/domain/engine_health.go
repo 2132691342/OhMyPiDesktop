@@ -111,6 +111,11 @@ type HealthVO struct {
 	// 否则首发时界面会把「还没探到」显示成「没装」——
 	// 而用户看到的是一个尚未成立的事实。
 	Detecting bool `json:"detecting"`
+	// Ready 这一屏的事实已经全部到手（探测完成 + 没有后台补验在跑）。
+	//
+	// 它就是「能不能把数字当结论看」的开关。为假时界面显示占位而不是
+	// 那一串 0 —— 「0 个会话」是一个断言，而那时我们只是还没数完。
+	Ready bool `json:"ready"`
 	// Workspace 当前工作目录
 	Workspace string `json:"workspace"`
 	// DetectedAt 上次探测完成的时刻（Unix 毫秒）；从未探过时为 0

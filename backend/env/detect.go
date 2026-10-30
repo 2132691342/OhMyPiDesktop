@@ -3,6 +3,7 @@ package env
 import (
 	"context"
 	"os"
+	"time"
 
 	"OhMyPiDesktop/backend/engine"
 )
@@ -25,7 +26,13 @@ import (
 // 而调用方是 HTTP 请求——客户端断开后这次探测就该跟着放弃，
 // 否则一个卡死的候选能把一颗 goroutine 与一个子进程挂到地老天荒。
 func Detect(ctx context.Context, customExe string, kind engine.Kind) (engine.Identity, error) {
-	candidates := engine.Candidates(customExe, string(kind))
+	// 整条探测链再套一道总超时：单条命令已有 ProbeTimeout，但候选有四个、
+	// 每个可能要跑两次（--version 与 --help），最坏情况叠起来是分钟级。
+	// 而探测在首屏路径上——卡住的表现就是「概览页一直说检测中」。
+	ctx, cancel := context.WithTimeout(ctx, detectBudget)
+	defer cancel()
+
+	candidates := engine.Candidates(customExe, string(kind), InstallCandidates(kind)...)
 	id := engine.Detect(ctx, kind, candidates)
 	if id.Exe != "" {
 		id.Channel = engine.DetectChannel(kind, id.Exe, homeDir(), localAppData())
@@ -35,6 +42,13 @@ func Detect(ctx context.Context, customExe string, kind engine.Kind) (engine.Ide
 	// 界面据此显示「路径无效」+ 重新选择，而不是弹错误。
 	return engine.Identity{Kind: kind, Caps: engine.CapsFor(kind)}, nil
 }
+
+// detectBudget 是一条探测链的总预算。
+//
+// 三个候选取值（显式路径 / PATH / 安装落点）各跑一次 --version，
+// 遇到疑似 pi 时再补一次 --help；6 秒足够跑完两条命令，而“卡死”的场景
+// 应当以「探测超时」而不是「无限挂起」的形式告诉用户。
+const detectBudget = 6 * time.Second
 
 // DetectReason 顺便回答「为什么没探到」。
 //
@@ -61,7 +75,7 @@ func DetectReason(ctx context.Context, customExe string, kind engine.Kind) (engi
 		// 显式路径存在、但不是这个引擎（版本对不上 / 种类对不上）
 		return id, "bad-path"
 	}
-	if len(engine.Candidates(customExe, string(kind))) == 0 {
+	if len(engine.Candidates(customExe, string(kind), InstallCandidates(kind)...)) == 0 {
 		return id, "missing"
 	}
 	// 有候选却没探出版本：命令跑不通或超时，不是没装。

@@ -22,7 +22,6 @@ import type {
   Turn,
   UIResponse,
 } from '@/types/api'
-
 export const useChatStore = defineStore('chat', () => {
   const sessionFile = ref('')
   const workDir = ref('')
@@ -60,6 +59,9 @@ export const useChatStore = defineStore('chat', () => {
 
   // 当前轮：一次「提问 → 回答」
   const turn = ref<Turn | null>(null)
+  // 上一次收尾的 run id。只用于「收尾后才到的权威快照要丢掉」这一条判断：
+  // 那一帧会把已经并进历史的回复再接一遍。
+  const lastFinishedRunId = ref('')
   // 历史轮（由后端投影好的轮次，界面直接渲染）
   const history = ref<HistoryTurn[]>([])
 
@@ -147,7 +149,7 @@ export const useChatStore = defineStore('chat', () => {
     return state
   }
 
-// 拉可选模型清单。失败不抛：模型清单拉不到时输入区仍应可用，
+  // 拉可选模型清单。失败不抛：模型清单拉不到时输入区仍应可用，
   // 只是下拉里只剩「当前模型」一项。
   //
   // 按引擎分桶缓存：切引擎时立刻换成那个引擎的清单，不用等。
@@ -175,15 +177,19 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // 换模型。失败要把显示值拨回去——否则界面上写着一个引擎并不认识的模型。
+  //
+  // kind 取「点下去那一刻」的值，而不是请求返回时的 kind：
+  // 用户在请求飞的半秒里切了引擎，回滚不能去改另一个引擎的显示值。
   async function setModel(provider: string, id: string) {
+    const target = kind.value
     const prev = model.value
     switching.value = 'model'
     // 先动显示值，让点击立刻有反馈；失败再回滚。
     model.value = { ...(prev ?? ({} as ModelInfo)), provider, id }
     try {
-      await api.setModel(kind.value, sessionFile.value, provider, id)
+      await api.setModel(target, sessionFile.value, provider, id)
     } catch (err) {
-      model.value = prev
+      if (kind.value === target) model.value = prev
       throw err
     } finally {
       switching.value = ''
@@ -192,14 +198,15 @@ export const useChatStore = defineStore('chat', () => {
 
   // 换思考档。同上：先动显示值，失败回滚。
   async function setThinking(level: string) {
+    const target = kind.value
     const prev = thinkingLevel.value
     if (level === prev) return
     switching.value = 'thinking'
     thinkingLevel.value = level
     try {
-      await api.setThinking(kind.value, sessionFile.value, level)
+      await api.setThinking(target, sessionFile.value, level)
     } catch (err) {
-      thinkingLevel.value = prev
+      if (kind.value === target) thinkingLevel.value = prev
       throw err
     } finally {
       switching.value = ''
@@ -207,13 +214,14 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function setAutoCompaction(enabled: boolean) {
+    const target = kind.value
     const prev = autoCompaction.value
     switching.value = 'compaction'
     autoCompaction.value = enabled
     try {
-      await api.setAutoCompaction(kind.value, sessionFile.value, enabled)
+      await api.setAutoCompaction(target, sessionFile.value, enabled)
     } catch (err) {
-      autoCompaction.value = prev
+      if (kind.value === target) autoCompaction.value = prev
       throw err
     } finally {
       switching.value = ''
@@ -250,6 +258,17 @@ export const useChatStore = defineStore('chat', () => {
     // 立刻换到目标引擎的缓存：下拉里该出现哪个引擎的模型，一眼就该是它。
     models.value = modelCache.value[next] ?? []
     levels.value = levelCache.value[next] ?? []
+    // 上下文用量与流式状态属于旧引擎：它们不属于新引擎，留着就是隔别处的读数。
+    context.value = null
+    tokensPerSecond.value = null
+    stats.value = null
+    bindErr.value = ''
+    promptError.value = ''
+    queue.value = { steering: [], followUp: [] }
+    // 流里插一条分隔：告诉用户“以下由 xxx 接续，前面的内容不在新会话里”。
+    // 先排上去（乐观），因为后面的 applyState 会重写历史，
+    // 届时再拼一次就重复了。
+    history.value = [...kept, { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] }]
 
     // 不等后端往返。
     //
@@ -265,14 +284,15 @@ export const useChatStore = defineStore('chat', () => {
         // 请求回来时用户可能已经切走了：那就别覆盖当前引擎的状态。
         if (kind.value !== next) return
         applyState(state)
-        // 流里插一条分隔：告诉用户“以下由 xxx 接续，前面的内容不在新会话里”。
-        // 它不是系统消息，只是界面层的标记，不会发进引擎。
-        // applyState 会用新引擎的历史覆盖，所以拼在它之后。
-        history.value = [
-          ...kept,
-          { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] },
-          ...history.value,
-        ]
+        // applyState 用新引擎的历史覆盖了刚才那句乐观分隔：把它补回去。
+        // 补一次而不是两次，是因为这里把“已推送的那一句”当作已消费。
+        const mark: HistoryTurn = { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] }
+        const hasMark = state.history?.some(
+          (h) => h.role === 'engine-mark' && h.blocks[0]?.text === next,
+        )
+        if (!hasMark && kept.length) {
+          history.value = [mark, ...state.history]
+        }
       } catch {
         /* 切引擎失败不弹提示：界面已经切过去了，用户能正常用，
            只是这一轮没拿到引擎的会话状态。 */
@@ -305,6 +325,11 @@ export const useChatStore = defineStore('chat', () => {
 
   async function send(message: string, attachments: ChatAttachment[] = []) {
     promptError.value = ''
+    // 新的一轮开始了：上一个已收尾的标记到这里就作废。
+    // 不能把它挂在 refresh() 上——chat:done 之后紧跟着就是一次 refresh，
+    // 而那帧晚到的快照往往比 refresh 更迟才到，那时标记已经被清掉，
+    // 于是重复出现的正文又进了界面。
+    lastFinishedRunId.value = ''
     const runID = await api
       .send(kind.value, sessionFile.value, message, attachments)
       .then((r) => r.run_id)
@@ -371,6 +396,7 @@ export const useChatStore = defineStore('chat', () => {
       // 收尾后把这一轮并入历史，下一轮从干净的 blocks 开始。
       // 用户那句也要进历史，否则刷新对账前，历史里会缺「我刚刚问的」。
       const finished = turn.value
+      lastFinishedRunId.value = finished.run_id
       history.value = [
         ...history.value,
         { role: 'user', blocks: [{ kind: 'text', text: finished.user_message }] },
@@ -385,6 +411,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function reset() {
     turn.value = null
+    lastFinishedRunId.value = ''
     history.value = []
     asks.value = []
     queue.value = { steering: [], followUp: [] }
@@ -419,6 +446,7 @@ export const useChatStore = defineStore('chat', () => {
     kind,
     caps,
     turn,
+    lastFinishedRunId,
     history,
     asks,
     activeAsk,
