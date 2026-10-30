@@ -1,11 +1,8 @@
 package engine
 
 // 引擎的分发事实：它叫哪个 npm 包、官方安装器是哪一行、自己怎么升级。
-//
-// 这一层只回答「装它要跑什么命令」，不执行任何东西。执行在 service/apps.go。
-// 只放**官方文档里原样写着**的命令：跟着上游改动改这一处，比在任何地方手写一条
-// 「看起来能跑」的命令都安全——命令写错了，用户看到的只是安装失败，
-// 却不知道失败的是我们的命令还是引擎的安装器。
+// 这一层只回答「装它要跑什么命令」，不执行任何东西（执行在 service/apps.go）。
+// 只放官方文档里原样写着的命令：命令写错时用户看到的只是安装失败，分不清是我们的命令还是引擎安装器的问题。
 
 // Channel 是一条安装渠道。它决定「卸载用哪条命令」——
 // 装与升级都交给引擎自己的安装器，只有卸载需要知道当初是谁装的。
@@ -27,10 +24,8 @@ const (
 )
 
 // PackageName 返回引擎在 npm 上的包名；没有 npm 分发时返回空串。
-//
-// 它同时用于「装要跑什么」与「这个 shim 旁边有没有同名包目录」，
-// 所以只写一处——写两处就会有一处写错（@oh-my-pi 与 @ohmy-pi 差一个连字符，
-// 而那种错只会在用户点安装时暴露）。
+// 它同时用于「装要跑什么」与「shim 旁边有没有同名包目录」，所以只写一处——
+// 写两处必有一处写错（@oh-my-pi 与 @ohmy-pi 差一个连字符，只会在用户点安装时暴露）。
 func PackageName(kind Kind) string {
 	if kind == KindOMP {
 		return "@oh-my-pi/pi-coding-agent"
@@ -42,11 +37,8 @@ func PackageName(kind Kind) string {
 }
 
 // NpmInstallArgs 是官方文档里的全局安装命令参数（不含 `npm` 本身）。
-//
-// pi 要 `--ignore-scripts`：官方文档就是这么写的，去掉会让装出来的东西
-// 与官方分发的形态不一致。omp 返回空——它的 npm 包要求 bun 运行时
-// （package.json 的 engines 只有 bun），机器上没有 bun 时装不上，
-// 所以 omp 只走官方安装器。
+// pi 要 `--ignore-scripts`：官方文档原样，去掉会让装出来的东西与官方分发形态不一致。
+// omp 返回空——它的 npm 包 engines 只有 bun，机器上没有 bun 时装不上，所以只走官方安装器。
 func NpmInstallArgs(kind Kind) []string {
 	if kind == KindPi {
 		return []string{"i", "-g", "--ignore-scripts", PackageName(kind)}
@@ -55,8 +47,7 @@ func NpmInstallArgs(kind Kind) []string {
 }
 
 // InstallerScript 返回 Windows 官方安装器的一行脚本原文；没有安装器时返回空串。
-//
-// 这一行会被原样交给 powershell -Command。它必须是常量：
+// 这一行会被原样交给 powershell -Command，必须是常量：
 // 拼接出来的命令等于我们开始自己实现安装流程。
 func InstallerScript(kind Kind) string {
 	if kind == KindOMP {
@@ -66,10 +57,8 @@ func InstallerScript(kind Kind) string {
 }
 
 // UpdateArgs 是引擎自己的升级子命令。
-//
 // 用引擎自己的 updater 而不是重跑安装器：它认得出 brew / mise / nix / bun / npm /
-// 预编译二进制各自的升级方式，而重跑安装器只认得自己那一种。
-// 返回空表示这个引擎没有自升级能力（那就只给安装命令原文）。
+// 预编译二进制各自的升级方式，重跑安装器只认得自己那一种；返回空表示没有自升级能力。
 func UpdateArgs(kind Kind) []string {
 	if kind == KindOMP {
 		return []string{"update"}
@@ -81,10 +70,8 @@ func UpdateArgs(kind Kind) []string {
 }
 
 // UninstallCommand 返回某渠道下的卸载命令；第一个元素是可执行文件，其余是参数。
-//
-// 只有 npm / pnpm / bun 三种渠道知道怎么卸载。官方安装器装进来的那份
-// 没有非交互式卸载路径（omp 的安装器没有 uninstall，pi 的安装器要按 `u` 键），
-// 所以返回空——界面据此不给按钮，只给手动路径。
+// 只有 npm / pnpm / bun 三种渠道知道怎么卸载；官方安装器装进来的那份没有非交互式卸载路径
+// （omp 的安装器没有 uninstall，pi 的安装器要按 `u` 键），返回空——界面据此不给按钮，只给手动路径。
 func UninstallCommand(kind Kind, channel Channel) []string {
 	pkg := PackageName(kind)
 	if pkg == "" {

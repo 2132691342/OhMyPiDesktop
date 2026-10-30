@@ -1,7 +1,6 @@
 // 托盘：关窗之后应用还活着，所以托盘菜单必须能回答「我现在要做什么」。
-//
-// 菜单项由后端定，文案不进前端——语言切换时后端菜单不会跟着变，
-// 前后端各准备一份文案只会让它们不同步。这里是唯一一份。
+// 菜单项由后端定，文案不进前端——语言切换时后端菜单不会跟着变，前后端各准备一份
+// 文案只会让它们不同步，这里是唯一一份。
 package desktop
 
 import (
@@ -16,18 +15,15 @@ import (
 
 // trayRecentMax 是托盘菜单里「最近工作目录」最多铺几条。
 //
-// 托盘菜单是一个弹出层，长到要滚动就不再是快捷方式了。
+// 托盘菜单是一个弹出层，长到要滚动就算不上快捷方式了。
 const trayRecentMax = 5
 
 // quitGrace 是退出时给引擎进程的收尾时间。
-//
-// 退出不该等引擎“优雅完成”：用户点退出时想要的是一秒内关掉。
-// 超过这个时间就直接终止整棵进程树（保留 1.5 秒让正常情况下的 stdin
-// 关闭有反应，又不至于让人以为卡死）。
+// 退出不该等引擎“优雅完成”：用户点退出时想要的是一秒内关掉；超过这个时间就直接
+// 终止整棵进程树（保留 1.5 秒让正常情况下的 stdin 关闭有反应，又不至于让人以为卡死）。
 const quitGrace = 1500 * time.Millisecond
 
 // buildTrayMenu 组装托盘菜单。
-//
 // 菜单是树，但「最近工作目录」这一支会随设置变化，所以整棵树可重建：
 // 直接换掉菜单比就地改某几项更省心（v3 的菜单项没有稳定的可变句柄）。
 func (a *App) buildTrayMenu(app *application.App, win *application.WebviewWindow) {
@@ -53,12 +49,8 @@ func (a *App) buildTrayMenu(app *application.App, win *application.WebviewWindow
 }
 
 // requestQuit 退出应用。
-//
-// 为什么不能在这里直接调 app.Quit()：菜单回调是在托盘窗口的
-// WM_COMMAND 里同步执行的，那一刻 TrackPopupMenuEx 还没返回。
-// 在那个栈上销毁托盘与菜单（Quit → cleanup → systray.destroy → DestroyMenu）
-// 会让消息循环在已释放的菜单上继续处理命令——表现就是“点退出没反应”
-// 或者进程卡在退出里。所以先置标志，再异步做。
+// 不能在这里直接调 app.Quit()：菜单回调在托盘窗口的 WM_COMMAND 里同步执行，那一刻
+// TrackPopupMenuEx 还没返回，在那个栈上销毁托盘与菜单会让消息循环在已释放的菜单上继续处理命令——所以先置标志，再异步做。
 func (a *App) requestQuit() {
 	if a.quitting.Swap(true) {
 		return // 已经在退出：重复点击不该再走一遍
@@ -73,8 +65,7 @@ func (a *App) requestQuit() {
 }
 
 // fillRecentWorkspaces 往子菜单里铺最近用过的目录。
-//
-// 空列表时留一条禁用的说明项而不是留一个空菜单：
+// 空列表时留一条禁用的说明项而不是空菜单：
 // 一个点开什么都没有的菜单会让人以为功能坏了。
 func (a *App) fillRecentWorkspaces(sub *application.Menu, win *application.WebviewWindow) {
 	rows := a.recentWorkspaces()

@@ -1,13 +1,8 @@
 package service
 
-// 模型清单的缓存：让「打开模型下拉」与「切引擎」都不必等引擎冷启动。
-//
-// 引擎的 get_available_models 是运行时状态，拿到它必须先拉起一个引擎进程
-// （omp 冷启动实测 11 秒，pi 起一次 Node 3 秒）——而「看一眼模型下拉」
-// 这种零风险操作不该付这个代价。
-//
-// 缓存的是「上一次问到的清单」，不是「当前能用的清单」：换了服务商配置或
-// 登录了新账号缓存就过期。所以它有 TTL，且那三件事会主动失效它。
+// 模型清单的缓存：让「打开模型下拉」与「切引擎」都不必等引擎冷启动（omp 实测 11 秒，pi 起一次 Node 3 秒）。
+// 缓存的是「上一次问到的清单」，不是「当前能用的清单」：换服务商配置或登录新账号就过期，
+// 所以有 TTL，且这些事会主动失效它。
 
 import (
 	"context"
@@ -19,10 +14,8 @@ import (
 	"OhMyPiDesktop/backend/env/picfg"
 )
 
-// modelCacheTTL 是模型清单的保鲜期。
-//
-// 短到能跟上「刚换完服务商就打开下拉」，长到能把首屏的多次请求合成一次。
-// 与 countsTTL 同量级：它们都是「变化比查看慢」的事实。
+// modelCacheTTL 是模型清单的保鲜期：短到能跟上「刚换完服务商就打开下拉」，长到把首屏多次请求合成一次。
+// 与 countsTTL 同量级：都是「变化比查看慢」的事实。
 const modelCacheTTL = 30 * time.Second
 
 // modelCache 是按引擎分桶的模型清单缓存。
@@ -44,10 +37,8 @@ func (e modelCacheEntry) hit() bool {
 	return !e.at.IsZero() && time.Since(e.at) < modelCacheTTL
 }
 
-// cachedModels 返回命中缓存的清单；没命中返回 nil。
-//
-// 返回 nil 与返回空切片的区别很重要：空切片是「问了，确实没有模型」，
-// nil 是「没问过」——后者不能当答案交出去。
+// cachedModels 返回命中缓存的清单；没命中返回 nil。nil 与空切片的区别很重要：
+// 空切片是「问了，确实没有模型」，nil 是「没问过」——后者不能当答案交出去。
 func (m *modelCache) cachedModels(kind engine.Kind) ([]ModelRow, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -82,9 +73,7 @@ func (m *modelCache) invalidateAll() {
 	m.rows = map[engine.Kind]modelCacheEntry{}
 }
 
-// ModelsFromConfig 从配置文件里读出模型清单。
-//
-// kind 为空时两个引擎都读。读不出来（文件不存在 / 格式有误）就少一条，
+// ModelsFromConfig 从配置文件里读出模型清单。kind 为空时两个引擎都读。读不出来（文件不存在 / 格式有误）就少一条，
 // 不返回错误：模型清单拉不到时界面仍应可用，只是下拉里少了几个选项。
 func (a *App) ModelsFromConfig(kind engine.Kind) []ModelRow {
 	kinds := engine.AllKinds()
@@ -138,16 +127,9 @@ func (a *App) modelsFromConfigOf(kind engine.Kind) []ModelRow {
 	return out
 }
 
-// AvailableModels 是「模型清单」的统一出口。
-//
-// 三档来源，从快到准：
-//  1. 缓存命中：直接交上次问到的清单（零等待）。
-//  2. 引擎在跑：问引擎（它知道自己有哪些凭据、哪些模型真的能调）。
-//  3. 引擎没跑：读配置文件（不为了看个下拉去起一个进程）。
-//
-// 第 1 档是「上次问到的」，不是「此刻真的能调」——所以它有 TTL，
-// 而且配置一变就主动失效。宁可让用户看到一份略旧的清单，
-// 也不要为了一个下拉等十秒。
+// AvailableModels 是「模型清单」的统一出口。三档来源从快到准：缓存命中交上次问到的清单（零等待）；
+// 引擎在跑就问引擎（它知道哪些凭据、哪些模型真的能调）；引擎没跑退到配置文件（不为看下拉起进程）。
+// 缓存是「上次问到的」不是「此刻能调」，所以有 TTL 且配置一变就失效——宁可清单略旧，不为一个下拉等十秒。
 func (a *App) AvailableModels(ctx context.Context, kind engine.Kind) ([]ModelRow, error) {
 	if rows, ok := a.modelCache.cachedModels(kind); ok {
 		return rows, nil
@@ -174,9 +156,7 @@ func (a *App) AvailableModels(ctx context.Context, kind engine.Kind) ([]ModelRow
 	return rows, nil
 }
 
-// InvalidateModels 丢掉模型清单缓存。
-//
-// 在「配置变了」之后调用：保存 / 删除服务商、登录成功、重新探测引擎。
+// InvalidateModels 丢掉模型清单缓存，在「配置变了」之后调用：保存 / 删除服务商、登录成功、重新探测引擎。
 // 不失效的话，用户会看到一份改了之前的清单，而且要等 30 秒才更新。
 func (a *App) InvalidateModels(kind engine.Kind) {
 	if kind.Valid() {

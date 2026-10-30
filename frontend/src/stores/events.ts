@@ -104,10 +104,7 @@ export function routeFrame(
       void deps.refreshEngines()
       return
     case 'engine:detected':
-      // 探测完成了：引擎清单要跟着换。之前只有用户手动点「重新检测」
-      // 才会更新，于是首发时概览页一直显示「没装」——
-      // 而那只是因为探测还在跑，不是一个事实。
-      //
+      // 探测完成了：引擎清单要跟着换，概览页的「未安装」才能换成事实。
       // 这一帧可能永远不来（Bootstrap 触发的那轮探测可能早于 SSE 连接），
       // 所以 detecting 之外还有 detectedAt 那条兜底。
       void deps.refreshEngines()

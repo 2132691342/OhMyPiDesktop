@@ -1,13 +1,8 @@
 package service
 
-// 长任务的输出流：把一条命令的 stdout/stderr 逐行推给界面。
-//
-// 为什么不用 CombinedOutput：装一个引擎要几十秒到几分钟，用户必须看到
-// 「还在动」。攒到最后一起显示，等于把一段可能失败的长任务变成一个没有反馈的等待。
-//
-// 两处必须做对：
-//   - **行缓冲**：npm 的进度用的是 \r，按 \n 切会把一整批进度挤成一行；
-//   - **有界**：单行超长、总行数超多时截断，否则一个没有换行的输出会把内存吃掉。
+// 长任务的输出流：把一条命令的 stdout/stderr 逐行推给界面（不用 CombinedOutput：
+// 装引擎要几十秒到几分钟，攒到最后一起显示等于把可能失败的长任务变成没有反馈的等待）。
+// 两处必须做对：行缓冲（npm 进度用 \r，按 \n 切会把整批进度挤成一行）；有界（单行超长、总行数超多时截断，否则无换行的输出会吃掉内存）。
 
 import (
 	"bufio"
@@ -31,9 +26,7 @@ const (
 )
 
 // runStreaming 跑一条命令并把每一行推到 app:progress。
-//
-// 进程失败时返回带退出码的 AppError：退出码是判断「装没装上」的唯一依据，
-// 只看输出里的 error 字样会误报（npm 的 warning 里也有 error）。
+// 失败时返回带退出码的 AppError：退出码是判断「装没装上」的唯一依据，只看输出里的 error 字样会误报（npm 的 warning 里也有 error）。
 func runStreaming(ctx context.Context, h *hub.Hub, kind engine.Kind, action AppAction, argv []string) error {
 	if len(argv) == 0 {
 		return pkg.New(pkg.CodeInternal, "没有要跑的命令", "")
@@ -89,9 +82,7 @@ func runStreaming(ctx context.Context, h *hub.Hub, kind engine.Kind, action AppA
 }
 
 // pump 读一路输出，按行推出去。
-//
-// 用 \r 也当行边界：npm / bun 的进度条只回 \r 不换行，不切的话
-// 用户看到的是「一整行被反复覆盖的进度」而不是「进度在推进」。
+// \r 也当行边界：npm / bun 的进度条只回 \r 不换行，不切的话用户看到的是「一整行被反复覆盖」而不是「进度在推进」。
 func pump(r io.Reader, emit func(phase, line string), count *atomic.Int32, done chan<- struct{}) {
 	defer func() { done <- struct{}{} }()
 	scanner := bufio.NewScanner(r)

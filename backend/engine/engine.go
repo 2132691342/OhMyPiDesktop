@@ -1,8 +1,5 @@
 // Package engine 是引擎的抽象层：进程、协议信封、事件翻译与监督者的公共部分。
-//
-// 它不认识具体引擎。`omp` 与 `pi` 各自只实现一个 Dialect（启动参数、握手、
-// 私有帧），其余全部复用这里的代码。
-//
+// 它不认识具体引擎：omp 与 pi 各自只实现一个 Dialect（启动参数、握手、私有帧），其余全部复用这里。
 // 这一层不实现 Agent：工具、压缩、重试、缓存、扩展、子代理全由引擎自己演进。
 package engine
 
@@ -33,10 +30,8 @@ func (k Kind) Label() string {
 	return "omp"
 }
 
-// Caps 是「这个引擎能干什么」的唯一答案。
-//
-// 界面按它隐藏入口，绝不渲染灰按钮——灰按钮会被当成「我还没权限」。
-// 新增能力先加在这里，再让两个 Dialect 各自回答。
+// Caps 是「这个引擎能干什么」的唯一答案。界面按它隐藏入口，绝不渲染灰按钮
+// ——灰按钮会被当成「我还没权限」。新增能力先加在这里，再让两个 Dialect 各自回答。
 type Caps struct {
 	Subagents      bool `json:"subagents"`        // 子代理观测台（get_subagents / steer / cancel）
 	Goals          bool `json:"goals"`            // 目标（goal_updated）

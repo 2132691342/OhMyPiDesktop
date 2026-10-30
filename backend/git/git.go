@@ -31,7 +31,7 @@ const maxLineBytes = 256 * 1024
 const maxUntrackedBytes = 8 << 20
 
 // gitExeMu / gitExe 缓存 git 可执行文件的解析结果：一次进程只解析一次，
-// 状态页反复打开不再反复探盘。装配期注入的那份优先（与助手用的是同一份）。
+// 状态页反复打开也不会反复探盘。装配期注入的那份优先（与助手用的是同一份）。
 var (
 	gitExeMu sync.Mutex
 	gitExe   string

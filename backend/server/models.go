@@ -1,8 +1,6 @@
 package server
 
-// 子代理观测台与模型服务商的 handler。
-//
-// 子代理只有 omp 有：入口按 Caps 隐藏，真被调到就返回不支持，
+// 子代理观测台与模型服务商的 handler。子代理只有 omp 有：入口按 Caps 隐藏，真被调到就返回不支持，
 // 而不是假装成功——静默成功会让界面显示一个不存在的面板。
 
 import (
@@ -162,10 +160,8 @@ func (s *Server) fetchProviderModels(c *gin.Context) {
 	})
 }
 
-// testProvider 测一条服务商配置通不通。
-//
-// 不通时回 200 + ok=false：这是一个「结果」而不是一次「请求失败」，
-// 而前端要展示的是这句话（而不是一个错误码）。
+// testProvider 测一条服务商配置通不通。不通时回 200 + ok=false：这是一个「结果」而不是「请求失败」，
+// 前端要展示的是这句话而不是一个错误码。
 func (s *Server) testProvider(c *gin.Context) {
 	var body service.ProviderTestREQ
 	if !bind(c, &body) {

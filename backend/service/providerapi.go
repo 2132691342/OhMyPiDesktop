@@ -1,12 +1,7 @@
 package service
 
-// 服务商的上游探测：问「有哪些模型」与「这条配置通不通」。
-//
-// 这两个动作不写盘：它们只是帮用户确认「我填的地址与密钥对不对」，
-// 以及「这个服务商底下有哪些模型可以填」。
-// 写盘是 UpsertProvider 的事，不在这里。
-//
-// 一条事实一个落点：怎么问上游归 upstream 包，
+// 服务商的上游探测：问「有哪些模型」与「这条配置通不通」。两个动作不写盘（写盘是 UpsertProvider 的事），
+// 只帮用户确认地址与密钥对不对、这个服务商底下有哪些模型可填。怎么问上游归 upstream 包，
 // 这里只做「读配置里的密钥 → 问 → 把结果交出去」。
 
 import (
@@ -21,10 +16,8 @@ import (
 	"OhMyPiDesktop/backend/upstream"
 )
 
-// ProviderModelsREQ 是「拉取模型清单」的入参。
-//
-// 密钥可以不给：不给就用已保存的那个（编辑已有服务商时的常见情况）。
-// 给了就用给的（新建服务商、换密钥时的常见情况）。
+// ProviderModelsREQ 是「拉取模型清单」的入参。密钥可以不给：不给就用已保存的（编辑已有服务商时），
+// 给了就用给的（新建、换密钥时）。
 type ProviderModelsREQ struct {
 	// EngineKind 读哪个引擎的配置（omp / pi）
 	EngineKind string `json:"engine_kind"`
@@ -48,11 +41,8 @@ type ProviderModelsRESP struct {
 	ConfigPath string `json:"config_path"`
 }
 
-// FetchProviderModels 向上游问一次模型清单。
-//
-// 「不给参数就用配置里的」是这里的关键：用户编辑一个已存在的服务商时，
-// 界面上只有地址与协议，密钥是打码的（界面上根本没有原值）。
-// 不从配置里取密钥，这一按就必然 401。
+// FetchProviderModels 向上游问一次模型清单。「不给参数就用配置里的」是关键：编辑已有服务商时
+// 界面上只有打码的密钥（没有原值），不从配置里取密钥这一按就必然 401。
 func (a *App) FetchProviderModels(ctx context.Context, req ProviderModelsREQ) (*ProviderModelsRESP, error) {
 	kind := engine.Kind(req.EngineKind)
 	if !kind.Valid() {
@@ -82,10 +72,8 @@ func (a *App) FetchProviderModels(ctx context.Context, req ProviderModelsREQ) (*
 	return &ProviderModelsRESP{Models: out, ConfigPath: layout.Models}, nil
 }
 
-// savedProvider 读出一个已保存服务商的地址、协议与密钥。
-//
-// 读不到时交一个空值：调用方会用请求里的参数补上。
-// 密钥取原值（不打码）——我们要拿它去问上游。
+// savedProvider 读出一个已保存服务商的地址、协议与密钥。读不到时交空值，调用方用请求参数补上；
+// 密钥取原值（不打码）——要拿它去问上游。
 func (a *App) savedProvider(kind engine.Kind, configPath, name string) domain.ProviderView {
 	out := domain.ProviderView{EngineKind: string(kind), ProviderName: name}
 	if name == "" {
@@ -147,10 +135,8 @@ type ProviderTestRESP struct {
 	Message string `json:"message"`
 }
 
-// TestProvider 测一条服务商配置通不通。
-//
-// 判据是「上游的模型清单能不能问出来」——它同时验证了地址、协议与密钥，
-// 而这三样是配错时最容易混在一起的三件事。
+// TestProvider 测一条服务商配置通不通。判据是「上游的模型清单能不能问出来」——
+// 它同时验证了地址、协议与密钥，这三样是配错时最容易混在一起的三件事。
 func (a *App) TestProvider(ctx context.Context, req ProviderTestREQ) (*ProviderTestRESP, error) {
 	models, err := a.FetchProviderModels(ctx, ProviderModelsREQ{
 		EngineKind: req.EngineKind, ProviderName: req.ProviderName,

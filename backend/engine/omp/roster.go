@@ -8,17 +8,13 @@ import (
 	"OhMyPiDesktop/backend/engine"
 )
 
-// 子代理 roster 与字节游标（仅 omp）。
-//
-// 它是引擎进程状态的旁支：与进程同生命周期，会话切换时要跟着清。
-// 放在这里而不是 service，是因为它读写的全是引擎帧字段——
-// service 只做编排，不该知道 completionPercent 这种帧内部名字。
-// 视图类型由 engine 包定义：roster 只负责把帧字段映射过去。
+// 子代理 roster 与字节游标（仅 omp）：引擎进程状态的旁支，与进程同生命周期，会话切换时要跟着清。
+// 放在这里而不是 service：它读写的全是引擎帧字段——service 只做编排，不该知道 completionPercent 这种帧内部名字。
+// 视图类型由 engine 包定义，roster 只负责把帧字段映射过去。
 
 // Roster 管一个引擎进程的 roster 与字节游标。
-//
-// 它与引擎进程同生命周期：会话切换（new/switch/fork/open）会让引擎内部
-// clear() 并丢弃旧 id 的帧，所以那几条命令成功后我们必须自己清干净。
+// 与引擎进程同生命周期：会话切换（new/switch/fork/open）会让引擎内部 clear() 并丢弃旧 id 的帧，
+// 所以那几条命令成功后我们必须自己清干净。
 type Roster struct {
 	mu      sync.Mutex
 	agents  map[string]*engine.Agent

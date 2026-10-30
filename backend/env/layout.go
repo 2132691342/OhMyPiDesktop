@@ -1,7 +1,6 @@
 // Package env 管两个引擎的「装在哪、配置放哪、怎么读写那份配置」。
-//
 // 边界：引擎自己拥有配置语义（models / settings / sessions），本包只做
-// 「找到那几份文件」与「按引擎自己的 schema 读写」。不自造第二套格式。
+// 「找到那几份文件」与「按引擎自己的 schema 读写」，不自造第二套格式。
 package env
 
 import (
@@ -14,10 +13,8 @@ import (
 )
 
 // Layout 是一个引擎的落盘布局。
-//
-// 两个引擎的目录名与文件名都不同（.omp/agent vs .pi/agent，
-// models.yml vs models.json），所以这里是**按引擎分支的唯一地方**，
-// 上层只拿这份结构，不再拼路径。
+// 两个引擎的目录名与文件名都不同（.omp/agent vs .pi/agent，models.yml vs models.json），
+// 所以这里是**按引擎分支的唯一地方**，上层只拿这份结构，不必自己拼路径。
 type Layout struct {
 	Kind       engine.Kind `json:"kind"`
 	Root       string      `json:"root"`        // ~/.omp 或 ~/.pi
@@ -33,7 +30,6 @@ type Layout struct {
 }
 
 // ResolveLayout 按引擎与 profile 解析布局。
-//
 // profile 只有 omp 用（~/.omp/profiles/<name>/agent）；pi 没有 profile 概念，
 // 传什么都返回默认目录——这样调用方不必自己判断引擎。
 func ResolveLayout(kind engine.Kind, profile string) (Layout, error) {
@@ -110,14 +106,8 @@ func (l Layout) Exists() bool {
 }
 
 // InstallCandidates 列出某引擎「官方安装器会把可执行文件放在哪」的候选路径。
-//
-// 为什么需要它：两个引擎的官方安装器都**不往 PATH 里写东西**（omp 装进
-// `%LOCALAPPDATA%\omp`，pi 装进托管布局的 releases 目录），用户按官方文档
-// 一路装完、终端里也能跑，而只看 PATH 的应用会报「未安装」——
-// 然后建议用户再装一遍。这是最容易被当成「这个软件连装没装都看不出来」的那种错。
-//
-// 候选只包含「按官方安装器的落点推出来的确切路径」，不做目录扫描：
-// 扫盘会把别的项目里同名的二进制也当成引擎。
+// 两个引擎的官方安装器都**不往 PATH 里写东西**（omp 装进 %LOCALAPPDATA%\omp，pi 装进托管布局的 releases 目录），
+// 只看 PATH 的应用会对官方安装报「未安装」。候选只含按官方落点推出来的确切路径，不做目录扫描——扫盘会把别的项目里同名的二进制也当成引擎。
 func InstallCandidates(kind engine.Kind) []string {
 	if kind == engine.KindOMP {
 		dirs := []string{}
@@ -140,10 +130,8 @@ func InstallCandidates(kind engine.Kind) []string {
 }
 
 // piManagedExeCandidates 按 pi 官方安装器的托管布局列出候选。
-//
-// 布局是 `<root>/releases/<version>/node_modules/.bin/pi.cmd` + `<root>/current-version`，
-// 而 `current-version` 里写着当前启用的是哪一个 release。先读它、再回退到
-// 目录里最新的那个，与引擎自己的选版规则一致——猜错版本号比猜错目录更常见。
+// 布局是 `<root>/releases/<version>/node_modules/.bin/pi.cmd`，`current-version` 文件里写着当前启用的是哪一个 release；
+// 先读它、再回退目录里最新的那个，与引擎自己的选版规则一致——猜错版本号比猜错目录更常见。
 func piManagedExeCandidates() []string {
 	roots := []string{}
 	if root := strings.TrimSpace(os.Getenv("PI_MANAGED_INSTALL_ROOT")); root != "" {
@@ -171,9 +159,8 @@ func piManagedExeCandidates() []string {
 }
 
 // newestReleaseDir 返回 releases 目录里名字排序最大的那一项。
-//
 // 版本号是 `1.4.0` 这种形如 semver 的字符串，字典序在同层级版本上正确；
-// 用不上完整排序——它只是 current-version 缺失时的个兜底。
+// 用不上完整排序——它只是 current-version 缺失时的兜底。
 func newestReleaseDir(dir string) string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

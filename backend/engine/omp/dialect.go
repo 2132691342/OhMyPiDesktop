@@ -1,6 +1,5 @@
 // Package omp 是 OhMyPi 引擎与公共层之间的接缝：启动参数、握手、私有帧。
-//
-// 它不做协议传输（那是 engine.Proc），也不做事件命名（那是 engine.Engine）。
+// 它不做协议传输（那是 engine.Proc），也不做事件命名（那是 engine.Engine），
 // 这里只回答「omp 比公共层多什么、少什么」。
 package omp
 
@@ -44,9 +43,7 @@ func (Dialect) Kind() engine.Kind { return Kind }
 func (Dialect) Caps() engine.Caps { return Caps() }
 
 // Args 拼出 CLI 参数。
-//
-// omp 自己接受 --cwd，也认进程 cwd；两个都给，让「引擎眼里的工作目录」
-// 与「进程实际所在目录」不可能不一致。
+// omp 自己接受 --cwd，也认进程 cwd；两个都给，让「引擎眼里的工作目录」与「进程实际所在目录」不可能不一致。
 func (Dialect) Args(workDir string, extra []string) []string {
 	args := []string{"--mode", "rpc-ui", "--cwd", workDir}
 	return append(args, extra...)
@@ -92,7 +89,7 @@ func (Dialect) Consume(e *engine.Engine, f engine.Frame) bool {
 		_ = json.Unmarshal(f.Raw, &head)
 		e.Translator().Apply(f.Type, f.Raw)
 		// 重试 / 压缩都挂在 agent_end 之后，提前收尾会让界面自相矛盾。
-		// FinishFromTurn 自己会把整轮推一次，这里不再单独推——重复的整表
+		// FinishFromTurn 自己会把整轮推一次，这里不单独推——重复的整表
 		// 全量推送会让长会话多一次 O(字数) 的序列化。
 		if isYield(head.Yielded, head.IsTerminal) {
 			e.FinishFromTurn()

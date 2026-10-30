@@ -2,10 +2,8 @@
 package domain
 
 // PluginRowVO 是一条已装插件在界面上的形态。
-//
-// 「已装」的判据是引擎自己的清单里登记了它，不是目录里碰巧有个包。
-// 清单里有、目录不在，说明用户删过目录或换过机器——那时 Installed 为假，
-// 界面给「重装」而不是「卸载」。
+// 「已装」的判据是引擎自己的清单里登记了它，不是目录里碰巧有个包；
+// 清单里有、目录不在，说明用户删过目录或换过机器——那时 Installed 为假，界面给「重装」而不是「卸载」。
 type PluginRowVO struct {
 	// EngineKind 归属引擎（omp / pi）
 	EngineKind string `json:"engine_kind"`

@@ -1,10 +1,8 @@
 package desktop
 
 // 绑定契约回归门：前端生成物的绑定路径与每个绑定 id 都必须与后端运行时一致。
-//
-// 为什么：Wails v3 的绑定 id 由 FNV32a(导入路径.类型.方法) 算出。挪包或改绑定面会让
-// 前端那份生成物里的 id 变成死数字——编译、类型检查、单元测试全绿，只有真在 WebView
-// 里点一下才发现「按钮没反应」。所以这里从「后端现在的样子」推出路径与 id，不写死。
+// Wails v3 的绑定 id 由 FNV32a(导入路径.类型.方法) 算出，挪包或改绑定面会让前端生成物里的 id
+// 变成死数字——编译、类型检查、单元测试全绿，只有真在 WebView 里点才发现「按钮没反应」。
 
 import (
 	"fmt"
@@ -17,9 +15,7 @@ import (
 )
 
 // wailsImportPattern 抓前端绑定层里的 import：
-//
-//	import * as App from '@wails/OhMyPiDesktop/backend/desktop/app'
-//
+// 形如 `import * as App from '@wails/OhMyPiDesktop/backend/desktop/app'`，
 // 只认 `@wails/` 前缀——那是 vite 里 aliases 指向 frontend/bindings 的入口。
 var wailsImportPattern = regexp.MustCompile(`from '@wails/([^']+)/app'`)
 
@@ -30,7 +26,6 @@ var byIDPattern = regexp.MustCompile(`\$Call\.ByID\((\d+)`)
 var exportFnPattern = regexp.MustCompile(`export function (\w+)\(`)
 
 // fnv32a 是 Wails 用的那个 FNV-1a 32 位哈希（internal/hash/fnv.go）。
-//
 // 这里重写一遍而不是 import 内部包：internal 包对外不可用，
 // 而这个哈希的算法本身是稳定的一行，照抄比绕路更省事。
 func fnv32a(s string) uint32 {
@@ -43,8 +38,7 @@ func fnv32a(s string) uint32 {
 }
 
 // repoRoot 从测试所在目录往上找仓库根（go.mod 在那里）。
-//
-// 测试跑在包目录下，而绑定生成物在仓库根的 frontend/ 下。
+// 测试跑在包目录下，而绑定生成物在仓库根的 frontend/ 下；
 // 逐级上溯比写死相对路径稳：go test 可能改变工作目录。
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -64,21 +58,14 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
-// servicePkgPath 是这个包在模块内的相对路径。
-//
-// 它跟着包的位置走：desktop 在仓库根时是 "desktop"，
-// 挪到 backend/ 下就是 "backend/desktop"。
+// servicePkgPath 是这个包在模块内的相对路径，跟着包的位置走：
+// desktop 在仓库根时是 "desktop"，挪到 backend/ 下就是 "backend/desktop"；
 // 挪包时这道门会失败——那正是它该失败的时候。
 const servicePkgPath = "backend/desktop"
 
 // frontendBindingImport 读前端绑定层，算出它 import 的那个绑定目录。
-//
-// 返回值形如 "OhMyPiDesktop/backend/desktop"——它同时是
-//  1. 生成物在 frontend/bindings/ 下的相对目录；
-//  2. 后端注册绑定用的导入路径去掉模块名之后的部分。
-//
-// 前端 import 指向哪里，就是「界面以为绑定在哪」。
-// 后端包在哪，就是「绑定真的在哪」。两者对不上就是漂移。
+// 返回值形如 "OhMyPiDesktop/backend/desktop"，同时是生成物在 frontend/bindings/ 下的相对目录、
+// 与后端注册绑定用的导入路径去掉模块名后的部分；前端 import 是「界面以为绑定在哪」，与后端实际位置对不上就是漂移。
 func frontendBindingImport(t *testing.T) string {
 	t.Helper()
 	root := repoRoot(t)
@@ -156,11 +143,9 @@ func TestBindingPathMatchesPackage(t *testing.T) {
 	}
 }
 
-// stripModule 去掉路径里的模块名那一段。
-//
-// 前端 import 的路径是 <模块名>/<包路径>（vite 的别名把 @wails 指向 bindings/，
-// 所以 @wails/OhMyPiDesktop/backend/desktop 对应 bindings/OhMyPiDesktop/backend/desktop）。
-// 比对包路径时要把模块名去掉，否则两边的基准不一样。
+// stripModule 去掉路径里的模块名那一段：前端 import 的路径是 <模块名>/<包路径>
+// （vite 把 @wails 指向 bindings/，所以 @wails/OhMyPiDesktop/backend/desktop 对应
+// bindings/OhMyPiDesktop/backend/desktop），比对包路径时必须去掉模块名，否则两边基准不一样。
 func stripModule(p string) string {
 	if i := strings.Index(p, "/"); i >= 0 {
 		return p[i+1:]

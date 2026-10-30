@@ -14,14 +14,9 @@ import (
 	"OhMyPiDesktop/backend/pkg"
 )
 
-// 会话索引：直接读引擎写的 JSONL 会话文件。
-//
-// 列表要能覆盖「别的终端里聊过的会话」，而文件是唯一同时包含这些的来源
-// （引擎的 get_messages 只覆盖当前进程里的那一个）。只读不写：改名 / 换模型走 RPC。
-// 两个引擎的会话文件同源不同代，一套代码靠三点适配同时读：
-//  1. omp 首行是固定宽度的 title 槽位，pi 首行就是 session 头；
-//  2. 未知条目跳过而不报错；
-//  3. model_change 的字段不同（omp 用 model，pi 用 provider+modelId）。
+// 会话索引：直接读引擎写的 JSONL 会话文件；列表要能覆盖「别的终端里聊过的会话」，文件是唯一来源
+// （引擎的 get_messages 只覆盖当前进程里那一个）。只读不写：改名 / 换模型走 RPC。
+// 两个引擎的会话文件同源不同代，一套代码靠三点适配同时读：omp 首行是固定宽度 title 槽位、pi 首行是 session 头，未知条目跳过而不报错，model_change 字段不同（omp 用 model，pi 用 provider+modelId）。
 
 // Session 是会话列表项。
 type Session struct {
@@ -61,14 +56,9 @@ type Item struct {
 	Tokens    int               `json:"tokens,omitempty"`
 }
 
-// cacheMax 是单个索引器缓存的会话条数上限。
-//
-// 缓存没有上限的话，它就是一个只增不减的 map：用户的会话会一直累积
-// （本机实测 90 个，重度用户几千个），每条都存着解析出来的元信息。
-// 这不是「几百 KB」的小事——它跨引擎各有一份，且永不释放。
-//
-// 上限取 512 的理由：列表一屏几十条，缓存比可见范围大一个数量级就够了；
-// 再大只是把内存换成「极少命中的命中率」。
+// cacheMax 是单个索引器缓存的会话条数上限：没有上限就是一个只增不减的 map——
+// 会话一直累积（本机实测 90 个，重度用户几千个），每条存着解析出的元信息，跨引擎各一份且永不释放。
+// 取 512：列表一屏几十条，缓存比可见范围大一个数量级就够，再大只是把内存换成「极少命中的命中率」。
 const cacheMax = 512
 
 // Index 是会话文件的读取器，带一层 (size+mtime) 缓存。
@@ -155,11 +145,8 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 	defer f.Close()
 
 	// firstUser 记下第一条用户消息，作为没有标题时的兜底。
-	//
-	// 两个引擎默认都不写标题条目，于是列表里每一条都长得一模一样
-	// （「会话 · 模型名」）——一屏十几行全是同一个字符串，
-	// 用户根本认不出哪条是哪个。第一条用户消息是用户自己写的，
-	// 比模型名有用得多。
+	// 两个引擎默认都不写标题条目，列表里每一条都长得一模一样（「会话 · 模型名」），
+	// 用户认不出哪条是哪个；第一条用户消息是用户自己写的，比模型名有用得多。
 	firstUser := ""
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 8*1024*1024)
@@ -255,10 +242,8 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 }
 
 // trim 把缓存裁到上限以内。调用方必须持有 ix.mu。
-//
-// 按 usedAt 淘汰而不是按会话时间：缓存的目的是加速「最近在看的那几屏」，
-// 与会话本身的先后无关。一个一年前的老会话如果刚被打开过，它比
-// 上周但没人看的会话更该留在缓存里。
+// 按 usedAt 淘汰而不是按会话时间：缓存的目的是加速「最近在看的那几屏」，与会话先后无关；
+// 一年前的老会话刚被打开过，就比上周但没人看的更该留在缓存里。
 func (ix *Index) trim() {
 	if len(ix.cache) <= cacheMax {
 		return
@@ -278,7 +263,6 @@ func (ix *Index) trim() {
 }
 
 // Invalidate 丢掉一条缓存（会话被删掉 / 改名之后）。
-//
 // 不主动失效的话，删掉的会话会一直出现在缓存里直到被淘汰，
 // 表现是「明明删了，列表里还在」。
 func (ix *Index) Invalidate(path string) {
@@ -389,7 +373,6 @@ func (ix *Index) Detail(path string) (*Detail, error) {
 }
 
 // projectMessage 把一条 omp 消息投影成界面条目。
-//
 // 用户消息压成一行文本；助手消息保留块原文，交给前端按原始顺序渲染
 // （正文 / 思考 / 工具调用的先后关系一丢就读不出先干了什么）。
 func projectMessage(role string, raw json.RawMessage, model, toolName, toolCallID string, isError bool, ts int64) *Item {

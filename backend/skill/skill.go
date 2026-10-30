@@ -11,11 +11,9 @@ import (
 	"OhMyPiDesktop/backend/pkg"
 )
 
-// 技能：omp 按目录发现 SKILL.md，本包按同样的规则读出来给界面看。
-//
-// 读的是 omp 真正会加载的位置，不是另建一份清单——那样两本账迟早分叉。
-// 启停靠改 frontmatter 的 enabled 字段（与 omp 的约定一致），不移动目录：
-// 移动目录会让 omp 的缓存键变化，也让「我明明装过」的困惑变多。
+// 技能：omp 按目录发现 SKILL.md，本包按同样的规则读出来给界面看；读的是 omp 真正会加载的位置，
+// 不另建一份清单——那样两本账迟早分叉。启停靠改 frontmatter 的 enabled 字段（与 omp 的约定一致），
+// 不移动目录：移动目录会让 omp 的缓存键变化，也让「我明明装过」的困惑变多。
 
 // Skill 是一条技能。
 type Skill struct {
@@ -32,10 +30,8 @@ type Skill struct {
 }
 
 // Roots 是技能发现根。
-//
 // 两个引擎的规则不同但可以共用一份扫描：pi 按 Agents Skills 规范认
-// `SKILL.md` + 目录，omp 同源；差别在「有哪些根」与「怎么启停」，
-// 由调用方把 Root 填对。
+// `SKILL.md` + 目录，omp 同源；差别在「有哪些根」与「怎么启停」，由调用方把 Root 填对。
 type Roots struct {
 	Kind        engine.Kind // 决定 frontmatter 的语义（omp 认 enabled，pi 认 disable-model-invocation）
 	UserDir     string      // 用户级技能目录
@@ -191,13 +187,11 @@ func Content(path string) (string, error) {
 }
 
 // contentLimit 是技能正文的上限。
-//
 // 技能是一份写给模型看的提示词，几 KB 到几十 KB；上限主要防「有人把整个仓库
 // 塞进 SKILL.md 然后把界面卡死」。
 const contentLimit = 256 * 1024
 
 // SaveContent 覆写技能正文。
-//
 // 原子写（临时文件 + Rename）：写到一半断电会留下半个 SKILL.md，
 // 而那个文件是引擎启动时一定会读的，坏了就是「应用能起、技能全错」。
 func SaveContent(path, text string) error {
@@ -257,12 +251,9 @@ func Toggle(path string, enabled bool) error {
 	return pkg.WriteFileAtomic(path, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
-// TogglePi 启停一个 pi 技能。
-//
-// pi 没有 frontmatter 的 enabled（那是 omp 的约定）。它只有
-// `disable-model-invocation`：置 true 表示不进系统提示、只能靠 `/skill:name`
-// 显式调用。所以「关掉」在 pi 上等于「不让模型自己用」——语义差异如实写在键上，
-// 不假装两家有同一个开关。
+// TogglePi 启停一个 pi 技能。pi 没有 frontmatter 的 enabled（那是 omp 的约定），只有 `disable-model-invocation`：
+// 置 true 表示不进系统提示、只能靠 `/skill:name` 显式调用，所以「关掉」在 pi 上等于「不让模型自己用」；
+// 语义差异如实写在键上，不假装两家有同一个开关。
 func TogglePi(path string, enabled bool) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {

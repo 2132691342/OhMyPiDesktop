@@ -13,15 +13,9 @@ import (
 	"OhMyPiDesktop/backend/pkg"
 )
 
-// 探测：找出机器上装了哪些引擎、各是什么版本（全部只读、无副作用）。
-//
-// 两步判据：
-//  1. `<bin> --version`：omp 打 `omp/18.13.1`，pi 打裸 `1.4.0`（只算疑似 pi）；
-//  2. 疑似 pi 时复核 `--help`：omp 的小节标题是 `USAGE`（大写），pi 是 `Usage:`；
-//     omp 的遗留 launch 分支会打裸版本号，不复核会把 omp 认成 pi。
-//
-// 不靠文件名判种（用户可能改名，omp 还允许用 OMP_APP_NAME 改 bin）；
-// 「没版本输出」就是「没找到」，界面显示安装命令，不退化成「版本未知」。
+// 探测：找出机器上装了哪些引擎、各是什么版本（全部只读、无副作用）。两步判据：
+// `<bin> --version`（omp 打 `omp/18.13.1`，pi 打裸 `1.4.0` 只算疑似 pi），疑似时复核 `--help`（omp 的小节标题是大写 `USAGE`，pi 是 `Usage:`；omp 遗留 launch 分支也打裸版本号，不复核会把 omp 认成 pi）。
+// 不靠文件名判种（用户可能改名，omp 还允许用 OMP_APP_NAME 改 bin）；「没版本输出」就是「没找到」，界面显示安装命令。
 
 var (
 	rePrefixed = regexp.MustCompile(`^[A-Za-z][\w.-]*/\d+\.\d+\.\d+`)
@@ -39,13 +33,8 @@ type Candidate struct {
 }
 
 // Candidates 按「显式路径 → npm 全局 shim → PATH → 官方安装器的落点」列出所有候选。
-//
-// 为什么要有「官方安装器的落点」这一档：omp 的安装器把它装进
-// `%LOCALAPPDATA%\omp\omp.exe` 并且**不往 PATH 里放东西**（PID 需要手动加）。
-// 只查 PATH 的后果是：机器上明明装着 omp，界面说「未安装」并让用户再去装一遍。
-//
-// 落点由调用方给（install，可空）：本包不读环境变量、不猜用户目录，
-// 那是 env 包的事。这里只负责按优先级排好并去重。
+// 官方安装器那档必须有：omp 的安装器把它装进 `%LOCALAPPDATA%\omp\omp.exe` 且不往 PATH 里放东西，只查 PATH 会把装好的 omp 说成「未安装」并让用户再装一遍。
+// 落点由调用方给（install，可空）：本包不读环境变量、不猜用户目录，只负责按优先级排好并去重。
 func Candidates(custom string, bin string, install ...string) []Candidate {
 	out := make([]Candidate, 0, 4)
 	add := func(exe, source string) {
@@ -82,12 +71,9 @@ func ExeName(kind Kind) string {
 	return string(kind)
 }
 
-// NpmShimPath 返回 npm 全局目录里那个 shim 的盘上真身。
-//
-// 只在 Windows 上做这件事，而且只往「明确存在的文件」上落：
-// `%APPDATA%\npm\pi.cmd` 是 npm 生成的批处理壳，`%APPDATA%\npm\pi.ps1` 是它的
-// PowerShell 兄弟；而 PATH 里排在前面、又不可执行的同名文件会让 LookPath 直接失败。
-// 这里按 .cmd → .exe 的顺序回退，仍不做任何写盘动作。
+// NpmShimPath 返回 npm 全局目录里那个 shim 的盘上真身，只在 Windows 上做，只往明确存在的文件上落。
+// PATH 里排在前面、又不可执行的同名文件会让 LookPath 直接失败；
+// 按 .cmd → .exe 的顺序回退，仍不做任何写盘动作。
 func NpmShimPath(bin string) (string, bool) {
 	if runtime.GOOS != "windows" {
 		return "", false
@@ -107,7 +93,6 @@ func NpmShimPath(bin string) (string, bool) {
 }
 
 // Detect 探测一个候选，返回 Identity。找不到或版本读不出时 Exe 为空。
-//
 // 单个引擎探测失败不该影响另一个：调用方对每个引擎各调一次，
 // 缺失的引擎在界面上是「没找到 + 安装命令」，不是错误。
 func Detect(ctx context.Context, kind Kind, candidates []Candidate) Identity {
@@ -133,9 +118,7 @@ func Detect(ctx context.Context, kind Kind, candidates []Candidate) Identity {
 }
 
 // probeVersion 跑一次 --version 并取最后一个非空行。
-//
-// 取最后一行是因为 omp 的 `launch` 分支会先打日志再打版本号；
-// 只认第一行会把日志当成版本。
+// 取最后一行是因为 omp 的 `launch` 分支会先打日志再打版本号，只认第一行会把日志当成版本。
 func probeVersion(ctx context.Context, exe string) (string, bool) {
 	out, err := runCLI(ctx, exe, "--version")
 	if err != nil && strings.TrimSpace(out) == "" {
@@ -162,10 +145,8 @@ func matchKind(ctx context.Context, kind Kind, exe, version string) bool {
 	return matchKindWithHelp(kind, version, help)
 }
 
-// matchKindWithHelp 是判据本身，与进程无关，所以能被直接测。
-//
-// 拆出来是为了让测试打真身：判据是一串条件分支，如果只在 matchKind 里，
-// 每次验证都得真起一个进程，慢且脆。help 由调用方提供。
+// matchKindWithHelp 是判据本身，与进程无关，help 由调用方提供。
+// 拆出来是为了让测试打真身：判据只在 matchKind 里的话，每次验证都得真起一个进程，慢且脆。
 func matchKindWithHelp(kind Kind, version, help string) bool {
 	if kind == KindOMP {
 		// `omp/18.13.1` 是 omp 的标准输出，可以直接认。
@@ -191,18 +172,14 @@ func matchKindWithHelp(kind Kind, version, help string) bool {
 }
 
 // isOMPVersion 判断 --version 输出是不是 omp 的标准格式。
-//
-// omp 打 `${bin}/${version}`，bin 默认是 `omp`，但可以被 OMP_APP_NAME 改掉——
-// 所以只认 `omp/` 前缀这一种确定情形，其余交给 helpIsOMP。
+// omp 打 `${bin}/${version}`，bin 可被 OMP_APP_NAME 改掉，所以只认 `omp/` 前缀这一种确定情形，其余交给 helpIsOMP。
 // 有意不用宽松的 `name/semver` 匹配：那会把将来改打 `pi/1.4.0` 的版本误判成 omp。
 func isOMPVersion(version string) bool {
 	return strings.HasPrefix(version, "omp/")
 }
 
 // helpIsOMP 看根帮助里有没有 omp 独有的小节标题。
-//
-// omp 的首行是 `omp v<ver>`，紧接一行全大写 `USAGE`；
-// pi 用的是 `Usage:`。这两个形状不会互相串。
+// omp 首行是 `omp v<ver>`、紧接一行全大写 `USAGE`，pi 用的是 `Usage:`，两个形状不会互相串。
 func helpIsOMP(help string) bool {
 	return strings.Contains(help, "\nUSAGE\n") || strings.HasPrefix(help, "omp v")
 }
@@ -248,9 +225,7 @@ func sameFile(a, b string) bool {
 
 func hideWindow(cmd *exec.Cmd) { hideWindowImpl(cmd) }
 
-// FileUsable 判断一个候选路径能不能拿去当引擎跑。
-//
-// 它回答的是「这个文件在不在、是不是个文件」——比 Stat 多一层的是目录判定：
+// FileUsable 判断一个候选路径能不能拿去当引擎跑：文件在不在、是不是个文件（目录不算）。
 // 用户把路径指到一个目录（而不是可执行文件）时，探测会一直失败，
 // 而界面只能说「没找到」，于是用户一遍遍重试一个根本不可能成的路径。
 func FileUsable(exe string) bool {

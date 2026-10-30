@@ -1,13 +1,8 @@
 package service
 
-// 引擎的装 / 升级 / 卸载。
-//
-// 边界（AGENTS.md §0）：我们**只代跑引擎自己的安装程序**，从不自己下载、解压、
-// 校验、写盘。所以这里的每一条命令都是一行可以照抄到终端里的原文，
-// 界面上显示的命令与实际执行的是同一个字符串。
-//
-// 三件事在这里收口：命令从哪来（engine 包）、能不能发出去（包管理器在不在、
-// 上一个长任务跑完没有）、输出怎么到界面（hub 推 app:progress，逐行追加）。
+// 引擎的装 / 升级 / 卸载。边界（AGENTS.md §0）：只代跑引擎自己的安装程序，从不自己下载、解压、校验、写盘，
+// 每条命令都是可照抄的原文，展示串与执行串同出一个 InstallerScript。
+// 三件事在此收口：命令从哪来（engine 包）、能不能发出去（包管理器在不在、上一个长任务完没完）、输出怎么到界面（hub 推 app:progress，逐行追加）。
 
 import (
 	"context"
@@ -20,10 +15,8 @@ import (
 	"OhMyPiDesktop/backend/pkg"
 )
 
-// appsMu 让同一个应用同时只有一条长任务。
-//
-// 两个人同时点「安装」的结果是两条 npm 抢同一个全局目录，失败信息还是
-// 互相覆盖的——宁可明确告诉用户「上一个还没跑完」。
+// appsMu 让同一个应用同时只有一条长任务：两个人同时点「安装」就是两条 npm 抢同一个全局目录，
+// 失败信息还互相覆盖——宁可明确告诉用户「上一个还没跑完」。
 type appsMu struct {
 	mu   sync.Mutex
 	busy map[engine.Kind]bool
@@ -75,19 +68,14 @@ type AppRow struct {
 	// Busy 这个应用当前有长任务在跑
 	Busy bool `json:"busy"`
 
-	// UpdatePreview 升级命令原文（界面在确认前显示它）
-	//
-	// 单独一份而不是复用 UpdateCommand：那条是「装好了之后怎么升」，
-	// 而这一条是「点了升级按钮会真的跑什么」。两者内容相同但用途不同，
-	// 混用的话以后加了参数就会显示到不该显示的地方。
+	// UpdatePreview 升级命令原文（界面确认前显示）：单独一份而不复用 UpdateCommand，
+	// 「点了升级按钮会真的跑什么」与「装好之后怎么升」用途不同，混用后加参数会显示到不该显示的地方。
 	UpdatePreview string `json:"update_preview,omitempty"`
 	// UninstallPreview 卸载命令原文
 	UninstallPreview string `json:"uninstall_preview,omitempty"`
 }
 
-// Apps 汇总「应用」页需要的全部事实。
-//
-// 探测结果直接用缓存（一分钟），最新版查询走 30 分钟缓存：
+// Apps 汇总「应用」页需要的全部事实。探测用缓存（一分钟），最新版查询走 30 分钟缓存：
 // 进一次应用页不该起两个子进程、发三次外网请求。
 func (a *App) Apps(ctx context.Context, fore bool) ([]AppRow, error) {
 	a.detectAll(ctx, fore)
@@ -158,9 +146,7 @@ func (a *App) appRow(ctx context.Context, kind engine.Kind, latest engine.Latest
 }
 
 // installRunnable 回答「这台机器现在能不能跑安装命令」。
-//
-// 命令不存在就不发出去（AGENTS.md §3）：直接说缺哪个包管理器，
-// 而不是让用户看一条 "exec: npm: executable file not found"。
+// 命令不存在就不发出去（AGENTS.md §3）：直接说缺哪个包管理器，而不是让用户看 "exec: npm: executable file not found"。
 func installRunnable(kind engine.Kind) error {
 	if engine.InstallerScript(kind) != "" {
 		if _, err := exec.LookPath("powershell"); err != nil {
@@ -176,9 +162,7 @@ func installRunnable(kind engine.Kind) error {
 	return nil
 }
 
-// appProgressEvent 是安装进度的唯一事件名。
-//
-// 与 chat:* / agents:* 不同，它不挂在某个会话上（session_id 为空）：
+// appProgressEvent 是安装进度的唯一事件名。与 chat:* / agents:* 不同，它不挂会话（session_id 为空）：
 // 装引擎与应用状态无关，任何页面都可能要看它。
 const appProgressEvent = "app:progress"
 
@@ -199,10 +183,8 @@ func (a AppAction) Valid() bool {
 	return a == ActionInstall || a == ActionUpdate || a == ActionUninstall
 }
 
-// RunAppAction 跑一条长任务，把输出逐行推给界面。
-//
-// 同步返回：调用方（HTTP handler）等它结束再回响应，前端靠 SSE 看进度。
-// 不另开一个「查询任务状态」的接口——一个动作一个结果，进度走事件流。
+// RunAppAction 跑一条长任务，把输出逐行推给界面。同步返回：HTTP handler 等它结束再回响应，前端靠 SSE 看进度。
+// 不另开「查询任务状态」接口——一个动作一个结果，进度走事件流。
 func (a *App) RunAppAction(ctx context.Context, kind engine.Kind, action AppAction) (*AppRow, error) {
 	if !kind.Valid() {
 		return nil, pkg.New(pkg.CodeBadRequest, "不认识的引擎："+string(kind), "")
@@ -226,10 +208,8 @@ func (a *App) RunAppAction(ctx context.Context, kind engine.Kind, action AppActi
 		a.detectAll(ctx, true)
 		return nil, err
 	}
-	// 任务成功时也重探：否则界面还显示旧版本，用户会以为没生效。
-	//
-	// 用不带超时的背景 context 重探与查最新版：请求自己的 ctx 可能已经
-	// 因为客户端断开而取消，那时元数据没刷新，界面就会停在旧状态。
+	// 任务成功时也重探，否则界面还显示旧版本。用不带超时的 context：
+	// 请求自己的 ctx 可能已因客户端断开而取消，那时元数据没刷新，界面停在旧状态。
 	fresh := context.WithoutCancel(ctx)
 	a.detectAll(fresh, true)
 	engine.QueryLatest(fresh, true)
@@ -241,14 +221,9 @@ func (a *App) RunAppAction(ctx context.Context, kind engine.Kind, action AppActi
 	return &AppRow{Kind: kind}, nil
 }
 
-// verifyAction 核对动作真的生效了。
-//
-// 只在命令成功之后调用。三种结果：
-//   - 安装后仍探不到可执行文件：装上了却跑不起来，这是软失败；
-//   - 升级后版本没变且仍然落后：上游没真的升级，也是软失败；
-//   - 其余：成功。
-//
-// 软失败用软失败的方式报（消息说清现状），而不是把整次操作判成失败。
+// verifyAction 核对动作真的生效了，只在命令成功之后调用。
+// 安装后仍探不到可执行文件、升级后版本没变且仍落后，都算软失败；其余算成功。
+// 软失败用软失败的方式报（消息说清现状），不把整次操作判成失败。
 func (a *App) verifyAction(kind engine.Kind, action AppAction) error {
 	id := a.Identity(kind)
 	switch action {
@@ -402,9 +377,7 @@ func uninstallBlocker(channel engine.Channel) string {
 	}
 }
 
-// compareVersion 比较两个版本号，忽略前缀与预发布后缀。
-//
-// 只用到「谁更新」这一个判断，所以按点分段比数字即可；
+// compareVersion 比较两个版本号，忽略前缀与预发布后缀。只用到「谁更新」，按点分段比数字即可；
 // 预发布后缀一律当同版本（宁可少提示一次升级，也不要提示一个不存在的版本）。
 func compareVersion(a, b string) int {
 	as, bs := versionParts(a), versionParts(b)

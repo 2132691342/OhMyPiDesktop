@@ -5,11 +5,9 @@ import (
 	"time"
 )
 
-// 子代理的视图模型。它是「界面要看什么」的定义，与 omp 的帧字段名解耦：
-// 帧里的 completionPercent 在这里叫 Completion，界面不会因为引擎改字段名而重写。
-//
-// 只有 omp 提供这份数据（Caps.Subagents）。pi 下 SubagentStore 为 nil，
-// 界面整块不渲染。
+// 子代理的视图模型，「界面要看什么」的定义，与 omp 的帧字段名解耦
+// （帧里的 completionPercent 在这里叫 Completion）。只有 omp 提供这份数据
+// （Caps.Subagents）；pi 下 SubagentStore 为 nil，界面整块不渲染。
 
 // Agent 是子代理在界面上的样子。
 type Agent struct {

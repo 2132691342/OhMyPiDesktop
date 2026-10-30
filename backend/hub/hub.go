@@ -1,5 +1,4 @@
 // Package hub 是事件总线：引擎与安装进度从后端推给前端的唯一出口（SSE）。
-//
 // 它不做业务判断，也不解释事件语义——只负责三件事：给帧编号、留一段可重放的窗口、
 // 把帧非阻塞地分发给每个连接。
 package hub
@@ -20,7 +19,6 @@ type Event struct {
 }
 
 // frame 是通道里传的东西：raw 已经序列化好，seq 用于合成丢帧通知。
-//
 // 序列化只做一次、多连接共享同一个 []byte：否则大帧（整表 blocks）的广播成本
 // 会随连接数与帧大小相乘。seq 单独存是因为丢帧时要拿它合成 chat:gap。
 type frame struct {
@@ -29,7 +27,6 @@ type frame struct {
 }
 
 // subscriber 是一个 SSE 连接。
-//
 // ch 永不 close——订阅端摘除只置 dead 并关闭 done。close 一个可能还有人写的
 // channel 会 panic，而 panic 在广播路径上等于整个后端退出。
 type subscriber struct {
@@ -43,9 +40,8 @@ type subscriber struct {
 }
 
 // Hub 是带环形重放的广播器。
-//
-// 为什么要重放：窗口失焦 / WebView 休眠会断流，重连后前端不该丢掉断流期间
-// 的正文增量。环形只保留最近 N 帧——会话历史走文件快照，不走重放。
+// 为什么要重放：窗口失焦 / WebView 休眠会断流，重连后前端不该丢掉断流期间的正文增量；
+// 环形只保留最近 N 帧——会话历史走文件快照，不走重放。
 type Hub struct {
 	mu    sync.RWMutex
 	subs  map[*subscriber]struct{}
@@ -62,14 +58,9 @@ func New(ring int) *Hub {
 	return &Hub{subs: map[*subscriber]struct{}{}, ringN: ring}
 }
 
-// Emit 广播一帧。sessionID 非空时会附在信封上，前端据此丢弃别的会话的事件。
-//
-// 事件名固定成 `namespace:name` 形态，前端按名字分流；
-// session_id 不进通道名——一个窗口只显示一个会话，按通道分会让重放变复杂。
-//
-// 性能约定：载荷只 marshal 一次。sessionID 只在非空时才重编码（用一次浅层编辑），
-// 绝大多数帧（传空串）直接共享同一份序列化字节——流式帧每秒几十帧，
-// 多一次完整 JSON 往返都是实打实的开销。
+// Emit 广播一帧。sessionID 非空时会附在信封上，前端据此丢弃别的会话的事件；
+// 事件名固定成 `namespace:name` 形态，前端按名字分流；session_id 不进通道名——一个窗口只显示一个会话，按通道分会让重放变复杂。
+// 性能约定：载荷只 marshal 一次，sessionID 非空才重编码（一次浅层编辑），绝大多数帧直接共享同一份序列化字节——流式帧每秒几十帧，多一次完整 JSON 往返都是实打实的开销。
 func (h *Hub) Emit(sessionID, event string, data any) {
 	raw, err := json.Marshal(data)
 	if err != nil {
@@ -105,10 +96,8 @@ func (h *Hub) Emit(sessionID, event string, data any) {
 }
 
 // withSessionID 把一个 session_id 字段插进已经序列化好的对象。
-//
-// 用一个 map 做一次浅层解包而不是解成具体结构：载荷形状五花八门，
-// 而这里只需要把多出来的那个字段放进去，其余一个字节都不应该动。
-// 解析失败就原样返回（宁可少一个字段，也不能把整帧弄丢）。
+// 用一个 map 做一次浅层解包而不是解成具体结构：载荷形状五花八门，这里只需把多出来的字段放进去，
+// 其余一个字节都不该动；解析失败就原样返回（宁可少一个字段，也不能把整帧弄丢）。
 func withSessionID(raw []byte, sessionID string) []byte {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {

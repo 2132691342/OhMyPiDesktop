@@ -44,14 +44,9 @@ func As(err error) *AppError {
 	return &AppError{Code: CodeInternal, Message: "内部错误", Detail: err.Error()}
 }
 
-// 错误码段位：1xxx 本地环境（内部 / 路径 / Git），2xxx 启动与装配，
-// 3xxx 引擎进程与协议，4xxx 模型与凭据，5xxx 技能 / 插件 / 引擎配置，
-// 6xxx 会话，7xxx 入参与鉴权，8xxx 文件 / 路径 / 网络，9xxx 引擎自身的装 / 升 / 卸。
-//
-// 一个码只能有一个意思：界面上「同一个码」必须给同一种反应，
-// 而那要求这里的码唯一。两处不同的事用同一个码，界面就没法分流。
-//
-// 全表与「前端该怎么反应」见 docs/ERROR-CODES.md——两边必须同步。
+// 错误码段位：1xxx 本地环境（内部 / 路径 / Git），2xxx 启动与装配，3xxx 引擎进程与协议，4xxx 模型与凭据，
+// 5xxx 技能 / 插件 / 引擎配置，6xxx 会话，7xxx 入参与鉴权，8xxx 文件 / 路径 / 网络，9xxx 引擎自身的装 / 升 / 卸。
+// 一个码只能有一个意思（界面上同一个码必须给同一种反应）；全表与前端处置见 docs/ERROR-CODES.md——两边必须同步。
 const (
 	// 1xxx：本地环境出错了。内部错误、路径校验、Git 操作。
 	CodeInternal = "1001"

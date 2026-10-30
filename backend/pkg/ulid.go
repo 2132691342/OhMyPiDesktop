@@ -1,12 +1,8 @@
 package pkg
 
-// ULID 是业务标识符的生成与解析。
-//
-// 两种 ID 的取舍：UUID 无序（做主键会让索引碎片化），自增要中心发号。
-// ULID 前 48 位是毫秒时间、后 80 位是随机，字典序即时间序，且不需要协调。
-//
-// 带前缀是给「这一个 ID 属于什么」一个可回答的形式：日志里看到
-// RUN_01J... 就知道它是一轮对话，不必回去翻生成它的那行代码。
+// ULID 是业务标识符的生成与解析。取舍：UUID 无序（做主键会让索引碎片化），自增要中心发号；
+// ULID 前 48 位是毫秒时间、后 80 位是随机，字典序即时间序且不需要协调。带前缀让「这一个 ID 属于什么」可回答：
+// 日志里看到 RUN_01J... 就知道它是一轮对话，不必回去翻生成它的那行代码。
 
 import (
 	"crypto/rand"
@@ -31,7 +27,6 @@ var ulidMu sync.Mutex
 var ulidEntropy = ulid.Monotonic(rand.Reader, 0)
 
 // NewULID 生成一个带业务前缀的标识符，形如 RUN_01J...。
-//
 // prefix 为空时返回裸 ULID——只在「这类实体没有前缀」这种不该发生的情况下出现，
 // 留着而不是 panic：ID 生成不该成为让应用起不来的理由。
 func NewULID(prefix string) string {
@@ -49,7 +44,6 @@ func NewULID(prefix string) string {
 }
 
 // NewULIDMonotonic 生成带前缀且**同一进程内严格递增**的标识符。
-//
 // 同一毫秒内连续生成时用这个：NewULID 在同一毫秒里是随机段，
 // 而「一轮对话的 ID」这类要按生成顺序排队的场景需要单调。
 func NewULIDMonotonic(prefix string) string {

@@ -1,14 +1,8 @@
 package service
 
-// MCP：读写引擎的 mcp.json，并按需向引擎问一次实时状态。
-//
-// 配置文件的形状两个引擎共用（`mcpServers` 映射），所以读写只有一份代码；
-// 差别是「停用一个服务器写哪个键」（omp 用顶层名单，pi 写条目的 enabled），
-// 由 mcpcfg 内部按引擎分叉，这里只传一个开关。
-//
-// 不代跑 `pi mcp add`：`add` 的参数面（OAuth 客户端、回调端口、头部、暴露模式 …）
-// 比界面能表达的多，而我们写文件只动自己掌管的那几个键，
-// 未知字段原样保留——比转发 CLI 更安全，也不必为每个版本的新参数改一遍前端。
+// MCP：读写引擎的 mcp.json，并按需向引擎问一次实时状态。配置形状两引擎共用（mcpServers 映射），读写只有一份代码；
+// 「停用写哪个键」的差异（omp 用顶层名单，pi 写条目的 enabled）由 mcpcfg 内部分叉，这里只传开关。
+// 不代跑 `pi mcp add`：其参数面比界面能表达的多，而写文件只动自己掌管的键、未知字段原样保留，比转发 CLI 更安全。
 
 import (
 	"context"
@@ -26,14 +20,9 @@ import (
 
 // ---------------- MCP ----------------
 
-// McpList 列 MCP 服务器。kind 为空表示两个引擎都列（“全部”作用域）。
-//
-// live 为真时额外问一次引擎的连接状态（pi 有 `mcp list --json`，omp 没有），
-// 并把状态并到同一批行上。探测失败不算错误：配置照样给，只是状态栏留空——
-// 「引擎没起」不该让整页打不开。
-//
-// live 只对单引擎有意义：实时探测要问引擎进程，而“两个引擎的实时状态」
-// 在同一个请求里拿不到一致快照——所以全部作用域不做 live。
+// McpList 列 MCP 服务器。kind 为空表示两个引擎都列（“全部”作用域）。live 为真时额外问一次引擎的
+// 连接状态（pi 有 `mcp list --json`，omp 没有）；探测失败不算错误：配置照样给，只是状态栏留空——
+// 「引擎没起」不该让整页打不开。live 只对单引擎有意义：两个引擎的实时状态在同一请求里拿不到一致快照。
 func (a *App) McpList(ctx context.Context, kind engine.Kind, live bool) (*domain.McpListVO, error) {
 	if kind.Valid() {
 		return a.mcpListOf(ctx, kind, live)
@@ -283,11 +272,8 @@ func (a *App) McpRemove(kind engine.Kind, name string) (*domain.McpListVO, error
 	return a.McpList(context.Background(), k, false)
 }
 
-// mcpTargetPath 决定写到用户级还是项目级。
-//
-// 项目级只写到当前工作目录里引擎自己的项目配置位（.omp / .pi）之下：
-// 那个目录存在，才说明引擎把这个目录当成项目；往一个随便打开的目录里
-// 塞 .omp/mcp.json 等于往别人的文件夹里写配置。
+// mcpTargetPath 决定写到用户级还是项目级。项目级只写到当前工作目录里引擎自己的项目配置位（.omp / .pi）之下：
+// 那个目录存在才说明引擎把它当项目；往随便打开的目录塞 .omp/mcp.json 等于往别人的文件夹里写配置。
 func (a *App) mcpTargetPath(kind engine.Kind, project bool) (string, error) {
 	if !project {
 		layout, err := a.Layout(kind)
@@ -317,9 +303,7 @@ func projectDirName(kind engine.Kind) string {
 func mcpPathIn(agentDir string) string { return filepath.Join(agentDir, "mcp.json") }
 
 // projectMcpPath 返回当前工作目录里的项目级 mcp.json；不在仓库里时返回 false。
-//
-// 判据是「这个目录下有 .omp 或 .pi 目录」：那是引擎自己的项目级配置位，
-// 有它才说明这个目录被引擎当成项目。
+// 判据是目录下有 .omp 或 .pi：那是引擎自己的项目级配置位，有它才说明这个目录被引擎当成项目。
 func (a *App) projectMcpPath() (string, bool) {
 	dir := a.Workspace()
 	if dir == "" {
@@ -356,10 +340,7 @@ func dedupeServers(rows []domain.McpServerVO) []domain.McpServerVO {
 	return out
 }
 
-// splitCommand 把一条命令行切成命令与参数。
-//
-// 支持引号：MCP 的 stdio 命令里带空格的参数很常见（路径、
-// `-y @modelcontextprotocol/server-filesystem` 这类包名的参数没有，但路径有）。
+// splitCommand 把一条命令行切成命令与参数。支持引号：MCP 的 stdio 命令里带空格的参数（路径）很常见。
 func splitCommand(line string) []string {
 	var out []string
 	var cur strings.Builder

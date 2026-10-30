@@ -99,7 +99,6 @@ func FileHistory(dir, rel string, limit int) ([]domain.GitCommitVO, error) {
 }
 
 // FileDiffInCommit 取一次提交里某个文件的逐行差异。
-//
 // 界面在提交详情里点一个文件时用它：整份提交的差异可能几千行，
 // 而用户通常只想看当前选中的那个文件。
 func FileDiffInCommit(dir, hash, rel string) (*domain.GitDiffVO, error) {

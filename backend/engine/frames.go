@@ -182,9 +182,8 @@ func (e *Engine) SetQueue(raw json.RawMessage) {
 }
 
 // FinishRun 收尾一轮：清 runID 并发 chat:done。
-//
-// 只有 Dialect 能判断「这一轮到底结束了没」——omp 看 agent_end.yielded，
-// pi 看 agent_settled；重试与压缩都挂在 agent_end 之后，提前收尾会让界面自相矛盾。
+// 只有 Dialect 能判断「这一轮到底结束了没」——omp 看 agent_end.yielded，pi 看 agent_settled；
+// 重试与压缩都挂在 agent_end 之后，提前收尾会让界面自相矛盾。
 func (e *Engine) FinishRun(runID, stopReason string) {
 	e.mu.Lock()
 	current := e.runID
@@ -199,13 +198,8 @@ func (e *Engine) FinishRun(runID, stopReason string) {
 	e.send("", "chat:done", map[string]any{"run_id": runID, "stop_reason": stopReason})
 }
 
-// AbortRun 因引擎进程死亡而中断一轮。
-//
-// 为什么需要它：进程死了之后，正常路径的收尾帧（agent_end / agent_settled）
-// 永远不会来。而 FinishRun 靠 runID 幂等——OnExit 已经把 runID 清空了，
-// 于是那一轮永远收不了尾，前端会一直停在「正在回答」：输入框禁用、
-// 停止按钮转圈、用户以为程序卡死了，只能重启应用。
-//
+// AbortRun 因引擎进程死亡而中断一轮：进程死了之后，正常路径的收尾帧（agent_end / agent_settled）永远不会来。
+// FinishRun 靠 runID 幂等——OnExit 已把 runID 清空，那一轮永远收不了尾，前端会停在「正在回答」，只能重启应用。
 // 所以进程死亡这条路径要自己收尾：把这一轮标成出错，推给界面。
 func (e *Engine) AbortRun(reason string) {
 	e.mu.Lock()
@@ -263,7 +257,6 @@ func (e *Engine) Answer(ctx context.Context, resp UIResponse) error {
 }
 
 // handleUI 处理扩展要界面配合的请求。
-//
 // 提问类（confirm/select/input/editor/ask）转成界面卡片，等用户回答；
 // 展示类（notify/setStatus/setWidget/setTitle/set_editor_text/open_url）只读转发。
 func (e *Engine) handleUI(req UIRequest) {

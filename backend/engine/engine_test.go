@@ -1,7 +1,6 @@
 package engine
 
 // 引擎抽象层只测会悄无声息出错的地方：判种、渠道判定、能力表、分片重组。
-//
 // 同一主题合成一条表驱动：五条散落的用例要改五处、跑起来也慢；一条只改一处。
 // 不测「能不能解一个 JSON」「函数有没有被调用」这类不会错的东西。
 
@@ -144,11 +143,8 @@ func chunkFrame(t *testing.T, chunkID string, index, count int, payload string, 
 // newTestProc 造一个只用于分片重组的进程壳。
 func newTestProc() *Proc { return &Proc{opts: Options{Dialect: fakeDialect{}}} }
 
-// 分片重组：乱序 / 重复 / 换 id / 长度不符 / base64 非法整段丢弃，
-// 坏序列之后要能重新开始。
-//
-// 丢弃必须是整段的：放半截帧上去，解析器会把后面的命令也一起吞掉，
-// 表现出来是「所有命令都超时」。
+// 分片重组：乱序 / 重复 / 换 id / 长度不符 / base64 非法整段丢弃，坏序列之后要能重新开始。
+// 丢弃必须是整段的：放半截帧上去，解析器会把后面的命令也一起吞掉，表现出来是「所有命令都超时」。
 func TestAssembleChunks(t *testing.T) {
 	t.Run("正常拼合", func(t *testing.T) {
 		p := newTestProc()

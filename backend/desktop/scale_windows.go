@@ -1,8 +1,7 @@
 //go:build windows
 
 // 屏幕度量：缩放比与可用区，用原生 API 读。
-//
-// 为什么不用 application.Screen：它在建窗之前还没初始化（GetPrimary 返回 nil），
+// 不用 application.Screen：它在建窗之前还没初始化（GetPrimary 返回 nil），
 // 而窗口尺寸必须在建窗那一刻就定下来。
 package desktop
 
@@ -31,11 +30,9 @@ const (
 	perMonitorDpi = 2           // PROCESS_PER_MONITOR_DPI_AWARE
 )
 
-// ensureDPIAware 声明进程为 per-monitor DPI 感知。
-//
-// 必须在任何取 DPI 的调用之前执行。manifest 里的声明对某些启动路径不生效
-// （实测经 Start-Process 拉起时 GetDpiForSystem 仍报 96），显式声明之后
-// 才稳定返回真实值。失败不影响运行：最坏情况是按 100% 布局。
+// ensureDPIAware 声明进程为 per-monitor DPI 感知，必须在任何取 DPI 的调用之前执行。
+// manifest 里的声明对某些启动路径不生效（实测经 Start-Process 拉起时 GetDpiForSystem
+// 仍报 96），显式声明之后才稳定返回真实值。失败不影响运行：最坏情况是按 100% 布局。
 func ensureDPIAware() {
 	if procSetDPIContext.Find() == nil {
 		if r, _, _ := procSetDPIContext.Call(dpiAwareV2); r != 0 {
@@ -48,8 +45,7 @@ func ensureDPIAware() {
 }
 
 // displayScaleOS 返回主屏缩放比（1 = 100%，2 = 200%）。
-//
-// 优先 GetDpiForSystem（Win10 1607+）；老系统退回 GetDeviceCaps(LOGPIXELSX)。
+// 优先 GetDpiForSystem（Win10 1607+）；老系统退回 GetDeviceCaps(LOGPIXELSX)，
 // 两者都失败返回 1。
 func displayScaleOS() int {
 	ensureDPIAware()
@@ -74,10 +70,8 @@ func displayScaleOS() int {
 	return 1
 }
 
-// dpiToScale 把 DPI 折成整数缩放比。
-//
-// 四舍五入到最近的整档：96→1、144→2（150% 向上取，宁可窗口略大，
-// 也不要把内容挤坏）。1.25 档（120 DPI）也归到 1，避免窗口无谓变大。
+// dpiToScale 把 DPI 折成整数缩放比：四舍五入到最近的整档（96→1、144→2，150% 向上取，
+// 宁可窗口略大也不要把内容挤坏），1.25 档（120 DPI）也归到 1，避免窗口无谓变大。
 func dpiToScale(dpi int) int {
 	if dpi <= 0 {
 		return 0

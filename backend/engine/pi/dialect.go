@@ -1,5 +1,4 @@
 // Package pi 是 Pi 引擎与公共层之间的接缝：启动参数、无握手、私有帧。
-//
 // 与 omp 的差别只有三处，其余全部复用 engine：没有 ready 帧、没有协议 v2 分片、
 // 结束判据看 agent_settled 而不是 yielded。
 package pi
@@ -44,24 +43,19 @@ func (Dialect) Kind() engine.Kind { return Kind }
 func (Dialect) Caps() engine.Caps { return Caps() }
 
 // Args 拼出 CLI 参数。
-//
-// pi 不认 --cwd：工作目录完全由进程 cwd 决定。多给一个 --cwd 会让它直接
-// 以「Unknown option」退出，所以这里只给 --mode。
+// pi 不认 --cwd：工作目录完全由进程 cwd 决定，多给一个 --cwd 会让它直接以「Unknown option」退出，所以这里只给 --mode。
 func (Dialect) Args(_ string, extra []string) []string {
 	args := []string{"--mode", "rpc"}
 	return append(args, extra...)
 }
 
 // Handshake 等第一帧或超时。
-//
-// pi 没有 ready 帧：第一帧可能是扩展的 extension_ui_request，也可能是我们
-// 主动发命令的回包。所以「就绪」只能是「已经能读到东西」+ 一个短超时，
-// 不能无限期等——否则界面会永久停在启动中。
+// pi 没有 ready 帧：第一帧可能是扩展的 extension_ui_request，也可能是我们主动发命令的回包；
+// 所以「就绪」只能是「已经能读到东西」+ 一个短超时，不能无限期等——否则界面会永久停在启动中。
 func (Dialect) Handshake(ctx context.Context, p *engine.Proc) error {
-	// 主动问一次状态：回包到了就证明读循环与写路径都通了。
-	// 这一步把「等引擎自己说话」变成「等一次往返」——pi 没有 ready 帧，
-	// 不主动问就只能靠超时猜。25 秒是因为 Node 冷启动在这台机器上要 3~4 秒，
-	// 装着扩展时更久；再长就没有意义了（真起不来应该是错误）。
+	// 主动问一次状态：回包到了就证明读循环与写路径都通了——pi 没有 ready 帧，不主动问就只能靠超时猜。
+	// 25 秒是因为 Node 冷启动在这台机器上要 3~4 秒，装着扩展时更久；
+	// 再长就没有意义了（真起不来应该是错误）。
 	var out json.RawMessage
 	err := p.Call(ctx, "get_state", nil, &out, 25*time.Second)
 	if err == nil {
@@ -81,8 +75,7 @@ func (Dialect) Consume(e *engine.Engine, f engine.Frame) bool {
 	switch f.Type {
 	case "agent_end":
 		// pi 没有 prompt_result，也没有 yielded；willRetry 为真表示还要再来一轮。
-		// 这一帧只更新投影（取 stopReason），**不收尾整轮**：重试与压缩都挂在
-		// 它之后，提前发 done 会让界面在还在跑的时候显示完成。
+		// 这一帧只更新投影（取 stopReason），不收尾整轮：重试与压缩都挂在它之后，提前发 done 会让界面在还在跑时显示完成。
 		// 整轮收尾统一在 agent_settled 做。
 		e.Translator().Apply(f.Type, f.Raw)
 		return true

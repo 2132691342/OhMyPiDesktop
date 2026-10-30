@@ -1,14 +1,8 @@
 package engine
 
-// 装的是哪条渠道：卸载按钮存在的前提。
-//
-// 判据只有两类，都只读文件系统：**可执行文件落在谁的目录里**，以及
-// **它旁边有没有那个包的 node_modules**。不跑任何命令——探测已经在
-// 应用页首屏上，多起一个 `npm prefix -g` 就多几秒钟，而结果还能被
-// 用户改坏的 npmrc 带偏。
-//
-// 判不出来就是 `unknown`，界面那时只给手动路径。这一档必须存在：
-// 有些渠道（官方安装器的托管布局）确实没有非交互式卸载。
+// 装的是哪条渠道：卸载按钮存在的前提。判据只有两类，都只读文件系统：
+// 可执行文件落在谁的目录里、旁边有没有那个包的 node_modules；不跑命令（探测已在首屏，又慢又会被 npmrc 带偏）。
+// 判不出来就是 `unknown`，界面只给手动路径——官方安装器的托管布局确实没有非交互式卸载。
 
 import (
 	"os"
@@ -16,9 +10,7 @@ import (
 	"strings"
 )
 
-// DetectChannel 按可执行文件路径判断安装渠道。
-//
-// home 与 localAppData 由调用方给（本包不读环境变量）。
+// DetectChannel 按可执行文件路径判断安装渠道；home 与 localAppData 由调用方给（本包不读环境变量）。
 // 判不出来返回 ChannelUnknown，不猜、不 panic。
 func DetectChannel(kind Kind, exe, home, localAppData string) Channel {
 	if strings.TrimSpace(exe) == "" {
@@ -80,9 +72,8 @@ func channelFromNodeModules(lower string) Channel {
 }
 
 // channelFromSiblingModules 看 shim 旁边有没有那个包的 node_modules。
-//
-// 只认**这个包自己**存在：光有 node_modules 说明不了什么（项目目录里也有），
-// 而 `<dir>\node_modules\<包名>\package.json` 存在就基本能确定是全局安装。
+// 只认这个包自己存在：光有 node_modules 说明不了什么（项目目录里也有），
+// `<dir>\node_modules\<包名>\package.json` 存在就基本能确定是全局安装。
 func channelFromSiblingModules(dir string, kind Kind) Channel {
 	modules := filepath.Join(dir, "node_modules")
 	pkg := PackageName(kind)
@@ -101,9 +92,8 @@ func channelFromSiblingModules(dir string, kind Kind) Channel {
 }
 
 // piManagedRoot 从目录往上找 managed-install.json，找到就返回它的父目录。
-//
-// 只往上找有限层：托管布局是 <root>/releases/<version>/...，再往上就出了
-// pi 自己的范围，继续找只会撞到别的目录里恰好同名的文件。
+// 只往上找有限层：托管布局是 <root>/releases/<version>/...，再往上就出了 pi 自己的范围，
+// 继续找只会撞到别的目录里恰好同名的文件。
 func piManagedRoot(dir string) string {
 	cur := dir
 	for i := 0; i < 5; i++ {

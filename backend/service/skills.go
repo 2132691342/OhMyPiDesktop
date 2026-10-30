@@ -1,9 +1,7 @@
 package service
 
-// 技能：列出引擎真正会加载的技能、启停、新建、改正文。
-//
-// 读的是引擎自己的技能目录，不另存一份清单——两本账迟早分叉。
-// 写只允许落在用户目录：工作区与插件来的那一份属于仓库或包，改了就是本地漂移。
+// 技能：列出引擎真正会加载的技能、启停、新建、改正文。读的是引擎自己的技能目录，不另存一份清单——两本账迟早分叉。
+// 写只允许落在用户目录：工作区与插件来的那份属于仓库或包，改了就是本地漂移。
 
 import (
 	"OhMyPiDesktop/backend/engine"
@@ -49,11 +47,9 @@ func (a *App) SkillList(kind engine.Kind) ([]SkillRow, error) {
 	return out, nil
 }
 
-// ToggleSkill 启停一个技能。
-//
-// omp 认 frontmatter 的 enabled；pi 没有这个开关，只能靠 disable-model-invocation
-// 把它从系统提示里摘掉。所以「关闭」在 pi 上写的键不同——这是能力差异，
-// 由 Caps.SkillToggle 告诉界面该不该显示开关。
+// ToggleSkill 启停一个技能。omp 认 frontmatter 的 enabled；pi 没有这个开关，只能靠
+// disable-model-invocation 把它从系统提示里摘掉——「关闭」在 pi 上写的键不同，
+// 这是能力差异，由 Caps.SkillToggle 告诉界面该不该显示开关。
 func (a *App) ToggleSkill(kind engine.Kind, path string, enabled bool) error {
 	k := a.KindOr(string(kind))
 	layout, err := a.Layout(k)
@@ -98,9 +94,7 @@ func (a *App) SkillContent(path string) (string, error) {
 	return skill.Content(path)
 }
 
-// SaveSkillContent 覆写一份技能正文。
-//
-// 只允许改用户目录里的那份：工作区与插件来的技能属于别人（跟着仓库或包版本走），
+// SaveSkillContent 覆写一份技能正文。只允许改用户目录里的那份：工作区与插件来的技能跟着仓库或包版本走，
 // 改了就变成「本地漂移」，下次拉代码或装包时静默被覆盖。
 func (a *App) SaveSkillContent(kind engine.Kind, path, text string) (string, error) {
 	k := a.KindOr(string(kind))
@@ -154,12 +148,9 @@ func (a *App) projectSkillDirs(projectDir string) []string {
 	return out
 }
 
-// pluginSkillDirs 找出**已登记插件**自带的 skills 目录。
-//
-// 为什么只查已登记的：node_modules 里绝大多数是间接依赖。
-// 之前是遍历整个 node_modules 找 skills 子目录，在装了十几个插件的机器上
-// 实测要 4.6 秒（几千个包 × 每次两次 stat）——而它们里面几乎都没有 skills。
-// 插件清单本来就已经读出来了（env.ReadPluginEntries），照它去 stat 是 O(插件数)。
+// pluginSkillDirs 找出已登记插件自带的 skills 目录。只查已登记的：遍历整个 node_modules 找 skills
+// 子目录在十几个插件的机器上实测要 4.6 秒（几千个包 × 每次两次 stat），而它们几乎都没有 skills；
+// 插件清单已读出（env.ReadPluginEntries），照它去 stat 是 O(插件数)。
 func (a *App) pluginSkillDirs(layout env.Layout) []string {
 	entries, _, err := env.ReadPluginEntries(string(layout.Kind), layout)
 	if err != nil || len(entries) == 0 {

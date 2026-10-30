@@ -18,9 +18,7 @@ import (
 // ErrClosed 表示进程已经结束；之后的调用都返回它。
 var ErrClosed = errors.New("engine: 进程已结束")
 
-// CallError 是引擎回了 success:false 的命令失败。
-//
-// pi 的回包只有 error 字符串没有 code，所以 Code 可空；
+// CallError 是引擎回了 success:false 的命令失败。pi 的回包只有 error 字符串没有 code，所以 Code 可空；
 // 界面只用 Message，Code 留给日志。
 type CallError struct {
 	Command string
@@ -55,7 +53,6 @@ type Options struct {
 }
 
 // Proc 是一个引擎子进程：进程 + 传输 + 请求关联。
-//
 // 并发模型：一个读协程独占 stdout 并按 id 唤醒等待者；写路径用互斥锁串行化，
 // 因为协议是行分隔 JSON，半行写入会让引擎吞掉后续命令。
 type Proc struct {
@@ -151,9 +148,7 @@ func Start(ctx context.Context, opts Options) (*Proc, error) {
 }
 
 // StartedAt 返回进程拉起的时间。
-//
-// 界面要显示「这个进程跑了多久」，那是判断「它是不是刚刚崩过又重拉了」
-// 最快的线索——比看 pid 变化直观。
+// 界面显示「这个进程跑了多久」是判断「它是不是刚崩过又重拉」最快的线索——比看 pid 变化直观。
 func (p *Proc) StartedAt() time.Time {
 	p.cerrMu.Lock()
 	defer p.cerrMu.Unlock()
@@ -304,10 +299,8 @@ func (p *Proc) Call(ctx context.Context, command string, params any, out any, ti
 }
 
 // noteFailure 记住最近一次命令失败，再把 CallError 交回调用方。
-//
-// 记下来的理由：引擎拒了一条命令之后界面往往只显示那一瞬的错误，
-// 而「引擎健康」那一屏要回答的是「它最近到底有没有在报错」——
-// 那是判断「配置坏了」还是「只是这一次不巧」的分水岭。
+// 记下来的理由：引擎拒了一条命令后界面往往只显示那一瞬的错误，
+// 而「引擎健康」屏要回答「它最近到底有没有在报错」——那是判断「配置坏了」还是「只是这一次不巧」的分水岭。
 func (p *Proc) noteFailure(command, message, code string) error {
 	text := message
 	if code != "" {
@@ -328,14 +321,9 @@ func (p *Proc) Send(v any) error {
 	return p.writeLine(line)
 }
 
-// writeLockWait 是等写锁的上限。
-//
-// 为什么不用「写入超时」：操作系统的管道 Write 是阻塞且不支持超时的，
-// 想真超时只能换 goroutine + select，那会留下一个仍在写管道的泄漏协程。
-// 而实际卡住的场景几乎都是「上一条命令的 Write 卡住了」——那时真正的
-// 值钱信息是「等不到锁」，而不是「这次 Write 等了多久」。
-//
-// 所以：用带超时的拿锁。拿不到就明确报错，而不是默默排队到天荒地老。
+// writeLockWait 是等写锁的上限。不用「写入超时」：操作系统的管道 Write 阻塞且不支持超时，
+// 真超时只能换 goroutine + select，会留下一个仍在写管道的泄漏协程。
+// 所以用带超时的拿锁：拿不到就明确报错，而不是默默排队到天荒地老。
 const writeLockWait = 30 * time.Second
 
 func (p *Proc) writeLine(line []byte) error {
@@ -355,9 +343,7 @@ func (p *Proc) writeLine(line []byte) error {
 }
 
 // acquireWrite 带超时地拿写锁。
-//
-// ok=true 表示已持有锁（调用方负责 Unlock）；ok=false 表示超时没拿到；
-// err 非 nil 表示进程已结束（此时拿锁没意义）。
+// ok=true 表示已持有锁（调用方负责 Unlock）；ok=false 表示超时没拿到；err 非 nil 表示进程已结束（此时拿锁没意义）。
 func (p *Proc) acquireWrite() (bool, error) {
 	// 快路径：锁空着，直接拿。绝大多数写入都走这条。
 	if p.wmu.TryLock() {
@@ -398,9 +384,7 @@ func (p *Proc) isClosed() bool {
 	}
 }
 
-// nextID 领一个请求 id。
-//
-// 用原子加而不是共享 wmu：id 的生成与「写管道」是两件事，
+// nextID 领一个请求 id。用原子加而不是共享 wmu：id 的生成与「写管道」是两件事，
 // 共用一把锁会让紧接着的 writeLine 掉进自己刚释放的锁上重复竞争。
 func (p *Proc) nextID() string {
 	n := atomic.AddInt64(&p.reqSeq, 1)

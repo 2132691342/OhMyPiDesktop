@@ -1,9 +1,7 @@
 package service
 
-// 模型与服务商：读写引擎自己的 models 配置，以及在界面里发起登录。
-//
-// 两个引擎的配置文件格式不同（omp 是 YAML 节点、pi 是 JSONC 键），
-// 但界面只认一种形态——各自的读写细节在 env/ompcfg 与 env/picfg，
+// 模型与服务商：读写引擎自己的 models 配置，以及在界面里发起登录。两个引擎的配置格式不同
+// （omp 是 YAML 节点、pi 是 JSONC 键），读写细节在 env/ompcfg 与 env/picfg，
 // 这里只做「读出来 → 归一成视图 → 写回去」的编排。
 
 import (
@@ -33,13 +31,9 @@ type ModelRow struct {
 	Input         []string    `json:"input"`
 }
 
-// Models 列出引擎眼下的可用模型。kind 为空表示两个引擎都列。
-//
-// “都列”在这里真的有用：模型是「我现在能用什么」的问题，
+// Models 列出引擎眼下的可用模型。kind 为空表示两个引擎都列：模型是「我现在能用什么」的问题，
 // 两个引擎各用不同的服务商配置，一屏对比才能决定下一句发给谁。
-//
-// 引擎没在跑时读它自己的配置文件，不为看一个下拉去起进程——
-// omp 冷启动实测 11 秒，界面不该为一次「看看有哪些模型」付这个代价。
+// 引擎没在跑时读它自己的配置文件，不为看一个下拉去起进程——omp 冷启动实测 11 秒。
 func (a *App) Models(ctx context.Context, kind engine.Kind) ([]ModelRow, error) {
 	kinds := engine.AllKinds()
 	if kind.Valid() {
@@ -67,9 +61,7 @@ func (a *App) Models(ctx context.Context, kind engine.Kind) ([]ModelRow, error) 
 	return out, nil
 }
 
-// Providers 返回服务商视图（密钥打码）。
-//
-// 两个引擎的配置文件格式完全不同，但视图形态一致：前端只认 ProvidersView。
+// Providers 返回服务商视图（密钥打码）。两个引擎的配置格式完全不同，但视图形态一致：前端只认 ProvidersView。
 // kind 为空表示两个引擎都返回（“全部”作用域），每行带 engine_kind。
 func (a *App) Providers(kind engine.Kind) (*domain.ProvidersView, error) {
 	if kind.Valid() {

@@ -1,9 +1,5 @@
-// Package upstream 向上游服务商问「有哪些模型」。
-//
-// 模型清单在引擎里是一份运行时事实，而配一个服务商时用户手上只有地址与密钥——
-// 「有哪些模型」这个问题只有上游知道。
-//
-// 只做一件事：按协议向 /models 问一次，把响应归一成模型 id 列表。
+// Package upstream 向上游服务商问「有哪些模型」——模型清单在引擎里是运行时事实，
+// 而配服务商时用户手上只有地址与密钥。只做一件事：按协议向 /models 问一次，把响应归一成模型 id 列表；
 // 不写配置、不管凭据管理、不猜模型能力。
 package upstream
 
@@ -38,10 +34,8 @@ type Request struct {
 }
 
 // ModelEntry 是问回来的一个模型：只有 id 与展示名。
-//
-// 上游给的字段五花八门（owned_by、created、permission…），
-// 而界面的「拉取模型」只关心「有哪些 id、叫什么」——
-// 别的字段（上下文窗口、是否推理）引擎自己知道。
+// 上游给的字段五花八门（owned_by、created、permission…），界面的「拉取模型」
+// 只关心「有哪些 id、叫什么」；别的字段（上下文窗口、是否推理）引擎自己知道。
 type ModelEntry struct {
 	// ModelID 模型标识，写进配置就是它
 	ModelID string `json:"model_id"`
@@ -80,7 +74,6 @@ func FetchModels(req Request) ([]ModelEntry, error) {
 }
 
 // applyAuth 按认证方式加请求头。
-//
 // oauth 与 api-key 两种都发 Authorization：多数兼容服务商会忽略用不上的那个头，
 // 而少发一个的后果是直接 401。
 func applyAuth(req *http.Request, r Request) {
@@ -118,14 +111,9 @@ func statusMessage(code int, body string) string {
 	return "服务商返回了异常状态：" + msg
 }
 
-// modelsEndpoint 拼出「问模型清单」的地址。
-//
-// 规则只有两条，但两条都必要：
-//   - 地址以 / 结尾：直接接 models（用户已经写全了路径）。
-//   - 地址里有 /v1：接 /models（OpenAI 兼容服务商的模型清单就在 /v1/models）。
-//   - 其余：接 /v1/models（大多数兼容服务商的默认形状）。
-//
-// 也支持 base 里已经带着 /models 的写法——那就不该再拼一次。
+// modelsEndpoint 拼出「问模型清单」的地址。规则只有两条，但都必要：
+// 地址以 / 结尾直接接 models（用户已写全路径）；地址里有 /v1 接 /models（OpenAI 兼容服务商的清单在 /v1/models）；
+// 其余接 /v1/models（大多数兼容服务商的默认形状）。base 里已带 /models 的写法也支持，那就不重复拼。
 func modelsEndpoint(base string) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
@@ -145,13 +133,8 @@ func modelsEndpoint(base string) (string, error) {
 	return u.String(), nil
 }
 
-// parseModels 从响应里挑出模型 id。
-//
-// 兼容三种形状：
-//
-//	{"data":[{"id":"..."}]}          OpenAI / Anthropic
-//	{"data":[{"model":"..."}]}        一些兼容服务商的变体
-//	{"models":[{"id":"..."}]}         部分网关
+// parseModels 从响应里挑出模型 id。兼容三种形状：`{"data":[{"id":"..."}]}`（OpenAI / Anthropic）、
+// `{"data":[{"model":"..."}]}`（一些兼容服务商的变体）、`{"models":[{"id":"..."}]}`（部分网关）。
 func parseModels(body string) ([]ModelEntry, error) {
 	var doc struct {
 		Data []struct {

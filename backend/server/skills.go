@@ -1,9 +1,7 @@
 package server
 
-// 技能、插件与系统能力的 handler。
-//
-// 技能与插件的写操作都落在引擎自己的目录或 CLI 上：
-// 我们不另建一份清单，也不自己解 node_modules。
+// 技能、插件与系统能力的 handler。技能与插件的写操作都落在引擎自己的目录或 CLI 上：
+// 不另建一份清单，也不自己解 node_modules。
 
 import (
 	"OhMyPiDesktop/backend/domain"

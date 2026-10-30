@@ -2,14 +2,11 @@
 package domain
 
 // McpServerVO 是一个 MCP 服务器在界面上的形态。
-//
-// 只暴露「界面能表达」的那几个字段：连接方式是命令还是 URL、启没启用、
-// 从哪份文件来的。其余未知字段（auth / oauth / headers / toolExposure …）
-// 由读写层原样保留，界面不碰——碰了就是在替引擎做它自己的事。
+// 只暴露「界面能表达」的那几个字段：连接方式是命令还是 URL、启没启用、从哪份文件来的；
+// 其余未知字段（auth / oauth / headers / toolExposure …）由读写层原样保留，界面不碰。
 type McpServerVO struct {
-	// EngineKind 这条服务器属于哪个引擎（omp / pi）
-	//
-	// 两边读各自的 mcp.json，同名服务器可能在两边各有一条。
+	// EngineKind 这条服务器属于哪个引擎（omp / pi）。
+	// 两边读各自的 mcp.json，同名服务器可能在两边各有一条，
 	// 界面在「全部」作用域下靠这个字段分组与路由写操作。
 	EngineKind string `json:"engine_kind"`
 	// ServerName 服务器名，也是配置里那个键

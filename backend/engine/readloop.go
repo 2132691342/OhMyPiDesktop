@@ -1,10 +1,8 @@
 package engine
 
-// 读循环与分片重组：引擎的 stdout 只有这一个读者。
-//
-// 为什么独占：stdout 是字节流，两个读者会互相抢走对方要的行。
-// 为什么按 \n 切：JSON 字符串里可以有 U+2028 / U+2029，按 Unicode 行分隔切会截断记录。
-// 为什么按 id 关联响应：prompt / bash / predict_word 会乱序返回，按到达顺序配会配错。
+// 读循环与分片重组：引擎的 stdout 只有这一个读者（字节流，两个读者会互相抢走对方要的行）。
+// 按 \n 切：JSON 字符串里可以有 U+2028 / U+2029，按 Unicode 行分隔切会截断记录。
+// 按 id 关联响应：prompt / bash / predict_word 会乱序返回，按到达顺序配会配错。
 
 import (
 	"OhMyPiDesktop/backend/pkg"
@@ -99,16 +97,12 @@ func (p *Proc) dispatch(line []byte) {
 }
 
 // maxChunkBytes 是分片重组的总长上限（64 MB）。
-//
-// 为什么要有：byteLength 是**引擎声明的**值，而分片数据是我们一条条拼起来的。
-// 一个跑飞或恶意的引擎只要声明 byteLength=10GB，这个缓冲就会一直涨到 OOM。
+// byteLength 是引擎声明的值，而分片数据是一条条拼起来的：跑飞或恶意的引擎声明 10GB，缓冲就会涨到 OOM。
 // 正常的大帧是几 MB 的文件内容或工具输出，64 MB 已经很宽松。
 const maxChunkBytes = 64 << 20
 
 // assemble 处理协议 v2 的超大帧：按 index 拼接，校验 chunkId/count/byteLength。
-//
-// 只在读协程里调用（分片状态不额外加锁：加锁会让每一帧多一次原子操作，
-// 而这一层本来就只有单一消费者）。resetChunks 由 Kill 调用，那时读协程已经停了。
+// 只在读协程里调用（分片状态不额外加锁：这一层本来就只有单一消费者）；resetChunks 由 Kill 调用，那时读协程已经停了。
 func (p *Proc) assemble(line []byte) ([]byte, bool) {
 	var chunk struct {
 		ChunkID    string `json:"chunkId"`
@@ -166,10 +160,8 @@ func (p *Proc) assemble(line []byte) ([]byte, bool) {
 	return out, true
 }
 
-// resetChunks 清掉分片状态并交还缓冲区。
-//
-// 把 capacity 也一起放掉：一个 64 MB 的缓冲留在 Proc 上等于永久占着内存，
-// 而下一个大帧可能几个小时后才来。
+// resetChunks 清掉分片状态并交还缓冲区，把 capacity 也一起放掉：
+// 一个 64 MB 的缓冲留在 Proc 上等于永久占着内存，而下一个大帧可能几个小时后才来。
 func (p *Proc) resetChunks() {
 	p.chunkID = ""
 	p.chunkGot = 0

@@ -8,8 +8,7 @@ import (
 )
 
 // sameJSON 语义比较两个 JSON 片段。
-//
-// 不能比字节：写回时 MarshalIndent 会重排缩进，未知字段的内容不变但空白变了。
+// 不能比字节：写回时 MarshalIndent 会重排缩进，未知字段的内容不变但空白变了；
 // 关心的是「键与值还在」，不是「空白没动」。
 func sameJSON(a, b string) bool {
 	var x, y any

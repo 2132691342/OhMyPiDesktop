@@ -10,12 +10,8 @@ import (
 )
 
 // 事件翻译：把引擎帧归一成界面事件。
-//
-// 纪律：正文 / 思考 / 工具调用按引擎吐出的**原始顺序**保留（blocks），
-// 不按字段类型分组——分组会把一轮里所有工具卡顶到正文前面，顺序一丢就读不出先干了什么。
-//
-// 两个引擎的帧名高度重合（同一套 JSONL 信封血统），所以翻译只有一份；
-// 差异集中在三个开关上：用哪个 contentIndex、结束判据、工具流帧名。
+// 纪律：正文 / 思考 / 工具调用按引擎吐出的原始顺序保留（blocks），不按字段类型分组——分组会把工具卡顶到正文前面，顺序一丢就读不出先干了什么。
+// 两个引擎的帧名高度重合，所以翻译只有一份；差异集中在三个开关：用哪个 contentIndex、结束判据、工具流帧名。
 
 // BlockKind 是渲染块的种类。
 const (
@@ -54,9 +50,8 @@ type Turn struct {
 }
 
 // Update 描述一帧带来的可见变化。
-//
-// 两种形态：delta（只是某块尾部增长，前端追加即可）与 block（结构变了，
-// 前端按 index 替换/插入那一块）。全量重发 blocks 会让一轮长回答的流量是 O(字数²)。
+// 两种形态：delta（只是某块尾部增长，前端追加即可）与 block（结构变了，前端按 index 替换/插入那一块）；
+// 全量重发 blocks 会让一轮长回答的流量是 O(字数²)。
 type Update struct {
 	Mode   string // delta / block / blocks
 	Index  int
@@ -67,10 +62,8 @@ type Update struct {
 }
 
 // Translator 维护「当前流式消息 → 块」的映射。
-//
-// 它被两个协程同时碰：请求协程在发 prompt 前 BeginTurn，读协程在收帧时 Apply。
-// 所以内部状态一律走 mu，且对外只交出**副本**——交实时指针等于把
-// 一个正在被追加的 slice 递给 JSON 序列化，那是竞态且会读出半截数据。
+// 它被两个协程同时碰：请求协程在发 prompt 前 BeginTurn，读协程在收帧时 Apply；
+// 所以内部状态一律走 mu，对外只交出副本——交实时指针等于把正在被追加的 slice 递给 JSON 序列化，竞态且会读出半截数据。
 type Translator struct {
 	mu       sync.Mutex
 	turn     *Turn
@@ -81,10 +74,8 @@ type Translator struct {
 	curMsgID string
 	curRole  string
 	// toolStart 记每个工具开始的时刻，用来算耗时。
-	//
-	// 为什么自己算：pi 在帧顶层给 durationMs，omp 完全不给。
-	// 界面上「这个工具跑了多久」对两个引擎都得有，
-	// 而 omp 那边没有任何现成字段可读——那就自己量。
+	// 自己算的理由：pi 在帧顶层给 durationMs，omp 没有任何现成字段可读，
+	// 而界面上「这个工具跑了多久」对两个引擎都得有。
 	toolStart map[string]time.Time
 }
 
@@ -149,10 +140,8 @@ func (t *Translator) snapshotLocked() *Turn {
 }
 
 // Apply 喂一帧，返回可见变化（nil 表示无变化）。
-//
-// 只处理两引擎共有的帧形态：message_*、tool_execution_*、turn_end。
-// 私有帧（omp 的 tool_stream_update、pi 的 bash_execution_update）由 Dialect 转成
-// 这几个共有形态后再进来，翻译表只有一份。
+// 只处理两引擎共有的帧形态：message_*、tool_execution_*、turn_end；
+// 私有帧（omp 的 tool_stream_update、pi 的 bash_execution_update）由 Dialect 转成共有形态后再进来，翻译表只有一份。
 func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -343,10 +332,8 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 			}
 		}
 		delete(t.toolStart, f.ToolCallID)
-		// 差异在 result.details 里，不在 content 里：
-		// content 是给模型看的一句人话（"Successfully replaced 3 blocks"），
-		// 真正的改动在 details.diff / details.patch。漏掉这一步，
-		// 界面上就永远看不到「引擎改了什么」。
+		// 差异在 result.details 里，不在 content 里：content 是给模型看的一句人话（"Successfully replaced 3 blocks"），
+		// 真正的改动在 details.diff / details.patch；漏掉这一步，界面上就永远看不到「引擎改了什么」。
 		diffText, filePath := ExtractToolDiff(f.Result)
 		if diffText != "" {
 			t.turn.Blocks[idx].Diff = ParseToolDiff(diffText)

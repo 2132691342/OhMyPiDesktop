@@ -11,10 +11,8 @@ import (
 	"OhMyPiDesktop/backend/platform"
 )
 
-// 应用级偏好：开机自启、恢复上次会话、数据目录。
-//
-// 这三件事都不该由 HTTP handler 直接做——「开关一个设置」背后牵着注册表、
-// 设置 KV 与引擎会话三处，只有编排层同时看得到它们。
+// 应用级偏好：开机自启、恢复上次会话、数据目录。这三件事不该由 HTTP handler 直接做——
+// 「开关一个设置」背后牵着注册表、设置 KV 与引擎会话三处，只有编排层同时看得到它们。
 
 // 关窗行为只有两种：收托盘（保持对话活着）与直接退出（进程结束）。
 // 不需要第三种：最小化已经存在，而“关窗问一下”会让每次关闭多一次点击。
@@ -23,9 +21,7 @@ const (
 	CloseActionQuit = "quit"
 )
 
-// AutoStart 报告开机自启是否打开。
-//
-// 以注册表为准而不是设置文件：用户可能在任务管理器里禁掉启动项，
+// AutoStart 报告开机自启是否打开。以注册表为准而不是设置文件：用户可能在任务管理器里禁掉启动项，
 // 此时开关该显示「关」——显示「开」而实际不生效是最容易让人不信任的一种界面。
 func (a *App) AutoStart() bool { return platform.AutoStartEnabled() }
 
@@ -74,10 +70,8 @@ func (a *App) SetCloseAction(action string) error {
 	return a.Store.Set(domain.KeyCloseAction, action)
 }
 
-// TrayHintPending 报告是否需要给一次「收托盘」的首次提示。
-//
-// 只提示一次：每次关窗都弹一下是把用户当犯错的人对待。
-// 看过之后就不再打扰，直到用户自己改回去。
+// TrayHintPending 报告是否需要给一次「收托盘」的首次提示。只提示一次：
+// 每次关窗都弹一下是把用户当犯错的人对待；看过之后不再打扰，直到用户自己改回去。
 func (a *App) TrayHintPending() bool {
 	return a.Store.Get(domain.KeyTrayHintShown) != "1"
 }
@@ -87,10 +81,8 @@ func (a *App) MarkTrayHintShown() error {
 	return a.Store.Set(domain.KeyTrayHintShown, "1")
 }
 
-// LastSession 返回上次打开的会话文件与它所属的引擎。
-//
-// 会话文件可能已经被删掉（在终端里删的）：那时返回空，界面就落到空会话，
-// 而不是打开一个点了会报错的路径。
+// LastSession 返回上次打开的会话文件与它所属的引擎。会话文件可能已被删掉（在终端里删的）：
+// 那时返回空，界面落到空会话，而不是打开一个点了会报错的路径。
 func (a *App) LastSession() (engine.Kind, string) {
 	if !a.RestoreSession() {
 		return a.ActiveKind(), ""
@@ -172,10 +164,8 @@ func (a *App) WorkspaceRows() []domain.WorkspaceRow {
 	return rows
 }
 
-// boolFlag 把布尔值写成设置里的 1 / 0。
-//
-// 设置文件里全是字符串：用 "1"/"0" 而不是 "true"/"false"，
-// 是因为界面上还有别的枚举值（主题、语言），统一成短串更好读。
+// boolFlag 把布尔值写成设置里的 1 / 0。设置文件里全是字符串，用 "1"/"0" 而不是 "true"/"false"：
+// 界面上还有别的枚举值（主题、语言），统一成短串更好读。
 func boolFlag(v bool) string {
 	if v {
 		return "1"

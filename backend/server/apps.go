@@ -1,9 +1,7 @@
 package server
 
-// 「应用」页的 handler：列引擎的安装事实、装 / 升级 / 卸载。
-//
-// 三条路径对应三个动作，而不是一条 `/apps/action`：动作名进 URL 之后
-// 前端不必先把字符串拼出来再发，也让后端的方法白名单一眼能看完。
+// 「应用」页的 handler：列引擎的安装事实、装 / 升级 / 卸载。三条路径对应三个动作而不是一条 /apps/action：
+// 动作名进 URL 后前端不必先拼字符串再发，后端的方法白名单也一眼能看完。
 
 import (
 	"OhMyPiDesktop/backend/engine"
@@ -34,10 +32,8 @@ func (s *Server) uninstallApp(c *gin.Context) {
 	s.runAppAction(c, service.ActionUninstall)
 }
 
-// runAppAction 收口三个动作的公共部分：解参数、跑用例、回最新清单。
-//
-// 返回值是整个清单而不是被改的那一行：装完两个引擎的相对状态可能都变了
-// （比如 omp 装上了，界面里「缺引擎」的横幅就该消失），前端只认一份真相。
+// runAppAction 收口三个动作的公共部分：解参数、跑用例、回最新清单。返回整个清单而不是被改的那一行：
+// 装完两个引擎的相对状态可能都变了（omp 装上后「缺引擎」横幅就该消失），前端只认一份真相。
 func (s *Server) runAppAction(c *gin.Context, action service.AppAction) {
 	var body struct {
 		Engine string `json:"engine"`

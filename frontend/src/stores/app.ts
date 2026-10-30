@@ -234,10 +234,8 @@ export const useAppStore = defineStore('app', () => {
 
   // 切当前引擎：写设置 + 换对话通道。切引擎不切目录、不切会话。
   //
-  // 先切本地、再落盘。以前这里是 `await api.setEngine(...)` 之后才切通道，
-  // 于是用户点一下引擎名要等一次往返才看到它被选中——而“当前引擎”
-  // 在界面这一侧是本地状态（后端只在下一句话发出去时读它）。
-  // 用户看到的那一下不该为一次写设置付钱。
+  // 先切本地、再落盘：「当前引擎」在界面这一侧是本地状态
+  // （后端只在下一句话发出去时读它），点下去的那一下不该等一次写设置的往返。
   async function setEngine(kind: EngineKind) {
     if (kind === active.value) return
     active.value = kind

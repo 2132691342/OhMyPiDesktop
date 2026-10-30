@@ -1,10 +1,8 @@
 package service
 
-// 界面设置与工作目录记忆。
-//
-// 设置全在 Store 里（一个 JSON 文件），这里只负责「改设置之后该跟着动什么」：
-// 换 profile 要重建会话索引，换引擎路径要重新探测，换目录要记进「最近」。
-// 这些都是「一次设置动作」的一部分，不该由前端按顺序调三个接口。
+// 界面设置与工作目录记忆。设置全在 Store 里（一个 JSON 文件），这里只负责「改设置之后该跟着动什么」：
+// 换 profile 重建会话索引、换引擎路径重新探测、换目录记进「最近」——都是一次设置动作的一部分，
+// 不该由前端按顺序调三个接口。
 
 import (
 	"context"
@@ -57,9 +55,7 @@ func (a *App) SaveSettings(kv map[string]string) error {
 	return nil
 }
 
-// SetWorkspace 切工作目录。
-//
-// 切目录不切引擎、不停旧进程：别的目录可能还有正在跑的那一轮。
+// SetWorkspace 切工作目录。切目录不切引擎、不停旧进程：别的目录可能还有正在跑的那一轮，
 // 旧目录的引擎由回收逻辑按空闲时间清掉（见 engine.Supervisor.Sweep）。
 func (a *App) SetWorkspace(dir string) error {
 	dir = strings.TrimSpace(dir)
@@ -85,9 +81,8 @@ func (a *App) SetWorkspace(dir string) error {
 	if err := a.rememberWorkspace(abs); err != nil {
 		pkg.Warnf("app: 记不住这个工作目录：%v", err)
 	}
-	// 切目录会新建一个 (引擎, 目录) 的进程键，这是进程数增长的唯一入口。
-	// 此刻立刻回收一次，比等下一轮定时扫描更贴合「刚切走」的时机：
-	// 旧目录的引擎正是从这一刻起变成空闲的。
+	// 切目录会新建一个 (引擎, 目录) 的进程键，这是进程数增长的唯一入口；旧目录的引擎从这一刻起空闲。
+	// 立刻回收一次，比等下一轮定时扫描更贴合「刚切走」的时机。
 	// 计数也跟着变（项目级技能 / MCP 换了目录就不一样），一并失效。
 	a.InvalidateCounts()
 	a.Engine.Sweep()
@@ -115,10 +110,8 @@ func (a *App) rememberWorkspace(abs string) error {
 	return a.saveRecentWorkspaces(out)
 }
 
-// recentWorkspaces 读最近列表，丢掉已经不存在的目录。
-//
-// 不存在的目录直接丢而不是标灰：拔掉的 U 盘、删掉的项目不该永久占着列表，
-// 而用户想回去时会发现它「还在但点不动」——那更糟。
+// recentWorkspaces 读最近列表，丢掉已经不存在的目录。直接丢而不是标灰：拔掉的 U 盘、删掉的项目
+// 不该永久占着列表，用户想回去时发现它「还在但点不动」更糟。
 func (a *App) recentWorkspaces() ([]domain.WorkspaceRow, error) {
 	raw := a.Store.Get(domain.KeyRecentWorkspaces)
 	if raw == "" {
@@ -178,10 +171,8 @@ func (a *App) ForgetWorkspace(dir string) ([]domain.WorkspaceRow, error) {
 	return out, nil
 }
 
-// RecentWorkspaces 是「最近 + 当前会话推出来的目录」的并集。
-//
-// 两份来源都要：记住的列表能立刻显示（不用扫盘），
-// 而从会话推出来的能捞到「在别的机器上聊过、这里还没切过」的目录。
+// RecentWorkspaces 是「最近 + 当前会话推出来的目录」的并集。两份来源都要：记住的列表能立刻显示
+// （不用扫盘），从会话推出来的能捞到「在别的机器上聊过、这里还没切过」的目录。
 func (a *App) RecentWorkspaces(allSessions []session.Session) ([]domain.WorkspaceRow, error) {
 	rows, _ := a.recentWorkspaces()
 	seen := map[string]bool{}

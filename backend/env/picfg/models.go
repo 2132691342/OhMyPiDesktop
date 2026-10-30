@@ -1,12 +1,6 @@
-// Package picfg 读写 pi 的 models.json。
-//
-// 与 omp 的 models.yml 是两个完全不同的 schema，没有共用字段：
-// pi 用 JSONC（允许注释与尾逗号）、模型条目内嵌 thinking 与 inputLimits，
-// omp 用 YAML 节点编辑。合成一套「通用 provider 模型」只会两头都对不上，
-// 所以两个包并列存在，谁也不认识谁。
-//
-// 纪律：只改我们掌管的键（providers.<name> 的 baseUrl/apiKey/api/models），
-// 顶层 $schema、未知 provider 字段、modelOverrides 一律原样保留。
+// Package picfg 读写 pi 的 models.json。与 omp 的 models.yml 是两个完全不同的 schema，没有共用字段
+// （pi 用 JSONC、模型条目内嵌 thinking 与 inputLimits），合成一套「通用 provider 模型」只会两头都对不上，两个包并列存在，谁也不认识谁。
+// 纪律：只改我们掌管的键（providers.<name> 的 baseUrl/apiKey/api/models），顶层 $schema、未知 provider 字段、modelOverrides 一律原样保留。
 package picfg
 
 import (
@@ -97,7 +91,6 @@ func Read(path string) (*File, error) {
 }
 
 // Write 写回 models.json：未知顶层键与未知 provider 字段全部保留。
-//
 // 先解析成 map[string]json.RawMessage 再改我们那一段，而不是解成 struct 再序列化——
 // 后者会把 pi 明天新增的字段静默删掉。
 func Write(path string, f *File) error {
@@ -230,7 +223,6 @@ func MaskKey(key string) string {
 }
 
 // Merge 把界面提交的字段合并到磁盘上已有的条目。
-//
 // 密钥在界面上是打码的，空值不能当成「删除」，否则「什么都没改只点保存」
 // 就把能用的凭据弄坏了。
 func Merge(prev, next Provider) Provider {
@@ -250,7 +242,6 @@ func Merge(prev, next Provider) Provider {
 }
 
 // StripJSONC 去掉 JSONC 的注释与尾逗号，让 encoding/json 能解。
-//
 // 手写扫描而不是正则：字符串里的 // 与 /* 必须保留，正则会把 baseUrl 里的
 // 路径切断（https://… 里的 // 就长得像注释）。
 func StripJSONC(raw []byte) []byte {

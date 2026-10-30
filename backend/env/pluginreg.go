@@ -1,13 +1,8 @@
 package env
 
-// 插件登记清单：引擎把「装了哪些包」记在自己那份清单里。
-//
-// 只读那份清单，不自己扫 node_modules：扫目录会把传递依赖（几百个间接包）
-// 一起当成插件，而清单里那几行才是引擎真正会加载的东西。
-//
-// 两个引擎的清单位置与形状都不同（pi 写在 settings.json 的 packages 数组，
-// omp 写在 plugins/package.json 的 dependencies 映射），所以这里按引擎分叉，
-// 上层只拿统一形态。
+// 插件登记清单：引擎把「装了哪些包」记在自己那份清单里；只读清单，不自己扫 node_modules——
+// 扫目录会把传递依赖（几百个间接包）一起当成插件，清单里那几行才是引擎真正会加载的东西。
+// 两个引擎的清单位置与形状都不同（pi 在 settings.json 的 packages 数组，omp 在 plugins/package.json 的 dependencies 映射），这里按引擎分叉，上层只拿统一形态。
 
 import (
 	"encoding/json"
@@ -49,7 +44,6 @@ type PackageSpec struct {
 }
 
 // ReadPluginEntries 读某引擎的插件登记清单。
-//
 // 读不到文件不是错误：干净机器上那份文件根本不存在，
 // 「没装插件」是正常状态，报成错误会让界面在首次使用时先红一片。
 func ReadPluginEntries(kind string, layout Layout) ([]PluginEntry, string, error) {
@@ -60,9 +54,8 @@ func ReadPluginEntries(kind string, layout Layout) ([]PluginEntry, string, error
 }
 
 // readPiEntries 读 pi 的 settings.json：packages 是一组 source 字符串。
-//
-// 形状允许两种：字符串数组（当前）与 `{enableSkillCommands, customDirectories}`
-// 的旧对象形式。后者已经废弃且不再是「包清单」，遇到就当没有包。
+// 形状允许两种：字符串数组（当前）与 `{enableSkillCommands, customDirectories}` 的旧对象形式；
+// 后者已经废弃、不算「包清单」，遇到就当没有包。
 func readPiEntries(settingsPath string) ([]PluginEntry, string, error) {
 	raw, err := os.ReadFile(settingsPath)
 	if err != nil {
@@ -93,7 +86,6 @@ func readPiEntries(settingsPath string) ([]PluginEntry, string, error) {
 }
 
 // readOMPEntries 读 omp 的 plugins/package.json：dependencies 是「包名 → 版本范围」。
-//
 // 键就是包名；source 用裸名而不是 `name@range`——omp 的 uninstall 认的是包名，
 // 拼上范围反而会被当成没装过。
 func readOMPEntries(path string) ([]PluginEntry, string, error) {
@@ -121,15 +113,9 @@ func readOMPEntries(path string) ([]PluginEntry, string, error) {
 	return out, path, nil
 }
 
-// ParsePackageSource 解析一条 source 原文，取出包名与版本。
-//
-// 三种形态都要认：
-//   - `npm:name@1.2.3` / `npm:@scope/pkg@1.2.3`（pi 的写法）
-//   - `name@1.2.3` / `@scope/pkg`（裸 npm spec）
-//   - 本地路径或 `git:` 源——名字取最后一段，交给引擎自己去解释
-//
-// 版本只从**最后一个** @ 切开：scope 包自带一个前导 @，按第一个切会把
-// `@scope/pkg` 切成空名加 `scope/pkg`。
+// ParsePackageSource 解析一条 source 原文，取出包名与版本。三种形态都要认：
+// `npm:name@1.2.3` / `npm:@scope/pkg@1.2.3`（pi 的写法）、`name@1.2.3` / `@scope/pkg`（裸 npm spec）、本地路径或 `git:` 源（名字取最后一段，交给引擎自己解释）。
+// 版本只从**最后一个** @ 切开：scope 包自带前导 @，按第一个切会把 `@scope/pkg` 切成空名加 `scope/pkg`。
 func ParsePackageSource(source string) PackageSpec {
 	text := strings.TrimSpace(source)
 	if text == "" {
@@ -154,7 +140,6 @@ func ParsePackageSource(source string) PackageSpec {
 }
 
 // ReadPluginDetail 读一个包目录里的 package.json。
-//
 // 目录不在盘上不算错误：清单里登记了但目录被删掉是很常见的状态
 // （换机器、手删、包管理器 uninstall 只删了目录），界面要能显示「未安装」。
 func ReadPluginDetail(modulesDir string, entry PluginEntry) PluginDetail {

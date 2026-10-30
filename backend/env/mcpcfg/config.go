@@ -1,13 +1,6 @@
-// Package mcpcfg 读写引擎的 mcp.json。
-//
-// 两个引擎在这一处**共用同一个文件形状**（`mcpServers` 映射），所以合成一个包；
-// 差别只在「文件放哪」（~/.omp/agent/mcp.json vs ~/.pi/agent/mcp.json）与
-// 「停用一个服务器写哪个键」——omp 有自己的 disabledServers 名单，
-// pi 认条目上的 enabled。
-//
-// 纪律与 ompcfg / picfg 一致：只改我们掌管的键，未知字段原样带回。
-// 引擎的 MCP 配置项（auth / oauth / headers / timeout / toolExposure …）
-// 比这里能表达的字段多得多，整体重写会静默抹掉用户手配的那些。
+// Package mcpcfg 读写引擎的 mcp.json。两个引擎在这里**共用同一个文件形状**（`mcpServers` 映射），
+// 差别只在「文件放哪」（~/.omp/agent/mcp.json vs ~/.pi/agent/mcp.json）与「停用一个服务器写哪个键」——omp 认顶层 disabledServers 名单，pi 认条目上的 enabled。
+// 纪律与 ompcfg / picfg 一致：只改我们掌管的键，未知字段原样带回；引擎的配置项（auth / oauth / headers / timeout …）多得多，整体重写会静默抹掉用户手配的那些。
 
 package mcpcfg
 
@@ -126,7 +119,6 @@ func decodeEntry(body json.RawMessage) Entry {
 }
 
 // Write 写回 mcp.json。
-//
 // 先把盘上现有内容整个读成 map，再只替换我们掌管的那几个键——
 // 这样引擎明天新增的顶层键与条目字段都不会被抹掉。
 func Write(path string, f *File) error {
@@ -183,7 +175,6 @@ func Write(path string, f *File) error {
 }
 
 // writeStringList 写一段字符串数组；空数组写空数组而不是删键。
-//
 // 删键与留空数组语义不同：留空数组表示「我明确知道这份名单是空的」，
 // 删键则表示「这个引擎不认这个键」。omp 认，所以留空数组。
 func writeStringList(top map[string]json.RawMessage, key string, list []string) {
@@ -256,10 +247,8 @@ func Remove(path, name string) error {
 }
 
 // SetEnabled 启停一个服务器。
-//
-// 两种机制分引擎走：omp 用顶层 disabledServers 名单（它压过条目上的 enabled），
-// 其余引擎直接写条目的 enabled。分叉写在这里而不是调用方——
-// 界面不该知道「同一个开关在两个引擎上落在不同的键」。
+// 两种机制分引擎走：omp 用顶层 disabledServers 名单（它压过条目上的 enabled），其余引擎直接写条目的 enabled；
+// 分叉写在这里而不是调用方——界面不该知道「同一个开关在两个引擎上落在不同的键」。
 func SetEnabled(path, name string, enabled bool, useDenyList bool) error {
 	f, err := Read(path)
 	if err != nil {
@@ -291,7 +280,6 @@ func withEnabled(entry Entry, flag *bool) Entry {
 }
 
 // IsEnabled 算出一个服务器的实际启用状态。
-//
 // 优先级（与 omp 的文档一致）：顶层停用名单 > 顶层强制启用名单 > 条目上的 enabled > 默认开。
 // 把这个算在一处，界面就不必自己排这三者的顺序。
 func (f *File) IsEnabled(name string) (enabled bool, byDeny bool) {

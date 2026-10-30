@@ -1,8 +1,6 @@
 // 绑定给前端的系统能力：本地服务地址、对话框、窗控、外部链接。
-//
-// 这些方法由 `wails3 generate bindings` 生成到 frontend/bindings/ 下，
-// 前端通过它们拿端口与令牌；其余一切业务走 HTTP。保持这一层极薄，
-// 少一个绑定方法就少一处需要重新生成的东西。
+// 这些方法由 `wails3 generate bindings` 生成到 frontend/bindings/ 下，前端通过它们
+// 拿端口与令牌，其余一切业务走 HTTP；保持这一层极薄，少一个绑定方法就少一处重新生成。
 package desktop
 
 import (
@@ -29,10 +27,8 @@ type Endpoint struct {
 }
 
 // Endpoint 返回本地服务地址。
-//
-// 它会**等到服务真的在监听**再返回。前端在 WebView 加载完就调这个方法，
-// 而服务器是异步起的——不在这里等，前端必然拿到一个「端口还是 0」的瞬间，
-// 然后把「后端没有启动起来」当成永久失败。
+// 它会**等到服务真的在监听**再返回：前端在 WebView 加载完就调这个方法，而服务器是
+// 异步起的——不在这里等，前端必然拿到一个「端口还是 0」的瞬间，把「后端没有启动起来」当成永久失败。
 func (a *App) Endpoint() (Endpoint, error) {
 	select {
 	case <-a.startDone:
@@ -63,7 +59,6 @@ func (a *App) Endpoint() (Endpoint, error) {
 }
 
 // PickFolder 打开系统目录选择框。
-//
 // v3 的对话框是「配置 → 弹一次」：结果从 PromptForSingleSelection 拿，
 // 取消时返回空串而不是错误（空串就是用户没选，不是失败）。
 func (a *App) PickFolder(defaultDir string) (string, error) {
@@ -80,8 +75,7 @@ func (a *App) PickFolder(defaultDir string) (string, error) {
 }
 
 // PickFiles 打开文件选择框，可多选。返回绝对路径列表。
-//
-// 对话框在应用层调（与 PickFolder 同理），因为只有这里能拿到系统原生对话框。
+// 对话框在应用层调（与 PickFolder 同理），只有这里能拿到系统原生对话框；
 // 取消时返回空列表，不是错误。
 func (a *App) PickFiles(title string) ([]string, error) {
 	if a.app == nil {

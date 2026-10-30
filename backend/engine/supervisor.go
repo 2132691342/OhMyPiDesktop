@@ -1,5 +1,4 @@
 // 监督者：按 (引擎种类, 工作目录) 管理引擎实例，一个键一个进程。
-//
 // cwd 是进程级属性，共进程会让工具写到错的目录；键里带 Kind 是因为同一目录下
 // omp 与 pi 是两个进程，用户在输入框里切引擎切的是「跟哪个进程说话」。
 package engine
@@ -71,9 +70,7 @@ func (e *Engine) lastUseBefore(other *Engine) bool {
 }
 
 // recyclable 判断这个引擎现在能不能安全回收。
-//
-// 两个否决条件：正在流式回答（会打断用户正在看的那一轮）、
-// 正在拉起进程（停掉会留下一个半启动状态的进程）。
+// 两个否决条件：正在流式回答（会打断用户正在看的那一轮）、正在拉起进程（停掉会留下半启动状态的进程）。
 func (e *Engine) recyclable() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -94,11 +91,9 @@ func (e *Engine) Busy() bool {
 	return e.proc != nil && e.runID != ""
 }
 
-// Live 表示进程当前活着，且**不会**为这个问题去拉起一个。
-//
-// 它回答的是「现在跟它说话要不要先等几秒握手」。读会话、列历史这类
-// 只读动作靠它决定「顺手问一次引擎」还是「退回文件投影」——
-// 用 Client() 判断会顺手拉起进程，于是「点开历史会话」变成「等 pi 起 Node」。
+// Live 表示进程当前活着，且不会为这个问题去拉起一个：它回答「现在跟它说话要不要先等几秒握手」。
+// 读会话、列历史这类只读动作靠它决定「顺手问一次引擎」还是「退回文件投影」——
+// 用 Client() 判断会顺手拉起进程，「点开历史会话」会变成「等 pi 起 Node」。
 func (e *Engine) Live() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -131,11 +126,8 @@ func (e *Engine) Subagents() SubagentStore {
 }
 
 // send 走监督者的事件出口：出口可能在装配完成后才注入，不能缓存副本。
-//
-// 每一帧都带上 engine_kind 与 work_dir：两个引擎（以及同一引擎的多个工作目录）
-// 共用同一条 SSE。不带的话，用户切了引擎/目录之后，旧实例仍在推的帧会
-// 被界面当成当前那个的——表现是「切走之后旧会话的正文还在往新会话里跳」。
-// 前端按这两个字段丢弃不属于自己的帧。
+// 每一帧都带上 engine_kind 与 work_dir（两个引擎与多个工作目录共用同一条 SSE）：
+// 不带的话旧实例仍在推的帧会被界面当成当前那个的——「切走之后旧会话的正文还在往新会话里跳」，前端按这两个字段丢弃不属于自己的帧。
 func (e *Engine) send(session, event string, data any) {
 	fn := e.sup.emitter()
 	if fn == nil {
@@ -158,10 +150,8 @@ func (e *Engine) origin() map[string]any {
 }
 
 // mergeOrigin 把身份标记并进载荷。
-//
-// 载荷绝大多数是 map[string]any（事件载荷都是临时构造的），直接写；
-// 遇到其它类型（少数地方传结构体）就跳过——宁可少两个字段，
-// 也不能因为「附不上标记」把整帧弄丢。
+// 载荷绝大多数是 map[string]any（临时构造的），直接写；遇到其它类型（少数地方传结构体）就跳过——
+// 宁可少两个字段，也不能因为「附不上标记」把整帧弄丢。
 func mergeOrigin(data any, stamp map[string]any) any {
 	m, ok := data.(map[string]any)
 	if !ok || m == nil {
@@ -176,23 +166,13 @@ func mergeOrigin(data any, stamp map[string]any) any {
 // Emit 暴露给 Dialect：私有帧要能复用同一条出口。
 func (e *Engine) Emit(session, event string, data any) { e.send(session, event, data) }
 
-// Supervisor 按 (Kind, WorkDir) 管理引擎实例：一个键一个进程。
-//
-// 为什么一个目录一个进程：cwd 是进程级属性，共进程会让工具写到错的目录。
-// 为什么键里带 Kind：同一目录下 omp 与 pi 是两个进程，互不干扰；
-// 用户在输入框里切引擎，切的是「跟哪个进程说话」，不是「换一个目录」。
-// idleTTL 是一个引擎进程空闲多久之后可以被回收。
-//
-// 键是 (引擎, 工作目录)，用户换一个目录就新建一个进程。没有回收的话，
-// 切十次目录就常驻二十个 node 进程，直到退出应用才释放。
-//
-// 取 10 分钟：切走再切回来是常态，回收太激进会让每次切回都重新走一遍握手。
+// Supervisor 按 (Kind, WorkDir) 管理引擎实例：一个键一个进程。cwd 是进程级属性，共进程会让工具写到错的目录；
+// 键里带 Kind 是因为同一目录下 omp 与 pi 是两个进程，用户在输入框里切引擎切的是「跟哪个进程说话」。
+// idleTTL 是一个引擎进程空闲多久之后可以被回收：换一个目录就新建一个进程，没有回收会常驻一堆 node；取 10 分钟——切走再切回是常态，太激进会每次切回都重新握手。
 const idleTTL = 10 * time.Minute
 
 // maxEngines 是同时存活的引擎实例上限。
-//
-// TTL 是「温和的」回收：它只清空闲的。上限是「硬的」兜底——
-// 用户在一分钟内快速切过八个目录时，TTL 还没到但进程已经堆起来了，
+// TTL 是「温和的」回收（只清空闲的），上限是「硬的」兜底——快速切过八个目录时 TTL 还没到但进程已经堆起来，
 // 这时按最久未用淘汰，保证进程数有界。
 const maxEngines = 8
 
@@ -287,12 +267,8 @@ func (s *Supervisor) Engine(kind Kind, workDir string) *Engine {
 }
 
 // evictLocked 在持锁状态下把实例数压到上限以内。
-//
-// 只摘除「能安全停掉的」：正在回答（runID 非空）与正在启动（booting）的永不摘。
-// 能回收的不够时就让它超过上限——宁可多一点进程，也不能把用户正在看的那一轮打断。
-//
-// 不在这里同步调 e.Stop()：那会关 stdin、等进程退出（秒级），
-// 持着 s.mu 做这种事会把所有取引擎的调用堵住。所以只从表里摘除，停进程异步做。
+// 只摘除「能安全停掉的」：正在回答（runID 非空）与正在启动（booting）的永不摘；能回收的不够就让它超过上限——不能打断用户正在看的那轮。
+// 不在这里同步调 e.Stop()（关 stdin、等退出是秒级）：持着 s.mu 会堵住所有取引擎的调用，所以只从表里摘除，停进程异步做。
 func (s *Supervisor) evictLocked() {
 	if len(s.engines) <= maxEngines {
 		return
@@ -333,9 +309,7 @@ func (s *Supervisor) Shutdown() {
 }
 
 // StopAll 关闭所有引擎并清空实例表（退出应用 / 重启引擎前）。
-//
-// 清空实例表是关键：留着的话，退出后这些句柄仍然持有已死的进程引用，
-// 而 map 本身也永远不会被回收。
+// 清空实例表是关键：留着的话，这些句柄仍然持有已死进程的引用，map 本身也永远不会被回收。
 func (s *Supervisor) StopAll() {
 	all := s.running()
 	s.stopAll(all)
@@ -347,9 +321,7 @@ func (s *Supervisor) StopAll() {
 }
 
 // StopKind 只停某一种引擎（换版本 / 换路径后）。
-//
-// 停完要把它们从实例表里摘掉：换引擎路径之后，这些句柄记录的是旧路径的进程，
-// 留着就是僵尸——下次按同一个键取出来的还是它，而它已经连不上新路径了。
+// 停完要把它们从实例表里摘掉：这些句柄记录的是旧路径的进程，留着就是僵尸——下次按同一个键取出来的还是它。
 func (s *Supervisor) StopKind(kind Kind) {
 	all := s.running()
 	hit := make([]*Engine, 0, 2)

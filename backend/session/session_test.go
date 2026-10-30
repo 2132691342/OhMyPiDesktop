@@ -1,10 +1,8 @@
 package session
 
 // 会话层只测读引擎私有文件时静默出错的点：跨引擎等价投影、标题兜底、
-// 未知条目跳过、缓存有界与失效。
-//
-// 这一层读的是引擎的私有格式：引擎加一种条目、挪一个字段，
-// 界面就会少显示一段对话——而那不会报错，只会让用户以为「那轮没聊过」。
+// 未知条目跳过、缓存有界与失效。这一层读的是引擎的私有格式：引擎加一种条目、
+// 挪一个字段，界面就会少显示一段对话——不会报错，只会让用户以为「那轮没聊过」。
 
 import (
 	"os"
@@ -38,7 +36,6 @@ func writeSession(t *testing.T, dir, name string, lines []string) string {
 }
 
 // 跨引擎等价投影：同一段对话，omp/pi 两种日志格式投影出来必须一致。
-//
 // 这是「一套读取代码 + 三点适配」的全部意义：两边投影不一致时，
 // 界面上同一条会话在两个引擎下长得不一样，用户会以为是两回事。
 func TestSessionSnapshotEquivalence(t *testing.T) {
@@ -150,7 +147,6 @@ func TestUsageDefaultsWhenAbsent(t *testing.T) {
 }
 
 // 没有标题条目的会话：拿第一句话当标题。
-//
 // 两个引擎默认都不写 title / session_info，于是整个列表全是「会话 · 模型名」——
 // 一屏十几行同一个字符串，用户认不出哪条是哪个。这一条钉住那条兜底。
 func TestTitleFallsBackToFirstUserMessage(t *testing.T) {
@@ -194,10 +190,8 @@ func TestIndexFileCacheBounded(t *testing.T) {
 	}
 }
 
-// 会话改名 / 删除后必须让该文件缓存失效，否则读到旧标题。
-//
-// 不失效的话，删掉的会话会一直出现在缓存里直到被淘汰，
-// 表现是「明明删了，列表里还在」。
+// 会话改名 / 删除后必须让该文件缓存失效，否则删掉的会话会一直出现在缓存里
+// 直到被淘汰，表现是「明明删了，列表里还在」。
 func TestIndexInvalidate(t *testing.T) {
 	dir := t.TempDir()
 	p := writeSession(t, dir, "a.jsonl", []string{

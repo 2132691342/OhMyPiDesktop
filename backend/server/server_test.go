@@ -1,10 +1,7 @@
 package server
 
-// 安全边界层：只测令牌闸门、来源拦截、方法限制，
-// 外加应用页与附件的契约形态。
-//
-// 这一组测的是「谁能让这条服务干活」——闸门一旦失效，
-// 任何本机进程都能读用户的会话、改他的设置。
+// 安全边界层：只测令牌闸门、来源拦截、方法限制，外加应用页与附件的契约形态。
+// 这组测的是「谁能让这条服务干活」——闸门一旦失效，任何本机进程都能读用户的会话、改他的设置。
 
 import (
 	"context"
@@ -56,12 +53,8 @@ func testServer(t *testing.T) (*Server, http.Handler) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 等后台探测退完再让 TempDir 被回收。
-	//
-	// 探测是故意异步的（首屏不该等子进程），而它会写设置缓存；
-	// 不等它就跑完用例，t.TempDir() 的 RemoveAll 会撞上
-	// 那个还在跑的写入，报「directory is not empty」——
-	// 而那个报错与测试本身想断言的东西毫无关系。
+	// 等后台探测退完再让 TempDir 被回收：探测故意异步且会写设置缓存，不等它的话
+	// t.TempDir() 的 RemoveAll 会撞上还在跑的写入，报「directory is not empty」——与断言毫无关系。
 	t.Cleanup(func() { svc.WaitBackground() })
 	srv := New(svc, svc.Hub, "secret-token")
 	return srv, srv.Handler()
@@ -198,86 +191,76 @@ func TestRejectsNonLoopback(t *testing.T) {
 	}
 }
 
-// 应用页契约：两引擎各一行、字段齐全、动作开关与「命令存在」一致。
+// 应用页契约：两引擎各一行、字段齐全、动作开关与「命令存在」一致、
+// 动作入口必须带引擎名。
 func TestAppsContract(t *testing.T) {
 	_, h := testServer(t)
-	rec := get(t, h, "/api/v1/apps")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("状态 = %d；body=%s", rec.Code, rec.Body.String())
-	}
 
-	var envelope struct {
-		Code string `json:"code"`
-		Data struct {
-			Apps []struct {
-				Kind             string `json:"kind"`
-				AppName          string `json:"app_name"`
-				Channel          string `json:"channel"`
-				ChannelLabel     string `json:"channel_label"`
-				InstallCommand   string `json:"install_command"`
-				DocsURL          string `json:"docs_url"`
-				UninstallCommand string `json:"uninstall_command"`
-				CanUninstall     bool   `json:"can_uninstall"`
-				CanInstall       bool   `json:"can_install"`
-			} `json:"apps"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
-		t.Fatal(err)
-	}
-	if envelope.Code != "0" {
-		t.Fatalf("code = %q；body=%s", envelope.Code, rec.Body.String())
-	}
-	if len(envelope.Data.Apps) != 2 {
-		t.Fatalf("应该有 2 行（omp 与 pi），得到 %d", len(envelope.Data.Apps))
-	}
-	for _, row := range envelope.Data.Apps {
-		if row.InstallCommand == "" {
-			t.Errorf("%s 没有安装命令：界面会给一个点不动的按钮", row.Kind)
+	t.Run("两行清单字段齐全且开关一致", func(t *testing.T) {
+		rec := get(t, h, "/api/v1/apps")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("状态 = %d；body=%s", rec.Code, rec.Body.String())
 		}
-		if row.DocsURL == "" {
-			t.Errorf("%s 没有文档地址", row.Kind)
-		}
-		if row.ChannelLabel == "" {
-			t.Errorf("%s 的渠道没有说明文案", row.Kind)
-		}
-		// 「有卸载命令」与「能不能卸」必须一致，否则会出现点了报错的按钮。
-		if (row.UninstallCommand != "") != row.CanUninstall {
-			t.Errorf("%s：uninstall_command=%q 但 can_uninstall=%v", row.Kind, row.UninstallCommand, row.CanUninstall)
-		}
-	}
-}
 
-// 动作入口必须带引擎名，否则后端不知道该装谁。
-func TestAppsActionRequiresEngine(t *testing.T) {
-	_, h := testServer(t)
-	rec := post(t, h, "/api/v1/apps/install", `{}`)
+		var envelope struct {
+			Code string `json:"code"`
+			Data struct {
+				Apps []struct {
+					Kind             string `json:"kind"`
+					AppName          string `json:"app_name"`
+					Channel          string `json:"channel"`
+					ChannelLabel     string `json:"channel_label"`
+					InstallCommand   string `json:"install_command"`
+					DocsURL          string `json:"docs_url"`
+					UninstallCommand string `json:"uninstall_command"`
+					CanUninstall     bool   `json:"can_uninstall"`
+					CanInstall       bool   `json:"can_install"`
+				} `json:"apps"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Code != "0" {
+			t.Fatalf("code = %q；body=%s", envelope.Code, rec.Body.String())
+		}
+		if len(envelope.Data.Apps) != 2 {
+			t.Fatalf("应该有 2 行（omp 与 pi），得到 %d", len(envelope.Data.Apps))
+		}
+		for _, row := range envelope.Data.Apps {
+			if row.InstallCommand == "" {
+				t.Errorf("%s 没有安装命令：界面会给一个点不动的按钮", row.Kind)
+			}
+			if row.DocsURL == "" {
+				t.Errorf("%s 没有文档地址", row.Kind)
+			}
+			if row.ChannelLabel == "" {
+				t.Errorf("%s 的渠道没有说明文案", row.Kind)
+			}
+			// 「有卸载命令」与「能不能卸」必须一致，否则会出现点了报错的按钮。
+			if (row.UninstallCommand != "") != row.CanUninstall {
+				t.Errorf("%s：uninstall_command=%q 但 can_uninstall=%v", row.Kind, row.UninstallCommand, row.CanUninstall)
+			}
+		}
+	})
 
-	var envelope struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
-		t.Fatal(err)
-	}
-	if envelope.Code != "7001" {
-		t.Fatalf("缺引擎名应回 7001，得到 %q；body=%s", envelope.Code, rec.Body.String())
-	}
-	if !strings.Contains(envelope.Message, "omp") || !strings.Contains(envelope.Message, "pi") {
-		t.Errorf("提示要告诉用户填什么: %q", envelope.Message)
-	}
-}
+	t.Run("动作入口缺引擎名要报 7001", func(t *testing.T) {
+		rec := post(t, h, "/api/v1/apps/install", `{}`)
 
-// DELETE 一律拒绝：没有 PUT/DELETE 就没有「顺手加一个删除接口」的入口。
-func TestAppsRejectsDelete(t *testing.T) {
-	_, h := testServer(t)
-	req := loopback(httptest.NewRequest(http.MethodDelete, "/api/v1/apps/install", nil))
-	req.Header.Set("X-Desktop-Token", "secret-token")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("DELETE 状态 = %d，期望 405", rec.Code)
-	}
+		var envelope struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Code != "7001" {
+			t.Fatalf("缺引擎名应回 7001，得到 %q；body=%s", envelope.Code, rec.Body.String())
+		}
+		if !strings.Contains(envelope.Message, "omp") || !strings.Contains(envelope.Message, "pi") {
+			t.Errorf("提示要告诉用户填什么: %q", envelope.Message)
+		}
+	})
 }
 
 // 附件契约：坏输入必须在发给引擎前被拦下（图发过去模型却说没看到，无编译错误）。

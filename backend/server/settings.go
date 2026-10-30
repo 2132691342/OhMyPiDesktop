@@ -1,9 +1,7 @@
 package server
 
-// 设置与引擎的 handler：设置 KV、工作目录、当前引擎、探测与重启。
-//
-// 这些动作都改「应用自己的状态」，不碰引擎的会话与配置——
-// 后者在 models.go / skills.go 里，因为它们写的是引擎的文件。
+// 设置与引擎的 handler：设置 KV、工作目录、当前引擎、探测与重启。这些动作改「应用自己的状态」，
+// 不碰引擎的会话与配置——后者在 models.go / skills.go 里，它们写的是引擎的文件。
 
 import (
 	"OhMyPiDesktop/backend/engine"

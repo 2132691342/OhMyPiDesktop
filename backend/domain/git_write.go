@@ -112,7 +112,7 @@ type GitPushREQ struct {
 const (
 	// GitForceNone 普通推送：远端有本地没有的提交时会被拒绝
 	GitForceNone = "none"
-	// GitForceLease 带租约的强制推送：远端不再是上次拉取的那个提交就拒绝，只覆盖自己推过的历史
+	// GitForceLease 带租约的强制推送：远端头与上次拉取的不是同一个提交就拒绝，只覆盖自己推过的历史
 	GitForceLease = "lease"
 	// GitForceTrue 无条件强制推送：会静默覆盖别人的提交，必须输分支名确认
 	GitForceTrue = "force"

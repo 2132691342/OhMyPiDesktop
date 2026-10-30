@@ -10,10 +10,8 @@ import (
 	"OhMyPiDesktop/backend/pkg"
 )
 
-// 跑引擎自己的 CLI 取数据（插件列表、扩展列表）。
-//
-// 为什么走 CLI 而不是读包目录：包的落盘布局是引擎私有契约，
-// 今天在 node_modules，明天可能进内容寻址存储。CLI 的输出是它承诺的接口。
+// 跑引擎自己的 CLI 取数据（插件列表、扩展列表）。走 CLI 而不是读包目录：
+// 包的落盘布局是引擎私有契约（今天在 node_modules，明天可能进内容寻址存储），CLI 的输出是它承诺的接口。
 
 // runJSON 跑一条返回 JSON 的 CLI 并解到 out。
 func runJSON(ctx context.Context, exe string, out any, args ...string) error {

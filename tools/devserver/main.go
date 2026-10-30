@@ -1,15 +1,6 @@
-// 开发用：只起后端服务，把地址与令牌打到 stdout，供浏览器直连调试。
-//
-// 用法：
-//
-//	go run ./tools/devserver -token dev
-//
+// 开发用：只起后端服务，把地址与令牌打到 stdout，供浏览器直连调试。用法：go run ./tools/devserver -token dev
 // 端口由服务自选（随机回环端口），启动后会把实际端口与令牌打出来。
-// 它不嵌前端：前端用 npm run dev 起 Vite，然后在浏览器控制台里
-// 设 localStorage 的 omp.dev.port / omp.dev.token 即可直连。
-//
-// 它的用途是「改后端时不用每次重开整个桌面应用」：编译一次、起一次服务、
-// 浏览器刷新就能看到效果。
+// 它不嵌前端：前端用 npm run dev 起 Vite，再在浏览器控制台里设 localStorage 的 omp.dev.port / omp.dev.token 即可直连——改后端时编译一次、起一次服务、浏览器刷新就能看到效果。
 package main
 
 import (

@@ -1,10 +1,7 @@
 package service
 
-// 启动引导：首屏一次拉齐的全部内容。
-//
-// 为什么一次拉齐：首屏要同时知道引擎、设置、布局、会话与技能计数，
-// 分五六个请求会让「界面半亮」的中间态反复出现。探测本身带一分钟缓存，
-// 所以这个接口在第二次之后不再起子进程。
+// 启动引导：首屏一次拉齐的全部内容。首屏要同时知道引擎、设置、布局、会话与技能计数，
+// 分五六个请求会让「界面半亮」的中间态反复出现；探测带一分钟缓存，第二次之后不再起子进程。
 
 import (
 	"context"
@@ -74,10 +71,8 @@ func (a *App) Bootstrap(ctx context.Context) (*Bootstrap, error) {
 			b.Sessions[string(kind)] = len(list)
 			allSessions = append(allSessions, list...)
 		}
-		// 技能数走同一份计数快照，不在这里再扫一次目录。
-		// 之前这里直接调 a.Skills(kind)，它会遍历插件的 node_modules——
-		// 在装了十几个插件的机器上实测要 4.6 秒，而 Health 用的是缓存计数，
-		// 于是「同一个数字在两个接口里不一样」，且首屏白白多等四秒。
+		// 技能数走同一份计数快照，不再扫一次目录：直接调 a.Skills 会遍历插件的 node_modules，
+		// 十几个插件的机器实测 4.6 秒，且与 Health 的缓存计数对不上，首屏还白等四秒。
 		b.Skills[string(kind)] = a.countsOf(kind).skills
 	}
 	b.Workspaces, _ = a.RecentWorkspaces(allSessions)

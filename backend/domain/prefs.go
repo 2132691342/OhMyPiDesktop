@@ -2,9 +2,8 @@
 package domain
 
 // AppPrefsVO 是一次设置页刷新需要的全部内容。
-//
-// 一次拉齐而不是分三个接口：设置页要同时显示「注册表里是什么」与
-// 「数据目录在哪」，分三次请求只会让开关抖三下。
+// 一次拉齐而不是分三个接口：设置页要同时显示「注册表里是什么」与「数据目录在哪」，
+// 分三次请求只会让开关抖三下。
 type AppPrefsVO struct {
 	// Values 是设置 KV 全量（键见 domain.Key*）
 	Values map[string]string `json:"values"`

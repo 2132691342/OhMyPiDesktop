@@ -1,13 +1,8 @@
 package service
 
-// 插件与扩展：列、装、卸。
-//
-// 「列」读引擎自己的登记清单（pi 是 settings.json 的 packages，
-// omp 是 plugins/package.json 的 dependencies），不跑 CLI、不扫
-// node_modules——扫目录会把几百个间接依赖一起当成插件。
-//
-// 「装 / 卸」仍然代跑引擎自己的 CLI：只有引擎知道怎么把包装进它的私有目录、
-// 怎么同步它自己的锁文件。我们自己去改目录会留下「配置说装了、目录里没有」的脏状态。
+// 插件与扩展：列、装、卸。「列」读引擎自己的登记清单（pi 是 settings.json 的 packages，
+// omp 是 plugins/package.json 的 dependencies），不跑 CLI、不扫 node_modules——扫目录会把几百个间接依赖当成插件。
+// 「装 / 卸」代跑引擎自己的 CLI：只有引擎知道怎么装进私有目录、同步锁文件，自己去改目录会留下「配置说装了、目录里没有」的脏状态。
 
 import (
 	"context"
@@ -23,10 +18,8 @@ import (
 
 // ---------------- 插件 / 扩展 ----------------
 
-// PluginList 列出某引擎（或全部）的插件。
-//
-// 两个引擎一起查时并发执行：各自的清单在不同盘上不同目录里，
-// 串行只是让首屏多等一次文件读取。
+// PluginList 列出某引擎（或全部）的插件。两个引擎一起查时并发执行：
+// 各自的清单在不同盘上不同目录里，串行只是让首屏多等一次文件读取。
 func (a *App) PluginList(kind engine.Kind) (*domain.PluginListVO, error) {
 	if kind.Valid() {
 		return a.pluginsOf(kind)
@@ -130,10 +123,8 @@ func (a *App) InstallPlugin(ctx context.Context, kind engine.Kind, source string
 	return out, nil
 }
 
-// UninstallPlugin 卸一个插件/扩展（走引擎 CLI）。
-//
-// 传的是清单里那一行原文而不是裸包名：pi 的 packages 记的是
-// `npm:name@1.2.3`，只给裸名会匹配不到。
+// UninstallPlugin 卸一个插件/扩展（走引擎 CLI）。传清单里那一行原文而不是裸包名：
+// pi 的 packages 记的是 `npm:name@1.2.3`，只给裸名会匹配不到。
 func (a *App) UninstallPlugin(ctx context.Context, kind engine.Kind, source string) (string, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
@@ -152,10 +143,8 @@ func (a *App) UninstallPlugin(ctx context.Context, kind engine.Kind, source stri
 	return out, nil
 }
 
-// pluginArgs 把动作翻成该引擎的 CLI 参数。
-//
-// omp 用 `plugin install`，pi 用 `install` / `remove`（`uninstall` 是 remove 的别名，
-// 两个都能用，这里统一发 remove——它与 pi 帮助里列出的第一个名字一致）。
+// pluginArgs 把动作翻成该引擎的 CLI 参数。omp 用 `plugin install`，pi 用 `install` / `remove`
+// （uninstall 是 remove 的别名，统一发 remove——与 pi 帮助里列出的第一个名字一致）。
 func pluginArgs(kind engine.Kind, action, source string) []string {
 	if kind == engine.KindPi {
 		if action == "uninstall" {

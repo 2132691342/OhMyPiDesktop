@@ -1,15 +1,8 @@
 package engine
 
-// 工具差异的提取与解析。
-//
-// 两个引擎都把差异放在工具结果的 details 里，但格式不同：
-// omp 的 details.diff 是编号差异（@@ 区块头 + "+42|正文"，行号是它自己算的：
-// 删行给旧行号、增行给新行号、上下文行给旧行号）；
-// pi 的 details.diff 是同样的编号差异但用空格分隔（"+42 正文"），
-// 另有一份 details.patch 才是标准 unified diff。
-//
-// 不猜格式：按行首字符判定，再看分隔符是竖线还是空格。
-// 判错的后果是整份差异渲染成一堆乱码，而且用户看不出是界面坏了。
+// 工具差异的提取与解析。两个引擎都把差异放在工具结果的 details 里，但格式不同：omp 的 details.diff 是编号差异（@@ 区块头 + "+42|正文"，行号它自己算：删行给旧行号、增行给新行号、上下文行给旧行号）；
+// pi 是同样的编号差异但用空格分隔（"+42 正文"），另有 details.patch 才是标准 unified diff。
+// 不猜格式：按行首字符判定，再看分隔符是竖线还是空格；判错的后果是整份差异渲染成乱码且用户看不出是界面坏了。
 
 import (
 	"encoding/json"
@@ -28,10 +21,8 @@ const (
 	DiffKindCtx  = domain.DiffLineCtx
 )
 
-// toolDetails 是工具结果里我们关心的那部分。
-//
-// 只声明需要的字段：工具结果的 details 形状每个引擎、每个工具都不一样，
-// 声明得越多，越容易在某个引擎改版时静默失配。
+// toolDetails 是工具结果里我们关心的那部分。只声明需要的字段：
+// details 形状每个引擎、每个工具都不一样，声明得越多越容易在某个引擎改版时静默失配。
 type toolDetails struct {
 	// Diff 编号差异（omp 与 pi 都有）
 	Diff string `json:"diff"`
@@ -44,13 +35,8 @@ type toolDetails struct {
 }
 
 // ExtractToolDiff 从工具结果里取出差异文本与被改动的文件路径。
-//
-// 入参有两种形状：流式帧里 details 嵌在 result 中，历史消息里 details 本身就是
-// 那个对象。只认一种的后果是「刚聊完能看到差异，刷新一下就没了」。
-//
-// patch 优先——它是标准 unified diff，能直接给出新旧行号；
-// 没有 patch 再用 diff——那是编号差异，行号要另算。
-// 两个都空的工具（read / bash / grep）本来就没有差异，返回空不是错误。
+// 入参有两种形状（流式帧里 details 嵌在 result 中、历史消息里 details 本身就是那个对象），只认一种的后果是「刚聊完能看到差异，刷新一下就没了」。
+// patch 优先——它是标准 unified diff，能直接给出新旧行号；没有再用编号差异。两个都空的工具本来就没有差异，返回空不是错误。
 func ExtractToolDiff(result json.RawMessage) (diffText, filePath string) {
 	if len(result) == 0 {
 		return "", ""
@@ -97,9 +83,7 @@ func ExtractToolDiff(result json.RawMessage) (diffText, filePath string) {
 }
 
 // ToolFilePath 从工具参数里取出被改动的文件路径。
-//
-// 为什么要有这个：pi 的 edit 工具把路径放在参数里（details 里没有），
-// 而 omp 把它放在 details.path。两条路都要覆盖——
+// pi 的 edit 工具把路径放在参数里（details 里没有），omp 放在 details.path，两条路都要覆盖——
 // 缺了任何一条，那个引擎的「看工作区」入口就是空的。
 func ToolFilePath(args json.RawMessage) string {
 	if len(args) == 0 {
@@ -118,10 +102,8 @@ func ToolFilePath(args json.RawMessage) string {
 	return a.FilePath
 }
 
-// parseToolDetails 从两种形状里认出工具细节。
-//
-// 判定办法：先按「details 嵌在里面」解一次，解出的对象里没有 diff 字段
-// 就退回「本身就是 details」。
+// parseToolDetails 从两种形状里认出工具细节：先按「details 嵌在里面」解一次，
+// 解出的对象里没有 diff 字段就退回「本身就是 details」。
 func parseToolDetails(raw json.RawMessage) *toolDetails {
 	var wrapped struct {
 		Details *toolDetails `json:"details"`
@@ -140,15 +122,9 @@ func parseToolDetails(raw json.RawMessage) *toolDetails {
 	return &direct
 }
 
-// ParseToolDiff 把差异文本解析成统一的行结构。
-//
-// 两种输入格式：
-//
-//	unified:  @@ -12,7 +12,9 @@  + 新增行 / - 删除行 / 空格 上下文行
-//	numbered: @@ -12,7 +12,9 @@  +42|新增行 / -41|删除行 / 40|上下文行
-//
-// 两种都带 @@ 区块头，所以先认区块头，再按行首字符决定行种类。
-// numbered 格式的正文与行号之间是竖线或空格：竖线是 omp，空格是 pi。
+// ParseToolDiff 把差异文本解析成统一的行结构。两种输入格式都带 @@ 区块头，先认区块头，再按行首字符决定行种类：
+// unified:  @@ -12,7 +12,9 @@  + 新增行 / - 删除行 / 空格 上下文行
+// numbered: @@ -12,7 +12,9 @@  +42|新增行 / -41|删除行 / 40|上下文行；正文与行号之间竖线是 omp，空格是 pi。
 func ParseToolDiff(text string) []domain.DiffLineVO {
 	out := []domain.DiffLineVO{}
 	if text == "" {
@@ -206,11 +182,9 @@ func ParseToolDiff(text string) []domain.DiffLineVO {
 	return out
 }
 
-// isDiffFileHeader 判断这一行是不是 unified diff 的文件头。
-//
-// 文件头有三种形态："--- a/x"、"+++ b/x"、"diff --git a/x b/x"。
+// isDiffFileHeader 判断这一行是不是 unified diff 的文件头（三种形态："--- a/x"、"+++ b/x"、"diff --git a/x b/x"）。
 // 它们都以 - 或 + 开头，不加区分的话会被当成增删行——
-// 于是用户看到文件头被涂成红色与绿色，而那是根本不存在的改动。
+// 用户会看到文件头被涂成红绿两色，而那是根本不存在的改动。
 func isDiffFileHeader(row string) bool {
 	if strings.HasPrefix(row, "diff --git ") {
 		return true

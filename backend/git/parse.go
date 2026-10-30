@@ -1,7 +1,6 @@
 package git
 
 // 解析与执行：porcelain 输出、diff 正文、以及跑 git 的那一层。
-//
 // 解析放在一处的原因：status 与 diff 的路径、编码、非 ASCII 转义规则相同；
 // 两处各写一份的结果是「改了 status 的路径处理，diff 没跟上」。
 

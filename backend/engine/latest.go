@@ -1,13 +1,8 @@
 package engine
 
-// 最新版查询：只回答「上游现在是多少」，不参与装与升级。
-//
-// 两条来源，都是引擎自己发布的地方：
-//   - pi 在 npm 上，问 registry 的 dist-tags.latest；
-//   - omp 的预编译产物由它自己的构建服务发，问 /api/products/omp/latest/<target>。
-//
-// 查不到不是错误：离线、代理、镜像都属正常情况。界面那时只显示本地版本，
-// 不显示「未知」以外的任何判断——把网络问题说成「引擎有问题」是最糟的一种误报。
+// 最新版查询：只回答「上游现在是多少」，不参与装与升级。两条来源都是引擎自己发布的地方：
+// pi 问 npm registry 的 dist-tags.latest，omp 的预编译产物问构建服务 /api/products/omp/latest/<target>。
+// 查不到不是错误（离线、代理、镜像都属正常情况），界面那时只显示本地版本——把网络问题说成「引擎有问题」是最糟的误报。
 
 import (
 	"context"
@@ -54,19 +49,15 @@ type latestCache struct {
 var latestStore = &latestCache{rows: map[Kind]Latest{}}
 
 // SetLatestPersister 注入落盘回调（由 service 装配时提供）。
-//
-// 本包不 import repo：它属于 engine 层，而设置存储属于 repo。
-// 只留一个回调，让上层决定存哪里。
+// 本包不 import repo：它属于 engine 层，而设置存储属于 repo，只留一个回调让上层决定存哪里。
 func SetLatestPersister(fn func(kind Kind, row Latest)) {
 	latestStore.mu.Lock()
 	latestStore.disk = fn
 	latestStore.mu.Unlock()
 }
 
-// SeedLatest 用上次落盘的结论填缓存。
-//
-// 只填一条（版本 + 检查时刻）：它代表「上次我们看的时候是多少」，
-// 而不是「现在是多少」。所以它的 TTL 仍然照算——过期的会重新查，
+// SeedLatest 用上次落盘的结论填缓存，只填一条（版本 + 检查时刻）。
+// 它代表「上次我们看的时候是多少」而不是「现在是多少」，所以 TTL 仍然照算——过期的会重新查，
 // 但首屏拿到的是立即值而不是四秒等待。
 func SeedLatest(kind Kind, row Latest) {
 	latestStore.mu.Lock()
@@ -78,10 +69,8 @@ func SeedLatest(kind Kind, row Latest) {
 }
 
 // fetchLatestFunc 是查上游最新版的实际动作。
-//
-// 抽成变量是为了让测试不必联网：这条路径在应用页首屏上，
-// 真去问 npm registry 与构建服务会让单元测试变成「测网络通不通」——
-// 网络一慢测试就变慢、一断测试就红。
+// 抽成变量是为了让测试不必联网：真去问 npm registry 与构建服务会让单元测试
+// 变成「测网络通不通」——网络一慢测试就变慢、一断测试就红。
 var fetchLatestFunc = fetchLatest
 
 // SetLatestFetcher 换掉查最新版的动作，返回恢复用的函数。
@@ -94,12 +83,8 @@ func SetLatestFetcher(fn func(context.Context, Kind) (string, string)) func() {
 }
 
 // QueryLatest 并发查两个引擎的最新版。fore 为真时忽略缓存。
-//
-// 返回的 map 一定包含两个键：查不到的引擎对应空版本 + 一句原因，
-// 界面据此区分「已是最新」与「没法判断」。
-//
-// background 为真时：缓存里已有值就直接返回它，同时后台补查。
-// 首屏用这个模式——它不该为「上游发版了没」等四秒。
+// 返回的 map 一定包含两个键：查不到的引擎对应空版本 + 一句原因，界面据此区分「已是最新」与「没法判断」。
+// 首屏模式（缓存里已有值就直接返回它，同时后台补查）：首屏不该为「上游发版了没」等四秒。
 func QueryLatest(ctx context.Context, fore bool) map[Kind]Latest {
 	return queryLatest(ctx, fore, false)
 }
@@ -128,11 +113,8 @@ func queryLatest(ctx context.Context, fore, fast bool) map[Kind]Latest {
 }
 
 // latestOf 查一个引擎，优先走缓存。
-//
-// fast 模式（首屏）的语义：**绝不同步等网络**。
-// 有旧值就用旧值 + 后台补查；没旧值就返回空 + 后台查。
-// 界面那时显示的是「还没查到」而不是「卡住 1.5 秒」——
-// 后者会让用户以为应用挂了。
+// fast 模式（首屏）的语义是绝不同步等网络：有旧值就用旧值 + 后台补查，没旧值就返回空 + 后台查。
+// 界面那时显示的是「还没查到」而不是「卡住」——后者会让用户以为应用挂了。
 func latestOf(ctx context.Context, kind Kind, fore, fast bool) Latest {
 	latestStore.mu.Lock()
 	cached, ok := latestStore.rows[kind]
@@ -158,22 +140,17 @@ func latestOf(ctx context.Context, kind Kind, fore, fast bool) Latest {
 	return row
 }
 
-// WarmLatest 在后台预热两个引擎的最新版。
-//
-// 装配阶段调用，不等结果：首次启动时磁盘上没有任何结论，
-// 而首屏的快路径不会同步等网络——预热能让用户进概览页时已经有值。
+// WarmLatest 在后台预热两个引擎的最新版，装配阶段调用，不等结果：
+// 首次启动时磁盘上没有任何结论，而首屏的快路径不会同步等网络——预热能让用户进概览页时已经有值。
 func WarmLatest() {
 	go func() { QueryLatest(context.Background(), false) }()
 }
 
-// refreshing 标记「这个引擎正在后台查」。
-//
-// 没有它的话，首屏那一批请求（Health + Apps + Bootstrap）会给每个引擎
-// 各发一个外网请求——而它们查的是同一个东西。
+// refreshing 标记「这个引擎正在后台查」：没有它，首屏那一批请求（Health + Apps + Bootstrap）
+// 会给每个引擎各发一个外网请求——而它们查的是同一个东西。
 var refreshing sync.Map
 
 // refreshLatest 后台补查一个引擎的最新版。
-//
 // 用独立的 context：调用方那个只在一次请求内有效，而这里的结果要落盘。
 // 同一个引擎同时只允许一个后台查询在跑。
 func refreshLatest(kind Kind) {
@@ -268,10 +245,8 @@ func escapePackage(pkg string) string {
 	return strings.Replace(pkg, "/", "%2f", 1)
 }
 
-// httpGet 是一次带超时的 GET，响应体上限 64 KB。
-//
-// 上限不是为了省内存：上游某个时刻改成返回整份版本清单时，
-// 我们不该把几百 KB 读进内存再丢掉。
+// httpGet 是一次带超时的 GET，响应体上限 64 KB。上限不是为了省内存：
+// 上游某个时刻改成返回整份版本清单时，我们不该把几百 KB 读进内存再丢掉。
 func httpGet(ctx context.Context, url string) ([]byte, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, LatestTimeout)
 	defer cancel()
@@ -302,10 +277,8 @@ func (e *statusError) Error() string {
 	return "上游返回 HTTP " + strconv.Itoa(e.Code)
 }
 
-// readLimited 读 resp.Body，超过上限就截断并返回错误。
-//
-// 截断而不静默丢弃：JSON 被截一半后解析失败，错误会落在「格式不对」上，
-// 而真因是响应太大——两者给用户的下一步完全不同。
+// readLimited 读 resp.Body，超过上限就截断并返回错误。截断而不静默丢弃：
+// JSON 被截一半后解析失败，错误会落在「格式不对」上，而真因是响应太大——两者给用户的下一步完全不同。
 func readLimited(body io.Reader, limit int64) ([]byte, error) {
 	raw, err := io.ReadAll(io.LimitReader(body, limit))
 	if err != nil {

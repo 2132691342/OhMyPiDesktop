@@ -1,7 +1,5 @@
-// 设置页的接口：应用偏好（开机自启 / 恢复会话）、引擎配置原文、数据目录。
-//
-// 与 routes.go 里的 /settings/* 分开：那几个是「设置 KV 本身」，
-// 这里的是「设置背后真正做事」的那一类。
+// 设置页的接口：应用偏好（开机自启 / 恢复会话）、引擎配置原文、数据目录。与 routes.go 里的 /settings/* 分开：
+// 那几个是「设置 KV 本身」，这里的是「设置背后真正做事」的那一类。
 package server
 
 import (
@@ -88,9 +86,7 @@ func (s *Server) rememberSession(c *gin.Context) {
 	})
 }
 
-// configText 按引擎返回它的配置文件原文。
-//
-// file 为空时给「这个引擎最主要的那份」（omp: models.yml，pi: models.json）。
+// configText 按引擎返回它的配置文件原文。file 为空时给「这个引擎最主要的那份」（omp: models.yml，pi: models.json）。
 // 只读不写：写引擎配置有专门的节点级接口，原文编辑会打乱它们的假设。
 func (s *Server) configText(c *gin.Context) {
 	kind := s2kind(query(c, "engine"))

@@ -14,11 +14,8 @@ import (
 )
 
 // 配置读写：models.yml（服务商与模型）、config.yml（其余设置）。
-//
-// 纪律：
-//   - 只改自己掌管的键，绝不整体重写。omp 与用户还在这些文件里写别的键
-//     （modelRoles / presets / 项目级覆盖），整体重写会把它们抹掉。
-//   - YAML 的注释与顺序尽量保留：用 yaml.Node 改键值，而不是先解成 map 再序列化。
+// 纪律：只改自己掌管的键，绝不整体重写——omp 与用户还在这些文件里写别的键（modelRoles / presets / 项目级覆盖），整体重写会把它们抹掉；
+// YAML 的注释与顺序尽量保留：用 yaml.Node 改键值，而不是先解成 map 再序列化。
 
 // ModelsFile 是 models.yml 的解码结果。
 type ModelsFile struct {
@@ -26,8 +23,7 @@ type ModelsFile struct {
 }
 
 // Provider 是一个服务商。
-//
-// yaml 标签对齐 models.yml；json 标签对齐界面契约。两者必须同时给：
+// yaml 标签对齐 models.yml，json 标签对齐界面契约，两者必须同时给：
 // 只给 yaml 的话，前端发来的 base_url 解不到 BaseURL 上（Go 的 JSON 解码不认下划线）。
 type Provider struct {
 	BaseURL string            `yaml:"baseUrl,omitempty" json:"base_url"`
@@ -278,12 +274,8 @@ func toNode(v any) (*yaml.Node, error) {
 }
 
 // MergeProvider 把「界面提交的字段」合并到「磁盘上已有的条目」上。
-//
-// 存在的理由：整体替换节点会把界面表达不了的字段一起抹掉。界面上密钥是打码的、
-// auth 与 headers 根本不展示，所以这三样在提交时必然是空——空不能当成「删除」，
-// 否则用户「什么都没改、只点保存」就把一个能用的服务商弄坏了。
-// 反过来，用户真要清掉密钥，填一个空格再删空也有同样的语义歧义；
-// 这里选择安全一侧：宁可保留，也不静默毁掉凭据。
+// 存在的理由：整体替换节点会把界面表达不了的字段一起抹掉——密钥是打码的、auth 与 headers 不展示，提交时必然是空；
+// 空不能当成「删除」（否则「只点保存」就毁掉能用的服务商），这里选择安全一侧：宁可保留，也不静默毁掉凭据。
 func MergeProvider(prev, next Provider) Provider {
 	if strings.TrimSpace(next.APIKey) == "" {
 		next.APIKey = prev.APIKey

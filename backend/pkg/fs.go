@@ -31,8 +31,7 @@ func NormalizePath(p string) string {
 }
 
 // SafeJoin 把 target 拼到 root 下，并保证结果仍在 root 内。
-//
-// 先 Clean 再比前缀不够：符号链接可以把 /root/link 指到 /etc。
+// 先 Clean 再比前缀不够：符号链接可以把 /root/link 指到 /etc，
 // 所以比较的是两侧的「真实路径」（Windows 上再折叠大小写）。
 func SafeJoin(root, target string) (string, error) {
 	if strings.TrimSpace(root) == "" {

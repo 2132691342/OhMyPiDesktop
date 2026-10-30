@@ -1,7 +1,6 @@
 // 引擎配置文件的原文读取：设置页要能让人看到「这个引擎到底读的是哪份文件」。
-//
-// 只读不写。写引擎配置有节点级接口（ompcfg / picfg），原文编辑会打乱它们的假设：
-// 那两套读写的正确性建立在「只改自己掌管的那几个键」上。
+// 只读不写：写引擎配置有节点级接口（ompcfg / picfg），它们的正确性建立在「只改自己掌管的那几个键」上，
+// 原文编辑会打乱这个假设。
 
 package service
 
@@ -16,10 +15,8 @@ import (
 	"OhMyPiDesktop/backend/pkg"
 )
 
-// configTextLimit 是单次返回的字节上限。
-//
-// 引擎配置一般几 KB；上限存在的理由只有一个：用户误点了一个几十 MB 的文件时
-// 不要把界面卡死。
+// configTextLimit 是单次返回的字节上限。引擎配置一般几 KB；上限只有一个理由：
+// 用户误点几十 MB 的文件时不要把界面卡死。
 const configTextLimit = 512 * 1024
 
 // configFile 是一个候选配置文件：路径 + 它是什么。
@@ -40,9 +37,7 @@ type ConfigTextVO struct {
 	Found bool `json:"found"`
 }
 
-// ConfigText 读一份引擎配置的原文。
-//
-// file 为空时读该引擎的主配置文件；给了 file 时必须是 ConfigFiles 列出来的那些之一——
+// ConfigText 读一份引擎配置的原文。file 为空读主配置文件；给了 file 必须是 ConfigFiles 列出的之一——
 // 否则就成了一个任意文件读取接口。
 func (a *App) ConfigText(kind engine.Kind, file string) (*ConfigTextVO, error) {
 	layout, err := a.Layout(kind)
@@ -77,9 +72,7 @@ func (a *App) ConfigFiles(kind engine.Kind) (*domain.ConfigFilesVO, error) {
 	return out, nil
 }
 
-// configCandidates 按引擎罗列它的配置文件。
-//
-// 顺序即界面里的顺序：主配置（服务商与模型）在最前，那是最常被打开的一份。
+// configCandidates 按引擎罗列它的配置文件。顺序即界面顺序：主配置（服务商与模型）最常被打开，排最前。
 // 凭据文件不在这张表里——界面上不该有「一键看密钥」的入口。
 func configCandidates(kind engine.Kind, layout env.Layout) []configFile {
 	mcp := filepath.Join(layout.Agent, "mcp.json")
@@ -110,10 +103,8 @@ func inCandidates(path string, allowed []configFile) bool {
 	return false
 }
 
-// readConfigText 读文件并按上限截断。
-//
-// 文件不存在返回 Found=false 而不是错误：「还没生成过」是首次使用的正常状态，
-// 报成错误会让设置页在干净机器上先红一片。
+// readConfigText 读文件并按上限截断。文件不存在返回 Found=false 而不是错误：
+// 「还没生成过」是首次使用的正常状态，报成错误会让设置页在干净机器上先红一片。
 func readConfigText(path string) (*ConfigTextVO, error) {
 	vo := &ConfigTextVO{FilePath: path}
 	st, err := os.Stat(path)

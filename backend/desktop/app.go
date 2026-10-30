@@ -1,8 +1,6 @@
 // Package desktop 是 Wails 外壳：窗口、托盘、单实例、绑定给前端的系统能力。
-//
-// 边界：本包之外（backend/ 全部）不知道 Wails 存在。业务只通过回环 HTTP 与
-// 前端说话，这里只提供「界面外面的那一层」——端口、目录选择框、窗控、托盘。
-// 这样换桌面框架版本时，业务层一行都不用改，也仍然能在没有 WebView 的机器上跑测试。
+// 边界：本包之外（backend/ 全部）不知道 Wails 存在，业务只通过回环 HTTP 与前端说话，
+// 这里只提供「界面外面的那一层」——端口、目录选择框、窗控、托盘。
 package desktop
 
 import (
@@ -89,11 +87,9 @@ func Run(opts Options) error {
 		},
 	})
 
-	// 建窗尺寸要按**屏幕缩放比**放大后再声明。
-	//
-	// Wails v3.0.0 把 Width/Height 当物理像素用（实测 200% 缩放下声明 800
-	// 得到 400 的 CSS 空间，界面被放大一倍）。想要 800 逻辑像素就得声明
-	// 800×缩放比。同时不能超过屏幕可用区，否则高度会被系统裁掉。
+	// 建窗尺寸要按**屏幕缩放比**放大后再声明：Wails v3.0.0 把 Width/Height 当
+	// 物理像素用（200% 缩放下声明 800 得到 400 的 CSS 空间），要 800 逻辑像素
+	// 就得声明 800×缩放比，且不能超过屏幕可用区，否则高度会被系统裁掉。
 	winWidth, winHeight := windowPhysicalSize()
 
 	win := a.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -103,17 +99,12 @@ func Run(opts Options) error {
 		Height: winHeight,
 		// 无边框：标题栏由前端自绘，窗口位置与尺寸才与界面一致。
 		Frameless: true,
-		// 初始位置在屏幕正中。
-		//
-		// 不设时 Wails 走系统的默认位置，而那个位置在 Windows 上是「右上角」
-		//（沿用上一个窗口的级联位置，首次启动时靠屏幕右上角）。
-		// 用户每次启动都要拖一下才能用——这不是审美问题，是每次都要多做一个动作。
+		// 初始位置在屏幕正中：不设时 Windows 走级联默认位置，首次启动时窗口
+		// 靠屏幕右上角，用户每次启动都要拖一下才能用。
 		InitialPosition: application.WindowCentered,
-		// 不设 MinWidth / MinHeight。
-		//
-		// WM_GETMINMAXINFO 里的最小尺寸按窗口 DPI 换算，与上面声明的物理尺寸
-		// 是两个基准；两者不一致时窗口会被系统强行撑大。布局尺寸由前端负责：
-		// .shell-main 是容器查询锚点，窄窗口下侧栏与三栏都会收窄。
+		// 不设 MinWidth / MinHeight：WM_GETMINMAXINFO 的最小尺寸按窗口 DPI 换算，
+		// 与上面声明的物理尺寸基准不一致时窗口会被系统强行撑大。布局收窄由前端负责，
+		// .shell-main 是容器查询锚点。
 		BackgroundColour: application.NewRGB(248, 250, 252),
 		URL:              "/",
 		// 建窗时不显示：装配阶段显形会让用户看到一帧白屏，而且那时窗口还没初始化完。
@@ -126,20 +117,16 @@ func Run(opts Options) error {
 	app.win = win
 	app.app = a
 
-	// 关窗行为可配：收托盘（默认）或直接退出。
-	//
-	// 之前的实现固定收托盘，于是“点×没反应”是用户最常抱怨的一条。
-	// 收托盘仍然是有用的默认（正在跑的对话不该被一键弄死），
-	// 但用户必须能关掉它，而且第一次收托盘要告诉他“我还在”。
+	// 关窗行为可配：收托盘（默认）或直接退出。收托盘是默认（正在跑的对话不该
+	// 被一键弄死），但用户必须能关掉它，第一次收托盘要告诉他“我还在”。
 	// e.Cancel() 是 v3 的拦截方式——返回 false 不是拦截（v2 才是）。
 	win.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		if app.quitting.Load() {
 			return
 		}
 		if app.closeAction() == service.CloseActionQuit {
-			// 关窗即退出。注意不能只置标志就放行：
-			// v3 在窗口关闭后会先把窗口从表里摘除，而托盘还挂着——
-			// 只剩托盘时消息循环不会自己结束，进程就“关不掉”了。
+			// 关窗即退出。不能只置标志就放行：窗口关闭后托盘还挂着，
+			// 只剩托盘时消息循环不会自己结束，进程就“关不掉”；
 			// 所以拦截这次关闭，改走主动退出（requestQuit 会走完整 cleanup）。
 			e.Cancel()
 			app.requestQuit()
@@ -165,16 +152,12 @@ func Run(opts Options) error {
 }
 
 // windowPhysicalSize 算出建窗时要声明的物理像素尺寸。
-//
 // 逻辑尺寸 800×600 是设计目标（CSS 像素）；Wails v3.0.0 把它们当物理像素用，
-// 所以要乘缩放比。同时不能超出屏幕可用区——超出部分会被系统裁掉，
-// 表现出来是「窗口比预期矮一截」。
+// 所以要乘缩放比，且不能超出屏幕可用区——超出部分会被系统裁掉。
 func windowPhysicalSize() (int, int) {
 	// 宽高都要乘缩放比：Wails v3.0.0 把 Width/Height 当物理像素直接用，
-	// 不声明缩放就会在 200% 的屏幕上得到一半的 CSS 空间。
-	//
-	// 高度乘完可能超出工作区（实测 1200 被系统裁到 915），那是建窗时的临时限制；
-	// Ready() 里会再按目标尺寸设一次，那条路径不受这个限制。
+	// 不声明缩放就会在 200% 的屏幕上得到一半的 CSS 空间。高度乘完可能超出
+	// 工作区（实测 1200 被裁到 915），Ready() 里会再按目标尺寸设一次。
 	scale := displayScale()
 	width := windowLogicalWidth * scale
 	height := windowLogicalHeight * scale
@@ -182,8 +165,7 @@ func windowPhysicalSize() (int, int) {
 }
 
 // App 是 Wails 绑定面：只暴露系统能力，业务全走本地 HTTP。
-//
-// 为什么不把 gin 的 handler 嵌进来：嵌入会把它们的导出方法一起绑成
+// 不把 gin 的 handler 嵌进来：嵌入会把它们的导出方法一起绑成
 // 前端永远调不通的 JS 方法（签名带 *gin.Context）。
 type App struct {
 	version string
@@ -236,15 +218,8 @@ func (a *App) startup(ctx context.Context) {
 }
 
 // centerOnPrimaryScreen 把窗口放到主屏工作区正中。
-//
-// 不用 Wails 的 Center()：它在 Windows 上走 CenterWindow，而那个实现
-// 用 GetClientRect 取尺寸、用 GetMonitorInfoForWindow 取监视器，
-// 对一个「Hidden 小尺寸建窗、随后又被 SetSize 改过」的无边框窗口，
-// 两者基准不一致（客户区 vs 窗口区），结果会偏。这里直接用主屏工作区
-// 与最终尺寸算，两个量都是我们自己定的，不会对不上。
-//
-// 屏幕信息在建窗之前是不可用的（GetPrimary 返回 nil），所以这个动作
-// 必须在 Ready() 里做；拿不到屏幕信息就退回 Wails 的 Center()。
+// 不用 Wails 的 Center()：它用 GetClientRect（客户区）取尺寸、GetMonitorInfoForWindow 取监视器，
+// 对 Hidden 建窗后又被 SetSize 改过的无边框窗口两基准不一致会偏；屏幕信息建窗前不可用（GetPrimary 返回 nil）。
 func (a *App) centerOnPrimaryScreen() {
 	if a.win == nil {
 		return
@@ -264,12 +239,8 @@ func (a *App) centerOnPrimaryScreen() {
 }
 
 // Ready 由前端在首屏渲染完后调用，用来把隐藏的窗口显示出来。
-//
-// 为什么显示窗口的时机在这里而不是装配完成时：v3 把建窗推迟到主循环的
-// pendingRun，ServiceStartup 执行时窗口还不存在。此刻调 Show() 只会走
-// 「先建窗、再 return」那条分支——窗口建好了却仍然隐藏；紧随其后的 Focus()
-// 还会踩到尚未初始化的 WebView2 controller，直接 panic。
-// 等前端把首屏画完再显示：两个问题一起消失，顺带没有白屏。
+// 不能在装配完成时显示：v3 把建窗推迟到主循环 pendingRun，ServiceStartup 执行时
+// 窗口还不存在，Show() 只会建窗仍隐藏，随后的 Focus() 会踩到未初始化的 WebView2 controller 而 panic。
 func (a *App) Ready() {
 	// 前端每次热重载都会再调一次。
 	if a.revealed.Swap(true) {
@@ -332,9 +303,7 @@ func (a *App) onSecondInstance(data application.SecondInstanceData) {
 }
 
 // showWindow 把窗口带到前台：显示 + 还原 + 聚焦。
-//
-// 三步缺一不可：窗口可能在隐藏、最小化、最大化三种状态中的任意一种，
-// 只做一半唤不回来。
+// 三步缺一不可：窗口可能在隐藏、最小化、最大化三种状态中的任意一种，只做一半唤不回来。
 func (a *App) showWindow() {
 	if a.win == nil {
 		return
@@ -360,10 +329,8 @@ func (a *App) closeAction() string {
 }
 
 // askCloseDecision 请求界面就「关闭时做什么」做一次选择。
-//
-// 为什么走事件而不是系统通知：这个版本的 Wails 没有通知 API，
-// 而窗口已经藏起来了——在隐藏的窗口上画弹层用户看不到。
-// 所以先不藏窗口，发一帧事件让界面弹一个选择框，选完再执行。
+// 走事件而不是系统通知：Wails 没有通知 API，且窗口已隐藏、在隐藏窗口上画弹层
+// 用户看不到；所以先不藏窗口，发一帧事件让界面弹选择框，选完再执行。
 func (a *App) askCloseDecision() {
 	if a.hub == nil {
 		a.toTray()
@@ -375,9 +342,8 @@ func (a *App) askCloseDecision() {
 }
 
 // ApplyCloseDecision 执行界面对「关窗」的选择。
-//
-// 它是窗口层的动作（隐藏 / 退出都不是业务），所以住在这里而不是 service。
-// remember 为真时把选择写进设置，下次不再问。
+// 它是窗口层的动作（隐藏 / 退出都不是业务），所以住在这里而不是 service；
+// remember 为真时把选择写进设置，之后直接按选择执行。
 func (a *App) applyCloseDecision(action string, remember bool) error {
 	if action != service.CloseActionQuit {
 		action = service.CloseActionTray
@@ -400,14 +366,9 @@ func (a *App) applyCloseDecision(action string, remember bool) error {
 	return nil
 }
 
-// shutdown 退出前的收尾。
-//
-// 它是 Wails 的 OnShutdown 回调，跑在**主线程**上（InvokeSync）：
-// 这里每多停一毫秒，用户看到的就是「点了退出但窗口还在」。
-// 所以两件事必须做对：
-//  1. 先停回收协程（否则它会与 StopAll 抢锁、并试图停已停的引擎）；
-//  2. 停引擎时并发做，并给一个统一短超时——之前是串行 Stop(5s)，
-//     开过三个目录就是十五秒，表现出来就是「退不掉」。
+// shutdown 退出前的收尾，是 Wails 的 OnShutdown 回调，跑在**主线程**上（InvokeSync），
+// 每多停一毫秒用户看到的就是「点了退出但窗口还在」。所以要先停回收协程
+// （否则它会与 StopAll 抢锁、并试图停已停的引擎）；停引擎必须并发做并给统一短超时，否则「退不掉」。
 func (a *App) shutdown() {
 	if a.svc != nil {
 		a.svc.Engine.Shutdown()

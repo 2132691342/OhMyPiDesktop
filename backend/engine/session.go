@@ -47,9 +47,8 @@ func (e *Engine) NewSession(ctx context.Context) error {
 }
 
 // afterSessionBound 在会话换了之后清掉随会话存活的投影。
-//
-// 引擎内部在 new/switch/fork 成功后会 clear() 子代理 roster，并把旧 id
-// 放进墓碑表、丢弃其后的帧。我们不清就会显示「已经消失的子代理还挂着」。
+// 引擎内部在 new/switch/fork 成功后会 clear() 子代理 roster，并把旧 id 放进墓碑表、丢弃其后的帧；
+// 我们不清就会显示「已经消失的子代理还挂着」。
 func (e *Engine) afterSessionBound() {
 	e.tr.Reset()
 	if e.subs != nil {
@@ -109,11 +108,9 @@ func (e *Engine) Messages(ctx context.Context) ([]json.RawMessage, error) {
 	return out.Messages, nil
 }
 
-// CachedSessionFile 只读本地缓存的会话文件，**不发 RPC、不拉起进程**。
-//
-// 与 CurrentSessionFile 的分工：需要绝对正确的写路径（发消息、删会话）用它；
-// 只需要「要不要切一下」的判断用这个——那里为空串最多多切一次，
-// 而多切一次远比「为了判断而拉起一个 pi 进程（3 秒）」便宜。
+// CachedSessionFile 只读本地缓存的会话文件，不发 RPC、不拉起进程。
+// 与 CurrentSessionFile 的分工：需要绝对正确写路径的（发消息、删会话）用它；
+// 只判断「要不要切一下」的用这个——那里为空串最多多切一次，远比拉起一个 pi 进程（3 秒）便宜。
 func (e *Engine) CachedSessionFile() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -121,13 +118,8 @@ func (e *Engine) CachedSessionFile() string {
 }
 
 // CurrentSessionFile 返回当前会话文件路径。
-//
-// 优先读本地缓存：State() 与每次会话绑定后都会更新它，而调用它的地方
-// （发消息、删会话、改名）全在热路径上——每次发消息前多一次 get_state
-// 往返是纯浪费。
-//
-// 缓存为空时退回一次 RPC：刚拉起进程、还没问过引擎的时候，
-// 正确性优先于省那一次往返。宁可慢一次，也不能把消息发到错的会话。
+// 优先读本地缓存（State() 与每次会话绑定后都会更新它，调用方全在热路径上，多一次 get_state 往返是纯浪费）。
+// 缓存为空时退回一次 RPC：正确性优先于省那一次往返，宁可慢一次也不能把消息发到错的会话。
 func (e *Engine) CurrentSessionFile() string {
 	e.mu.Lock()
 	cached := e.sessionFile
@@ -164,9 +156,7 @@ func (e *Engine) SetSessionName(ctx context.Context, name string) error {
 }
 
 // Prompt 发一轮提问。返回 runID，界面据此把事件归到这一轮。
-//
-// payload 里的图片直接进引擎的 images 字段：这是唯一能传二进制的通道，
-// 模型不支持图片时由 service 提前拦住，不靠引擎报错。
+// payload 里的图片直接进引擎的 images 字段：这是唯一能传二进制的通道，模型不支持时由 service 提前拦住，不靠引擎报错。
 func (e *Engine) Prompt(ctx context.Context, payload PromptPayload) (string, error) {
 	p, err := e.Client(ctx)
 	if err != nil {
@@ -226,7 +216,6 @@ func (e *Engine) FollowUp(ctx context.Context, payload PromptPayload) error {
 }
 
 // ClearQueue 一次性清空排队消息。
-//
 // 只有 pi 有 clear_queue；omp 的命令表里没有这条（它只提供逐条移除），
 // 所以能力由 Caps.QueueClear 表达，界面按 caps 隐藏而不是发一个必然失败的调用。
 func (e *Engine) ClearQueue(ctx context.Context) error {

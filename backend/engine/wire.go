@@ -3,10 +3,8 @@ package engine
 import "encoding/json"
 
 // 两引擎共有的 RPC 视图类型。
-//
-// 字段名一律取引擎原始形态（camelCase）：协议是引擎的私有契约，改名就等于
-// 自造第二套 schema，引擎一升级就对不上。界面拿到的字段名由 ChatState 之类
-// 的投影类型决定，不在这里翻译。
+// 字段名一律取引擎原始形态（camelCase）：协议是引擎的私有契约，改名就等于自造第二套 schema，引擎一升级就对不上。
+// 界面拿到的字段名由 ChatState 之类的投影类型决定，不在这里翻译。
 
 // Model 是引擎报上来的模型描述（只取界面要显示的字段）。
 type Model struct {
@@ -28,9 +26,8 @@ type Model struct {
 }
 
 // PromptPayload 是一轮对话要发给引擎的全部内容。
-//
-// 两个引擎的 prompt 命令形状相同：message 是正文，images 是图片数组，
-// 每张图片是 {type,data,mimeType}。图片只能走这条路——没有别的字段能传二进制。
+// 两个引擎的 prompt 命令形状相同：message 是正文，images 是图片数组（每张 {type,data,mimeType}）——
+// 图片只能走这条路，没有别的字段能传二进制。
 type PromptPayload struct {
 	// Message 正文（@ 引用的文件清单也拼在这里）
 	Message string `json:"message"`
@@ -70,9 +67,7 @@ type ContextUsage struct {
 }
 
 // SessionState 是 get_state 的视图面（只解界面用得到的键）。
-//
-// 两家共有的键都收在这里；omp 独有的键（tokensPerSecond / queuedMessages /
-// contextUsage / todoPhases）由 omp 侧用私有结构再取一次。
+// 两家共有的键都收在这里；omp 独有的键（tokensPerSecond / queuedMessages / contextUsage / todoPhases）由 omp 侧用私有结构再取一次。
 type SessionState struct {
 	Model           *Model            `json:"model"`
 	ThinkingLevel   string            `json:"thinkingLevel"`
@@ -181,7 +176,6 @@ type Message struct {
 }
 
 // SlashCommand 是引擎报上来的可用命令。
-//
 // omp 的 source 是 builtin/extension/skill，pi 是 extension/prompt/skill，
 // 且 pi 的技能命令带 `skill:` 前缀——两者都原样透出，界面按前缀染色。
 type SlashCommand struct {
