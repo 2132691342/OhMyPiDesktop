@@ -96,7 +96,7 @@ button {
 }
 
 .omp-btn:hover:not(:disabled):not(.is-loading) {
-  transform: scale(1.04);
+  transform: scale(var(--omp-press-hover));
   background: var(--btn-bg-hover);
   border-color: var(--omp-brand-2);
   color: var(--omp-brand);
@@ -104,7 +104,7 @@ button {
 }
 
 .omp-btn:active:not(:disabled):not(.is-loading) {
-  transform: scale(0.95);
+  transform: scale(var(--omp-press-active));
   background: var(--omp-brand-soft);
   border-color: var(--omp-brand);
   transition-duration: 60ms;
@@ -123,12 +123,16 @@ button {
 }
 
 /* 加载态：转圈 + 文字保留 + 尺寸锁定。锁尺寸是关键：
-   否则转圈一出现按钮变宽，整排控件跟着跳。 */
+   否则转圈一出现按钮变宽，整排控件跟着跳。
+
+   pointer-events: none 也是必需的：转圈时再点一下会发出第二个请求，
+   而用户看到的只是「我点了一下」——两次比一次更慢，也更难看出哪一次成了。 */
 .omp-btn.is-loading {
   cursor: progress;
   transform: none;
   opacity: 0.85;
   padding-left: var(--omp-sp-8);
+  pointer-events: none;
 }
 
 .omp-btn.is-loading::before {
@@ -438,10 +442,10 @@ textarea.omp-input {
     box-shadow var(--omp-dur-fast) var(--omp-ease);
 }
 .omp-pressable:hover:not(:disabled):not(.is-loading):not(.is-static) {
-  transform: scale(1.04);
+  transform: scale(var(--omp-press-hover));
 }
 .omp-pressable:active:not(:disabled):not(.is-loading):not(.is-static) {
-  transform: scale(0.95);
+  transform: scale(var(--omp-press-active));
   transition-duration: 60ms;
 }
 .omp-pressable:disabled,
@@ -449,6 +453,9 @@ textarea.omp-input {
   transform: none;
   opacity: 0.45;
   cursor: not-allowed;
+}
+.omp-pressable.is-loading {
+  pointer-events: none;
 }
 
 /* 整行元素：只缩不放。行的两个变体共用这一份缩放刻度——
@@ -463,7 +470,7 @@ textarea.omp-input {
 }
 .omp-pressable-row:active:not(:disabled),
 .omp-row-click:active {
-  transform: scale(0.985);
+  transform: scale(var(--omp-press-row-active));
 }
 
 /* 文字按钮：不缩放（会带动整行文字抖动），只换色 */

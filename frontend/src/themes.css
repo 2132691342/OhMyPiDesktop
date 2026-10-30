@@ -120,6 +120,15 @@
   --omp-ease: cubic-bezier(0.2, 0.6, 0.3, 1);
   --omp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* 可按压元素的缩放三档。全站只在这里定义一次：
+     组件复用令牌，不自己写 scale 数值——
+     十几处各写一个的结果是有人改了十一处、漏了一处，
+     而漏的那一处就是「点了没反应」的观感来源。 */
+  --omp-press-hover: 1.04;
+  --omp-press-active: 0.95;
+  /* 整行元素（行宽 100%）只缩不放：放大会溢出被裁 */
+  --omp-press-row-active: 0.985;
+
   --omp-z-panel: 20;
   --omp-z-pop: 60;
   --omp-z-modal: 80;
