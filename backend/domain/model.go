@@ -26,18 +26,20 @@ const (
 	KeyFontScale      = "ui.font_scale"
 	KeyReduceMotion   = "ui.reduce_motion"
 	// KeyCloseAction 是「点窗口关闭按钮时做什么」：tray（默认）/ quit。
-	//
-	// 为什么要可配：关窗静默收托盘在第一次用时看起来就是「关不掉」。
-	// 默认收托盘是为了不丢正在跑的对话，但用户必须能改成直接退。
+	// 可配的原因：关窗静默收托盘第一次用时看起来就是「关不掉」；默认收托盘
+	// 是为了不丢正在跑的对话，但用户必须能改成直接退。
 	KeyCloseAction = "app.close_action"
 	// KeyTrayHintShown 记录「收托盘」的首次提示是否已经看过（1 / 0）。
 	KeyTrayHintShown = "app.tray_hint_shown"
+	// KeyHiddenTurns 是「界面上隐藏了哪些消息轮次」的账本
+	// （JSON：会话文件路径 → hid 列表）。它是界面自己的记忆而不是引擎的：
+	// 引擎的会话文件与上下文一个字都不动，历史投影按这本账把对应轮次从返回里摘掉。
+	KeyHiddenTurns = "app.hidden_turns"
 )
 
 // RecentWorkspaceMax 最近工作目录的保留条数。
-//
-// 上限存在的理由不是省空间：超过一屏的「最近」就不再是快捷方式，
-// 而变成第二份需要浏览的列表。12 条在设置页里刚好一屏出头。
+// 上限存在的理由不是省空间：超过一屏的「最近」就成了第二份需要浏览的列表，
+// 12 条在设置页里刚好一屏出头。
 const RecentWorkspaceMax = 12
 
 // WorkspaceRow 是最近用过的工作目录。
@@ -62,9 +64,8 @@ type ProvidersView struct {
 
 // ProviderView 是单个服务商的展示形态（密钥已打码）。
 type ProviderView struct {
-	// EngineKind 这条服务商属于哪个引擎（omp / pi）
-	//
-	// 两边的配置文件完全独立，同一个服务商名可以在两边各有一份。
+	// EngineKind 这条服务商属于哪个引擎（omp / pi）。
+	// 两边的配置文件完全独立，同一个服务商名可以在两边各有一份，
 	// 界面在「全部」作用域下靠这个字段分组与路由写操作。
 	EngineKind string `json:"engine_kind"`
 	// ProviderName 服务商名，也是配置文件里那个键

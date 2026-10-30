@@ -1,12 +1,8 @@
 package server
 
-// 路径表：/api/v1/{resource}/{action}。动作段在最后，写操作一律 POST。
-//
-// 引擎维度统一用 query/body 的 `engine` 字段（omp / pi），省略即「当前选中的那个」。
-// 不按引擎拆路径：界面只有一份代码，拆路径会让每个调用点都多一个 if。
-//
-// 这张表是全站唯一的路由声明；handler 按域分在同目录的 settings.go /
-// chat.go / models.go / skills.go 里，一处只回答一个问题。
+// 路径表：/api/v1/{resource}/{action}。动作段在最后，写操作一律 POST。引擎维度统一用 query/body 的
+// `engine` 字段（omp / pi），省略即「当前选中的那个」；不按引擎拆路径，拆了每个调用点都多一个 if。
+// 这是全站唯一的路由声明；handler 按域分在同目录各文件里，一处只回答一个问题。
 
 import (
 	"OhMyPiDesktop/backend/engine"
@@ -14,10 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// routes 是路径表。约定：/api/v1/{resource}/{action}，动作段在最后。
-//
-// 引擎维度统一用 query/body 的 `engine` 字段（omp / pi），省略即「当前选中的那个」。
-// 不按引擎拆路径：界面只有一份代码，拆路径会让每个调用点都多一个 if。
+// routes 是路径表。约定：/api/v1/{resource}/{action}，动作段在最后。引擎维度统一用 query/body 的
+// `engine` 字段（omp / pi），省略即「当前选中的那个」；不按引擎拆路径，拆了每个调用点都多一个 if。
 func (s *Server) routes(api *gin.RouterGroup) {
 	// 引导与设置
 	api.GET("/bootstrap", func(c *gin.Context) { s.run(c, func(ctx *gin.Context) (any, error) { return s.svc.Bootstrap(ctx) }) })
@@ -63,6 +57,10 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.POST("/chat/model", s.setModel)
 	api.POST("/chat/thinking", s.setThinking)
 	api.POST("/chat/autocompact", s.setAutoCompaction)
+
+	// 消息隐藏：界面上「删除一轮」的两个方向（引擎账本不动，见 service/hidden.go）
+	api.POST("/messages/hide", s.hideTurn)
+	api.POST("/messages/unhide", s.unhideTurn)
 
 	// 子代理（仅 omp）
 	api.GET("/agents", s.agents)

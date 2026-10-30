@@ -5,6 +5,9 @@
 // （加模型、删模型、改能力勾选），而那些都只在弹窗打开期间存在。
 // 放在父组件里会让「列表状态」和「正在编辑的这一份」挤在一起。
 //
+// 拉回来的上游清单渲染成可点选的 chip 而不是直接塞进表里：
+// 一次拉回几十个 id 时用户通常只要其中几个，点选比逐行删快得多。
+//
 // 两个勾选项的语义：
 //   - 推理（R）：勾上才把 reasoning 写进配置。默认不写——
 //     给非推理模型打开它会让上游报错。
@@ -13,6 +16,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
+import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from '@/composables/useProviderForm'
 import type { ModelEntry } from '@/types/api'
 
 /** 草稿形态：与 ProviderView 对齐，但密钥是可以改的空串而不是掩码。 */
@@ -32,6 +36,8 @@ const props = defineProps<{
   saving: boolean
   /** 正在拉上游清单（true 表示按钮转圈） */
   fetching: boolean
+  /** 最近一次拉回来的上游清单（弹窗渲染成 chip） */
+  fetched: ModelEntry[]
   apiOptions: string[]
 }>()
 
@@ -48,6 +54,9 @@ const open = computed({
   set: (v: boolean) => emit('update:modelValue', v),
 })
 
+// 跟随全局视口缩放：小窗口里弹窗也跟着收，不会顶出屏幕
+const dialogWidth = 'calc(760px * var(--omp-vw-scale))'
+
 /** 名字在编辑时不可改：它是配置里的键，改了等于新建一条。 */
 const nameLocked = computed(() => Boolean(props.editing))
 
@@ -56,8 +65,8 @@ function addModel(): void {
   props.form.models.push({
     model_id: '',
     model_name: '',
-    context_window: 128000,
-    max_tokens: 8192,
+    context_window: DEFAULT_CONTEXT_WINDOW,
+    max_tokens: DEFAULT_MAX_TOKENS,
     reasoning: false,
     input: ['text'],
   })
@@ -65,6 +74,31 @@ function addModel(): void {
 
 function removeModel(index: number): void {
   props.form.models.splice(index, 1)
+}
+
+/** 这个拉回来的模型在不在草稿里（chip 的高亮态就靠它）。 */
+function isFetchedOn(entry: ModelEntry): boolean {
+  return props.form.models.some((m) => m.model_id === entry.model_id)
+}
+
+/**
+ * 点一枚拉取 chip：在草稿里就移出，不在就按默认值加进来。
+ * 默认值与手动「加一个模型」一致——空着提交会让引擎侧静默失败。
+ */
+function toggleFetched(entry: ModelEntry): void {
+  const index = props.form.models.findIndex((m) => m.model_id === entry.model_id)
+  if (index >= 0) {
+    props.form.models.splice(index, 1)
+    return
+  }
+  props.form.models.push({
+    model_id: entry.model_id,
+    model_name: entry.model_name || '',
+    context_window: entry.context_window || DEFAULT_CONTEXT_WINDOW,
+    max_tokens: entry.max_tokens || DEFAULT_MAX_TOKENS,
+    reasoning: Boolean(entry.reasoning),
+    input: entry.input?.length ? [...entry.input] : ['text'],
+  })
 }
 
 function setReasoning(index: number, on: boolean): void {
@@ -94,7 +128,7 @@ function setInput(index: number, kind: string, on: boolean): void {
   <el-dialog
     v-model="open"
     :title="props.editing ? t('models.editProvider') : t('models.addProvider')"
-    width="560px"
+    :width="dialogWidth"
   >
     <el-form label-position="top" size="small">
       <el-form-item :label="t('common.name')">
@@ -119,7 +153,7 @@ function setInput(index: number, kind: string, on: boolean): void {
       <span class="field-label">{{ t('models.modelsLabel') }}</span>
       <span class="sp" />
       <!-- 拉上游清单：填了地址与密钥就能问出有哪些模型，
-           不用一个个手打 id。拉回来的清单会填进下方的表里。 -->
+           不用一个个手打 id。拉回来的清单在下方以 chip 呈现，点选要哪些。 -->
       <button
         class="omp-btn sm ghost"
         :class="{ 'is-loading': props.fetching }"
@@ -133,6 +167,26 @@ function setInput(index: number, kind: string, on: boolean): void {
       <button class="omp-btn text sm" :disabled="props.fetching" @click="addModel">
         {{ t('models.addModel') }}
       </button>
+    </div>
+
+    <!-- 拉取结果：点选要保留的模型。选中的会出现在下方的模型行里，
+         再点一次移出——「问出来的」和「要保存的」在这里分家。 -->
+    <div v-if="props.fetched.length" class="fetched">
+      <span class="fetched-hint">{{ t('models.fetchedHint') }}</span>
+      <div class="fetched-chips">
+        <button
+          v-for="entry in props.fetched"
+          :key="entry.model_id"
+          type="button"
+          class="fetched-chip"
+          :class="{ 'is-on': isFetchedOn(entry) }"
+          :title="entry.model_name || entry.model_id"
+          @click="toggleFetched(entry)"
+        >
+          <AppIcon v-if="isFetchedOn(entry)" name="check" :size="11" />
+          {{ entry.model_id }}
+        </button>
+      </div>
     </div>
 
     <!-- 表头：四个字段各自的含义写在列头上，不靠占位符（输入后就消失了） -->
@@ -243,7 +297,7 @@ function setInput(index: number, kind: string, on: boolean): void {
 
 .model-row {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 88px 80px 40px 78px 28px;
+  grid-template-columns: 1.6fr 1.2fr 104px 96px 44px 96px 32px;
   gap: var(--omp-sp-2);
   align-items: center;
   margin-bottom: var(--omp-sp-2);
@@ -254,6 +308,63 @@ function setInput(index: number, kind: string, on: boolean): void {
   font-size: var(--omp-fs-3xs);
   color: var(--omp-faint);
   margin-bottom: var(--omp-sp-1);
+}
+
+/* 拉取结果：一排可点选的 chip。宽 760px 的弹窗装得下一排十几个 id，
+   超出的部分换行——这里允许换行，chip 流不动才需要滚动。 */
+.fetched {
+  margin-bottom: var(--omp-sp-2);
+}
+
+.fetched-hint {
+  display: block;
+  margin-bottom: var(--omp-sp-1);
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-faint);
+}
+
+.fetched-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fetched-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--omp-line);
+  border-radius: var(--omp-r-full);
+  background: var(--omp-surface);
+  color: var(--omp-mute);
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    color var(--omp-dur-fast) var(--omp-ease),
+    border-color var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    transform var(--omp-dur-fast) var(--omp-ease);
+}
+
+.fetched-chip:hover:not(:disabled) {
+  color: var(--omp-brand);
+  border-color: var(--omp-brand-line);
+  transform: scale(var(--omp-press-hover));
+}
+
+.fetched-chip:active:not(:disabled) {
+  transform: scale(var(--omp-press-active));
+}
+
+.fetched-chip.is-on {
+  color: var(--omp-brand);
+  border-color: var(--omp-brand-line);
+  background: var(--omp-brand-soft);
 }
 
 .model-row .omp-input {
@@ -281,12 +392,5 @@ function setInput(index: number, kind: string, on: boolean): void {
 .cap-inputs {
   display: flex;
   gap: var(--omp-sp-2);
-}
-
-/* 窄一点：弹窗宽 560px，七列挤不下时先让名字列让位 */
-@media (max-width: 620px) {
-  .model-row {
-    grid-template-columns: 1.2fr 1fr 72px 64px 34px 70px 28px;
-  }
 }
 </style>

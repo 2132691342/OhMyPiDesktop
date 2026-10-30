@@ -42,8 +42,7 @@ const loadingLogins = ref(false)
 const engineMissing = ref(false)
 
 const loggingIn = ref('')
-// 正在跑的上游探测：'test:<服务商>' / 'fetch:<服务商>'。
-// 分开记是因为两个按钮各自转圈，而共用一个标志会让人不知道是哪一步在跑。
+// 正在跑的上游探测：'test:<服务商>'。拉模型在编辑弹窗里做，不占这个标志。
 const probing = ref('')
 
 const apiOptions = [
@@ -136,38 +135,6 @@ async function testProvider(view: ProviderView): Promise<void> {
   }
 }
 
-/**
- * 拉上游的模型清单并填进编辑弹窗。
- *
- * 为什么开弹窗而不是直接写配置：拉回来的只有 id，
- * 上下文窗口与最大输出这些字段还得人填（或用默认值）。
- * 直接写会把「用户刚拉下来的清单」当成「用户确认过的配置」。
- */
-async function fetchModels(view: ProviderView): Promise<void> {
-  if (probing.value) return
-  probing.value = `fetch:${view.provider_name}`
-  try {
-    const res = await api.fetchProviderModels({
-      engine_kind: view.engine_kind,
-      provider_name: view.provider_name,
-    })
-    const rows = res.models ?? []
-    if (!rows.length) {
-      toasts.push('info', t('models.fetchedEmpty'))
-      return
-    }
-    // 打开编辑弹窗并把拉回来的 id 填进去：
-    // 已有的模型不重复添加（用户可能已经手动改过能力勾选）。
-    form.openEdit(view)
-    const added = form.appendModels(rows)
-    toasts.push('ok', added ? t('models.fetched', { n: added }) : t('models.fetchedEmpty'))
-  } catch (err) {
-    toasts.push('error', err instanceof Error ? err.message : String(err))
-  } finally {
-    probing.value = ''
-  }
-}
-
 async function remove(view: ProviderView): Promise<void> {
   try {
     await ElMessageBox.confirm(t('models.deleteConfirm', { name: view.provider_name }), t('models.deleteTitle'), {
@@ -252,7 +219,6 @@ onMounted(() => {
         @edit="form.openEdit"
         @remove="remove"
         @test="testProvider"
-        @fetch-models="fetchModels"
       />
 
       <!-- 登录：只有支持界面登录的引擎才渲染（pi 的登录在终端里做） -->
@@ -275,6 +241,7 @@ onMounted(() => {
       :editing="form.editing.value"
       :saving="form.saving.value"
       :fetching="form.fetching.value"
+      :fetched="form.fetched.value"
       :api-options="apiOptions"
       @save="form.save"
       @fetch-models="form.fetchModels"

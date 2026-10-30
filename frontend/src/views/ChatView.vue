@@ -15,6 +15,7 @@ import SessionList from '@/components/sessions/SessionList.vue'
 import AgentPanel from '@/components/agents/AgentPanel.vue'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
+import { useComposerActions } from '@/composables/useComposerActions'
 import type { UIResponse } from '@/types/api'
 
 const app = useAppStore()
@@ -22,6 +23,15 @@ const chat = useChatStore()
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+
+const composerActions = useComposerActions()
+
+/** 侧栏顶部的「新对话」：它从输入框底栏搬过来之后住在这里。 */
+async function onNewChat(): Promise<void> {
+  await composerActions.startNewChat()
+  // 地址同步成「无会话」：否则刷新窗口会按旧 query 又跳回上一条会话。
+  await router.replace({ name: 'chat', query: {} })
+}
 
 const scroller = ref<HTMLElement | null>(null)
 const composer = ref<{ focus: () => void } | null>(null)
@@ -169,7 +179,7 @@ watch(
 <template>
   <div class="chat-page">
     <aside class="chat-side">
-      <SessionList :active="chat.sessionFile" :compact="true" @open="openSession" />
+      <SessionList :active="chat.sessionFile" :compact="true" show-new @open="openSession" @new-chat="onNewChat" />
     </aside>
 
     <section class="chat-main">

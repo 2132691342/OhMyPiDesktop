@@ -1,8 +1,6 @@
 package service
 
-// 会话：列会话、读明细、改名、删除。
-//
-// 会话文件是引擎的账本，这里只读与切换；写进它的永远只有引擎自己。
+// 会话：列会话、读明细、改名、删除。会话文件是引擎的账本，这里只读与切换，写进它的永远只有引擎自己。
 // 列会话按引擎分开：两个引擎的目录与编码规则不同，混在一张表里会让人以为能接着聊。
 
 import (
@@ -56,10 +54,8 @@ func (a *App) SessionDetail(kind engine.Kind, path string) (*session.Detail, err
 	return d, nil
 }
 
-// kindOfSession 判断一个会话文件属于哪个引擎。
-//
-// 判据是「它的路径在哪一侧的会话目录下」；都不在（用户手动打开的文件）时
-// 退回请求里给的引擎。不靠文件名猜：两个引擎的文件名格式在变。
+// kindOfSession 判断一个会话文件属于哪个引擎。判据是「路径在哪一侧的会话目录下」；
+// 都不在（用户手动打开的文件）时退回请求给的引擎。不靠文件名猜：两个引擎的文件名格式在变。
 func (a *App) kindOfSession(kind engine.Kind, path string) engine.Kind {
 	for _, k := range engine.AllKinds() {
 		layout, err := a.Layout(k)
@@ -96,6 +92,8 @@ func (a *App) DeleteSession(kind engine.Kind, path string) error {
 	// 缓存里那条不主动丢掉的话，列表会一直显示「已经删了」的会话。
 	a.Index(eng).Invalidate(path)
 	a.InvalidateCounts()
+	// 它的隐藏账也一起清：账不留给不存在的会话。
+	a.forgetHiddenTurns(path)
 	return nil
 }
 

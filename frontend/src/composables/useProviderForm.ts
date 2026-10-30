@@ -1,4 +1,5 @@
-// 服务商的编辑草稿：表单内容与「打开 / 保存 / 拉模型」三个动作。
+// 服务商的编辑草稿：表单内容与「打开 / 保存 / 拉模型」三个动作，
+// 以及最近一次拉回的上游清单（弹窗把它渲染成可点选的 chip）。
 //
 // 拆出来的理由：模型页要管三件事（服务商清单、可用模型表、登录区），
 // 而服务商的编辑草稿与上游探测是自成一块的——它有自己的表单状态、
@@ -61,10 +62,14 @@ export function useProviderForm(
     api_key: '',
     models: [],
   })
+  // 最近一次拉回来的上游清单，弹窗把它渲染成可点选的 chip。
+  // 打开弹窗（新建或编辑）时清空：它是「这次编辑会话」的临时产物。
+  const fetched = ref<ModelEntry[]>([])
 
   function reset(): void {
     editing.value = ''
     form.value = { name: '', base_url: '', api: 'openai-completions', api_key: '', models: [] }
+    fetched.value = []
   }
 
   function openCreate(): void {
@@ -85,34 +90,15 @@ export function useProviderForm(
       api_key: '',
       models: (view.models ?? []).map((m) => ({ ...m })),
     }
+    fetched.value = []
     dialogOpen.value = true
   }
 
-  /** 把一批模型追加进草稿；已有的不重复加。返回新加了几条。 */
-  function appendModels(rows: { model_id: string; model_name?: string }[]): number {
-    const existing = new Set(form.value.models.map((m) => m.model_id))
-    let added = 0
-    for (const row of rows) {
-      if (!row.model_id || existing.has(row.model_id)) continue
-      existing.add(row.model_id)
-      form.value.models.push({
-        model_id: row.model_id,
-        model_name: row.model_name || '',
-        context_window: DEFAULT_CONTEXT_WINDOW,
-        max_tokens: DEFAULT_MAX_TOKENS,
-        reasoning: false,
-        input: ['text'],
-      })
-      added++
-    }
-    return added
-  }
-
   /**
-   * 向上游问模型清单并填进当前草稿。
+   * 向上游问模型清单，结果交给弹窗渲染成 chip，由用户点选要哪些。
    *
-   * 与卡片上的「拉模型」的区别：那个是「拉出来给你看看」，
-   * 这个是「正在填的服务商，拉回来直接补进表里」。两者共用同一个接口。
+   * 为什么不直接填进表里：一次拉回几十个 id 时用户通常只要其中几个，
+   * 全填进去等于把「问出来的」当成「要保存的」，删起来比加起来还慢。
    */
   async function fetchModels(): Promise<void> {
     if (fetching.value) return
@@ -127,11 +113,12 @@ export function useProviderForm(
       })
       const rows = res.models ?? []
       if (!rows.length) {
+        fetched.value = []
         toasts.push('info', t('models.fetchedEmpty'))
         return
       }
-      const added = appendModels(rows)
-      toasts.push('ok', added ? t('models.fetched', { n: added }) : t('models.fetchedEmpty'))
+      fetched.value = rows
+      toasts.push('ok', t('models.fetched', { n: rows.length }))
     } catch (err) {
       toasts.push('error', err instanceof Error ? err.message : String(err))
     } finally {
@@ -171,9 +158,9 @@ export function useProviderForm(
     editing,
     editingKind,
     form,
+    fetched,
     openCreate,
     openEdit,
-    appendModels,
     fetchModels,
     save,
   }

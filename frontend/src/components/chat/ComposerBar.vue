@@ -1,16 +1,17 @@
 <script setup lang="ts">
-// 输入框底栏：两行。
+// 输入框底栏：一行。
 //
-//  第一行是「这句话的参数」：工作目录 → 引擎 → 模型 → 思考档 …… 上下文水位；
-//  第二行是动作：新建 / 附件 / 自动压缩 / 排队 …… 停止 / 发送。
+// 从左到右是「这句话的参数」（工作目录 → 引擎 → 模型 → 思考档），
+// 随后是两个低频开关（附件、自动压缩），行末是读数与动作
+// （上下文水位 …… 排队 / 停止 / 发送）。新对话不在这一行：
+// 它属于会话列表，在左侧列表顶部。
 //
-// 为什么拆成两行而不是一行自适应换行：一行时窗口稍窄就把水位挤到下一行、
-// 把发送按钮推到中间，位置每天都不一样。两行之后左对齐的一列恒在左边，
-// 动作恒在右边，用户不需要每次重新找按钮。
+// 为什么是一行而不是两行：参数与动作本就是「同一句话的属性」，
+// 拆成两行等于把一句话的定语另起一行。发送恒在行末，
+// 其余控件各自的省略与 vw-scale 收缩负责让一行装得下。
 //
-// 底栏的读数（上下文水位）不套描边胶囊：它只读，有盒子又没动作等于请用户
-// 去点一个点不动的东西。
-import { computed } from 'vue'
+// 底栏的读数（上下文水位）现在是可点的（有详情弹层），但仍不套描边胶囊：
+// 它的主要身份还是读数，可点的那部分留给它自己的弹层。
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
 import ContextMeter from '@/components/chat/ContextMeter.vue'
@@ -31,12 +32,11 @@ const props = defineProps<{
   busyCmd: string
   /** 当前模型收不收图片 */
   imagesAllowed: boolean
-  /** 字符计数（0 时不显示） */
+  /** 字符计数（0 时不显示；直播中也不显示——行末那几位要留给动作） */
   count: number
 }>()
 
 const emit = defineEmits<{
-  newChat: []
   browseFiles: []
   queue: []
   toggleCompact: [enabled: boolean]
@@ -47,34 +47,15 @@ const emit = defineEmits<{
 const chat = useChatStore()
 const app = useAppStore()
 const { t } = useI18n()
-
-/** 任一动作在进行中：新建 / 压缩。 */
-const busy = computed(() => Boolean(chat.switching))
 </script>
 
 <template>
   <div class="composer-bar">
-    <!-- 第一行：参数。水位贴在行末，它属于这一行的读数 -->
     <div class="bar-row">
       <WorkspaceChip />
       <EngineChip />
       <ModelPicker />
       <ThinkingChip />
-      <span class="bar-sp" />
-      <ContextMeter />
-    </div>
-
-    <!-- 第二行：动作 -->
-    <div class="bar-row bar-actions">
-      <button
-        class="omp-btn icon ghost"
-        :class="{ 'is-loading': chat.switching === 'new' }"
-        :disabled="busy"
-        :title="t('chat.newChat')"
-        @click="emit('newChat')"
-      >
-        <AppIcon name="plus" :size="15" />
-      </button>
 
       <button
         class="omp-btn icon ghost"
@@ -86,18 +67,19 @@ const busy = computed(() => Boolean(chat.switching))
       </button>
 
       <button
-        class="omp-btn sm ghost"
+        class="omp-btn icon ghost"
         :class="{ on: chat.autoCompaction, 'is-loading': chat.switching === 'compaction' }"
-        :disabled="chat.busy || busy || !app.hasEngine"
-        :title="t('chat.autoCompact')"
+        :disabled="chat.busy || chat.switching === 'compaction' || !app.hasEngine"
+        :title="chat.autoCompaction ? t('chat.autoCompactOn') : t('chat.autoCompactOff')"
         @click="emit('toggleCompact', !chat.autoCompaction)"
       >
         <AppIcon name="refresh" :size="13" />
-        {{ t('chat.autoCompact') }}
       </button>
 
-      <span v-if="props.count" class="composer-hint">{{ props.count }}</span>
+      <span v-if="props.count && !chat.streaming" class="composer-hint">{{ props.count }}</span>
       <span class="bar-sp" />
+
+      <ContextMeter />
 
       <button
         v-if="chat.streaming"
@@ -138,9 +120,6 @@ const busy = computed(() => Boolean(chat.switching))
 
 <style scoped>
 .composer-bar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--omp-sp-1);
   min-width: 0;
 }
 
@@ -156,10 +135,6 @@ const busy = computed(() => Boolean(chat.switching))
 /* 芯片不参与收缩：它们自己管截断，被父级压窄时反而会把图标挤掉 */
 .bar-row > * {
   flex: none;
-}
-
-.bar-actions {
-  padding-top: var(--omp-sp-1);
 }
 
 .bar-sp {

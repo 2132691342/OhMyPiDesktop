@@ -282,6 +282,7 @@ export default {
     "disabled": "Disabled",
     "copy": "Copy",
     "copied": "Copied",
+    "undo": "Undo",
     "open": "Open",
     "reveal": "Show in folder",
     "search": "Search",
@@ -392,6 +393,12 @@ export default {
     "pickEngine": "Switch engine",
     "contextHint": "{used} / {win} used",
     "contextUnknown": "Context usage not known yet",
+    "ctxUsed": "Used",
+    "ctxWindow": "Window",
+    "ctxLeft": "Left",
+    "ctxCache": "Cache hit",
+    "ctxSpeed": "Generation speed",
+    "ctxCost": "Session cost",
     "engineHandoff": "Continuing on {engine} (its context is a fresh session)",
     "bindFailed": "History is readable, but the engine could not switch to this session ({reason}) — new messages will go to the previous session.",
     "thinkingDefault": "Default",
@@ -416,7 +423,12 @@ export default {
     "queueCleared": "Queue cleared",
     "removeQueued": "Remove this one",
     "queueGone": "Already gone from the queue",
-    "openLinkDismiss": "Not now"
+    "openLinkDismiss": "Not now",
+    "hideTurnTitle": "Delete this turn?",
+    "hideTurnHint": "This only hides the turn in the app: engine records are untouched, and the Sessions page still shows everything.",
+    "hideTurnConfirm": "Hide",
+    "turnHidden": "Turn hidden",
+    "changesCount": "{n} files changed"
   },
   "agents": {
     "title": "Subagents",
@@ -449,7 +461,10 @@ export default {
     "tokens": "tokens",
     "cost": "cost",
     "updated": "Updated",
-    "running": "Running"
+    "running": "Running",
+    "groupToday": "Today",
+    "groupWeek": "Last 7 days",
+    "groupEarlier": "Earlier"
   },
   "models": {
     "title": "Models",
@@ -495,8 +510,9 @@ export default {
     "apiKeyMissing": "No key set",
     "testHint": "Save, then switch models once in Chat to verify",
     "fetchModels": "Fetch models",
-    "fetchModelsHint": "Ask the upstream which models it has, and fill them into the editor",
-    "fetched": "Fetched {n} models — they are in the editor now",
+    "fetchModelsHint": "Ask the upstream which models it has, then pick the ones to keep",
+    "fetched": "Fetched {n} models — pick the ones to keep",
+    "fetchedHint": "Click to add a model, click again to remove it",
     "fetchedEmpty": "That endpoint returned no model list",
     "testProvider": "Test",
     "testOk": "This config works — the upstream has {n} models",

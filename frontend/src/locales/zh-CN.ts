@@ -299,6 +299,7 @@ export default {
     disabled: '已停用',
     copy: '复制',
     copied: '已复制',
+    undo: '撤销',
     open: '打开',
     reveal: '在文件夹中显示',
     search: '搜索',
@@ -412,6 +413,13 @@ export default {
     pickEngine: '换引擎',
     contextHint: '已用 {used} / {win}',
     contextUnknown: '还不知道上下文用量',
+    // 上下文详情弹层：底栏只放得下「用了多少」，剩下的答案在这里
+    ctxUsed: '已用',
+    ctxWindow: '窗口',
+    ctxLeft: '剩余',
+    ctxCache: '缓存命中',
+    ctxSpeed: '生成速度',
+    ctxCost: '会话花费',
     engineHandoff: '以下由 {engine} 接续（其上下文与新开一条会话等同）',
     bindFailed: '历史可以看，但没能把引擎切到这条会话（{reason}）——现在发消息会写到原来的会话里。',
     thinkingDefault: '默认',
@@ -437,6 +445,13 @@ export default {
     removeQueued: '移除这一条',
     queueGone: '这条已不在队列里',
     openLinkDismiss: '先不管',
+    // 消息删除：语义是「从界面隐藏」——引擎的账本不动，会话详情页仍可查全量
+    hideTurnTitle: '删除这一轮？',
+    hideTurnHint: '只从界面上隐藏这一轮：引擎的记录不受影响，会话页里仍能查看。',
+    hideTurnConfirm: '隐藏',
+    turnHidden: '已隐藏这一轮',
+    // 本轮改动文件：从工具调用就地聚合，点击去工作区页看差异
+    changesCount: '改动 {n} 个文件',
   },
   agents: {
     title: '子代理',
@@ -470,6 +485,10 @@ export default {
     cost: '花费',
     updated: '更新于',
     running: '正在跑',
+    // 时间分组：找会话的动作几乎总是「刚才聊的那个」
+    groupToday: '今天',
+    groupWeek: '最近 7 天',
+    groupEarlier: '更早',
   },
   models: {
     title: '模型',
@@ -515,10 +534,11 @@ export default {
     keyHidden: '密钥已隐藏',
     apiKeyMissing: '还没配密钥',
     testHint: '保存后到「对话」里切一次模型即可验证',
-    // 上游探测：拉模型清单 / 测连通
+    // 上游探测：拉模型清单 / 测连通。清单以 chip 呈现，点选要哪些。
     fetchModels: '拉模型',
-    fetchModelsHint: '问上游「有哪些模型」，并把清单填进编辑框',
-    fetched: '拉到了 {n} 个模型，已填进编辑框',
+    fetchModelsHint: '问上游「有哪些模型」，点选要保留的',
+    fetched: '拉到了 {n} 个模型，点选要保留的',
+    fetchedHint: '点选要加入的模型，再点一次移除',
     fetchedEmpty: '这个地址没返回模型清单',
     testProvider: '测一下',
     testOk: '这条配置通了，上游有 {n} 个模型',

@@ -9,14 +9,18 @@
 // 同一次回答在视觉上就是一坨。
 //
 // 轮尾是这一轮的读数：输入 / 输出 / 缓存命中 / 耗时，
-// 加一个复制按钮。它们是「这次回答花了多少」的答案，
+// 加复制与删除两个动作。它们是「这次回答花了多少、要不要留着」的答案，
 // 而答案不该藏在某个要点的菜单里。
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessageBox } from 'element-plus'
 import TurnBlocks from '@/components/chat/TurnBlocks.vue'
 import MarkdownBlock from '@/components/chat/MarkdownBlock.vue'
+import TurnChanges from '@/components/chat/TurnChanges.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { usageFrom, type TurnUsage } from '@/composables/useMessageFlow'
+import { useChatStore } from '@/stores/chat'
+import { useToasts } from '@/composables/useToasts'
 import type { ChatBlock, EngineKind, HistoryTurn } from '@/types/api'
 
 const props = defineProps<{
@@ -51,6 +55,8 @@ const props = defineProps<{
   usage?: TurnUsage
   /** 历史轮自带的用量（后端投影带下来的） */
   historyTurn?: HistoryTurn
+  /** 这一轮的隐藏标识：有它才能「删除」（直播轮没有，因此不可删） */
+  hid?: string
   /**
    * 要不要显示用量读数。
    *
@@ -61,6 +67,8 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const chat = useChatStore()
+const toasts = useToasts()
 
 const isUser = computed(() => props.role === 'user')
 
@@ -95,6 +103,38 @@ async function copyTurn(): Promise<void> {
     }, 1400)
   } catch {
     /* 剪贴板不可用时不打扰：用户可以手动选中 */
+  }
+}
+
+/**
+ * 隐藏这一轮（界面上的「删除」）。
+ *
+ * 语义是隐藏：引擎的会话文件与上下文一个字不动，被摘掉的轮次
+ * 在会话详情页仍然查得到。所以确认框把话说清楚，撤销入口就在
+ * 删完的那条提示上——界面层的误删必须一键能回。
+ */
+async function removeTurn(): Promise<void> {
+  const hid = props.hid
+  if (!hid) return
+  try {
+    await ElMessageBox.confirm(t('chat.hideTurnHint'), t('chat.hideTurnTitle'), {
+      confirmButtonText: t('chat.hideTurnConfirm'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    await chat.hideTurn(hid)
+    toasts.push('ok', t('chat.turnHidden'), undefined, {
+      label: t('common.undo'),
+      run: () => {
+        chat.unhideTurn(hid).catch((err) => toasts.push('error', err instanceof Error ? err.message : String(err)))
+      },
+    })
+  } catch (err) {
+    toasts.push('error', err instanceof Error ? err.message : String(err))
   }
 }
 
@@ -174,9 +214,13 @@ function fmtMs(ms: number): string {
       />
       <TurnBlocks v-else :blocks="props.blocks" :run-id="props.runId" :streaming="props.streaming" />
 
-      <!-- 轮尾：读数 + 复制。悬停整个回合才浮现，平时不占位置。
+      <!-- 这轮改了哪些文件：从工具块就地聚合，点击去工作区页看差异 -->
+      <TurnChanges :blocks="props.blocks" />
+
+      <!-- 轮尾：读数 + 复制 + 删除。悬停整个回合才浮现，平时不占位置。
            用户侧也有复制：用户要拿自己刚发的那句去别处贴，
-           不该先去输入框里选中再复制。 -->
+           不该先去输入框里选中再复制。删除只对历史轮开放（有 hid 才删得掉），
+           直播中的轮次先让它把话说完。 -->
       <div class="msg-acts">
         <span v-if="metrics.length" class="msg-metrics">
           <span v-for="m in metrics" :key="m.key" class="msg-metric" :class="{ 'is-hit': m.hit }">
@@ -186,6 +230,10 @@ function fmtMs(ms: number): string {
         <button v-if="hasText" class="msg-act" type="button" :disabled="copied" @click="copyTurn">
           <AppIcon :name="copied ? 'check' : 'file'" :size="11" />
           {{ copied ? t('common.copied') : t('common.copy') }}
+        </button>
+        <button v-if="props.hid" class="msg-act danger" type="button" @click="removeTurn">
+          <AppIcon name="trash" :size="11" />
+          {{ t('common.delete') }}
         </button>
       </div>
     </div>
@@ -307,6 +355,15 @@ function fmtMs(ms: number): string {
 
 .msg-act:active:not(:disabled) {
   transform: scale(var(--omp-press-active));
+}
+
+/* 删除是破坏性动作：常规态就要与复制分开一点颜色，悬停转危险色 */
+.msg-act.danger {
+  color: var(--omp-mute);
+}
+
+.msg-act.danger:hover:not(:disabled) {
+  color: var(--omp-bad);
 }
 
 .mark-line {

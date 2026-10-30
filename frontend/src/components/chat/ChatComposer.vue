@@ -295,7 +295,6 @@ defineExpose({ focus })
           :busy-cmd="busyCmd"
           :images-allowed="imagesAllowed"
           :count="draft.length"
-          @new-chat="actions.startNewChat"
           @browse-files="browseFiles"
           @queue="queue"
           @toggle-compact="actions.pickAutoCompaction"

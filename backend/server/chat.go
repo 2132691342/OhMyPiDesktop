@@ -1,9 +1,7 @@
 package server
 
-// 会话与对话的 handler：列会话、发一轮、插话、排队、停止、换模型与思考档。
-//
-// 每个 handler 只做三件事：解参数、调用例、包响应。
-// 「这个会话属于哪个引擎」由 service 解析，handler 不重复判断。
+// 会话与对话的 handler：列会话、发一轮、插话、排队、停止、换模型与思考档。每个 handler 只做三件事：
+// 解参数、调用例、包响应；「这个会话属于哪个引擎」由 service 解析，handler 不重复判断。
 
 import (
 	"OhMyPiDesktop/backend/domain"
@@ -70,11 +68,8 @@ func (s *Server) chatState(c *gin.Context) {
 	s.run(c, func(ctx *gin.Context) (any, error) { return s.svc.ChatState(ctx, kind(c), file) })
 }
 
-// chatBody 是发送类接口共用的入参：引擎 / 会话 / 正文 / 附件。
-//
-// 三个接口（send / steer / followup）形状一致，共用一份：
-// 分开写三份的后果是某天只在其中一个加了附件字段，而用户看不出为什么
-// 「插话能带图、发送不能」。
+// chatBody 是发送类接口共用的入参：引擎 / 会话 / 正文 / 附件。三个接口（send / steer / followup）
+// 形状一致共用一份，分开写三份的后果是某天只在一个加了附件字段，用户看不出为什么「插话能带图、发送不能」。
 type chatBody struct {
 	Engine      string                     `json:"engine"`
 	Session     string                     `json:"session"`
@@ -272,6 +267,43 @@ func (s *Server) setAutoCompaction(c *gin.Context) {
 	}
 	s.run(c, func(ctx *gin.Context) (any, error) {
 		if err := s.svc.SetAutoCompaction(ctx, s2kind(body.Engine), body.Session, body.Enabled); err != nil {
+			return nil, err
+		}
+		return gin.H{"ok": true}, nil
+	})
+}
+
+// ---------------- 消息隐藏 ----------------
+
+// hideTurn / unhideTurn：界面上「删除一轮消息」的两个方向。语义是隐藏：hid 是历史投影带下去的
+// 轮次标识，service 按会话记账，引擎的会话文件与上下文不动；账本只认会话路径，引擎参数不参与。
+
+func (s *Server) hideTurn(c *gin.Context) {
+	var body struct {
+		Session string `json:"session"`
+		Hid     string `json:"hid"`
+	}
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(*gin.Context) (any, error) {
+		if err := s.svc.HideTurn(body.Session, body.Hid); err != nil {
+			return nil, err
+		}
+		return gin.H{"ok": true}, nil
+	})
+}
+
+func (s *Server) unhideTurn(c *gin.Context) {
+	var body struct {
+		Session string `json:"session"`
+		Hid     string `json:"hid"`
+	}
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(*gin.Context) (any, error) {
+		if err := s.svc.UnhideTurn(body.Session, body.Hid); err != nil {
 			return nil, err
 		}
 		return gin.H{"ok": true}, nil

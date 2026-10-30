@@ -7,13 +7,9 @@
 // 卡上带引擎标签是因为两个引擎的配置完全独立，同名可以各有一份——
 // 不标出来，删的时候不知道删的是哪一份。
 //
-// 卡上的四个动作：
-//   - 测一下：问上游「有哪些模型」，顺带验证地址、协议与密钥对不对；
-//   - 拉模型：把问回来的模型 id 填进编辑弹窗，省得一个个手打；
-//   - 编辑 / 删除。
-//
-// 「拉模型」是这一页最常用的动作：配一个新服务商时，
-// 知道有哪些模型 id 是第一步，而手打几十个 id 是最烦的一步。
+// 卡上的三个动作：测一下（问上游「有哪些模型」，顺带验证地址、协议与密钥）、
+// 编辑 / 删除。拉模型只在编辑弹窗里做：拉回来的清单要配合正在编辑的
+// 地址与密钥，离开弹窗单拉一份没有落点。
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
@@ -24,7 +20,7 @@ const props = defineProps<{
   loading: boolean
   /** 配置文件路径，显示在标题右侧 */
   configPath: string
-  /** 正在跑的动作名（'test:<服务商>' / 'fetch:<服务商>'）；空表示空闲 */
+  /** 正在跑的动作名（'test:<服务商>'）；空表示空闲 */
   pending: string
 }>()
 
@@ -33,7 +29,6 @@ const emit = defineEmits<{
   edit: [view: ProviderView]
   remove: [view: ProviderView]
   test: [view: ProviderView]
-  fetchModels: [view: ProviderView]
 }>()
 
 const { t } = useI18n()
@@ -160,16 +155,6 @@ function host(url: string): string {
           >
             <AppIcon name="check" :size="12" />
             {{ t('models.testProvider') }}
-          </button>
-          <button
-            class="omp-btn sm ghost"
-            :class="{ 'is-loading': props.pending === `fetch:${view.provider_name}` }"
-            :disabled="Boolean(props.pending)"
-            :title="t('models.fetchModelsHint')"
-            @click="emit('fetchModels', view)"
-          >
-            <AppIcon name="download" :size="12" />
-            {{ t('models.fetchModels') }}
           </button>
           <span class="sp" />
           <button class="omp-btn text sm" @click="emit('edit', view)">{{ t('common.edit') }}</button>

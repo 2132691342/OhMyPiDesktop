@@ -1,9 +1,8 @@
 package service
 
 // 对话：开一轮、切会话、排队、插话、停止、换模型与思考档。
-//
-// 每个动作都是一次界面点击的完整链路：「先查会话属于哪个引擎、再决定跟哪个进程说话」
-// 不该在 handler 里分两步——拆开就要么多一次请求，要么让前端知道进程键。
+// 每个动作是界面点击的完整链路：「先查会话属于哪个引擎、再决定跟哪个进程说话」不在 handler 分两步——
+// 拆开要么多一次请求，要么让前端知道进程键。
 
 import (
 	"context"
@@ -43,19 +42,13 @@ type ChatState struct {
 	BindErr string `json:"bind_err,omitempty"`
 }
 
-// ChatState 拉对话页快照。会话文件为空时用当前工作目录的引擎状态。
-//
-// 它是「用户点了某条历史会话」的唯一入口，所以必须做到两件事：
-//  1. **真的把引擎切到那个会话**。只把路径写进返回值等于撒谎：界面会以为
-//     自己在看历史，而引擎的当前会话仍是原来那条，下一句话就写错文件。
-//  2. 引擎没跑的时候不为了读历史而拉起它。读历史走会话文件，那本来就是
-//     引擎自己写的账本，比拉一个进程问它要快三个数量级（pi 起 Node 实测 3 秒）。
+// ChatState 拉对话页快照。会话文件为空时用当前工作目录的引擎状态。它是「点了某条历史会话」的唯一入口：
+// 必须真的把引擎切到那个会话（只把路径写进返回值等于撒谎，下一句话就写错文件）；
+// 引擎没跑时不为读历史拉起它：读历史走会话文件（引擎自己写的账本），比拉进程问它快三个数量级（pi 起 Node 实测 3 秒）。
 func (a *App) ChatState(ctx context.Context, kind engine.Kind, sessionFile string) (*ChatState, error) {
-	// 会话文件决定它属于哪个引擎，请求里给的 engine 只是个默认值。
-	//
-	// 这一条不能省：界面上的「当前引擎」是用户上一次的选择，而用户可能从会话列表里
-	// 点开一条另一个引擎的会话。若照旧用请求里的 kind，就会让 pi 去绑一个 omp 的
-	// 会话文件——引擎拒绝，界面只能弹一句「切不到这个会话」，而用户什么也没做错。
+	// 会话文件决定它属于哪个引擎，请求里给的 engine 只是个默认值。这条不能省：
+	// 用户可能点开另一个引擎的会话，照旧用请求的 kind 会让 pi 去绑 omp 的会话文件——
+	// 引擎拒绝，界面弹「切不到这个会话」，而用户什么也没做错。
 	kind = a.kindOfSession(kind, sessionFile)
 	dir := a.Workspace()
 	detail, detailErr := a.sessionDetailFor(kind, sessionFile)
@@ -134,10 +127,12 @@ func (a *App) ChatState(ctx context.Context, kind engine.Kind, sessionFile strin
 		// 「在终端里聊过、这里没进程」那种会话的来源。
 		state.Messages = itemsToRaw(detail.Items)
 	}
-	state.History = ProjectHistory(state.Messages)
 	if state.SessionFile == "" && sessionFile != "" {
 		state.SessionFile = sessionFile
 	}
+	// 历史投影按会话的隐藏账本过滤。它必须在 SessionFile 定稿之后：
+	// 账是按会话文件路径记的，拿错路径就过滤不到该过滤的轮次。
+	state.History = ProjectHistory(state.Messages, a.HiddenSetFor(state.SessionFile))
 	// 记住当前会话，供下次启动恢复。ChatState 是「会话确实打开了」的唯一定点——
 	// 在 Send 里记得太晚（用户可能看完就关），在前端记得不可靠（刷窗口时可能丢）。
 	if state.SessionFile != "" {
@@ -182,9 +177,7 @@ func itemsToRaw(items []session.Item) []json.RawMessage {
 	return out
 }
 
-// Send 发一轮提问。kind 为空时用会话所属引擎。
-//
-// 附件在 buildPrompt 里装配：工作区文件只拼路径清单，图片进 images 字段。
+// Send 发一轮提问。kind 为空时用会话所属引擎。附件在 buildPrompt 里装配：工作区文件只拼路径清单，图片进 images 字段。
 // 图片还要过一道模型能力判断——模型不收图时提前拒绝，别让引擎静默丢掉。
 func (a *App) Send(ctx context.Context, kind engine.Kind, sessionFile string, req domain.ChatSendREQ) (string, error) {
 	payload, err := buildPrompt(req.Message, req.Attachments)

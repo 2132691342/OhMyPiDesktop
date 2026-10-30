@@ -100,6 +100,7 @@ function isRoundEnd(index: number): boolean {
       :model="item.model"
       :continued="continuedFlags[index]"
       :history-turn="item"
+      :hid="item.hid"
       :show-metrics="isRoundEnd(index)"
     />
 

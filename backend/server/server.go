@@ -1,9 +1,6 @@
-// Package server 是界面唯一的后端出口：回环地址上的 HTTP + SSE。
-//
-// 为什么走 HTTP 而不是直接把 Go 方法绑给前端：
-//   - 业务调用要能流式（SSE），绑定调用只有一问一答；
-//   - 前端可以用最普通的 axios 写法，不依赖 wails 生成的绑定代码；
-//   - 端口随机 + 回环 + 只允许 GET/POST，外部网页也碰不到。
+// Package server 是界面唯一的后端出口：回环地址上的 HTTP + SSE。走 HTTP 而不是绑 Go 方法：
+// 业务调用要能流式（SSE）而绑定只有一问一答；前端用最普通的 axios 写法，不依赖 wails 绑定代码；
+// 端口随机 + 回环 + 只允许 GET/POST，外部网页也碰不到。
 package server
 
 import (
@@ -23,15 +20,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ContractVersion 与前端 types/api.ts 同键；改响应字段形态必须 +1。
-//
-// 11：健康卡加 *_known / totals_partial / layout_resolved / probe_unknown_reason，
-// 计数不再用 0 冒充「没读到」；SSE 连接建立时补一帧 engine:status。
-//
-// 12：健康快照加 ready（探测与后台补验都完成时才能把数字当结论）；
-// 探测链补上「官方安装器的落点」——omp 装进 %LOCALAPPDATA%\omp 且不写 PATH，
-// 只看 PATH 会在已装的机器上报「未安装」。
-const ContractVersion = 12
+// ContractVersion 与前端 types/api.ts 同键，当前值 13 是前后端响应形态的契约版本；
+// 改响应字段形态必须 +1 并同步前端类型。
+const ContractVersion = 13
 
 // Server 是内嵌 HTTP 服务。
 type Server struct {
@@ -69,10 +60,8 @@ func (s *Server) Handler() http.Handler {
 	return r
 }
 
-// guard 只允许回环来源、只允许 GET/POST，并要求启动令牌。
-//
-// 只允许这两种方法：没有 PUT/DELETE 就没有「顺手写一个删除接口」的入口，
-// 所有写操作都是 POST + 动作段，审计时一眼能看完。
+// guard 只允许回环来源、只允许 GET/POST，并要求启动令牌。只留这两种方法：没有 PUT/DELETE
+// 就没有「顺手写一个删除接口」的入口，所有写操作都是 POST + 动作段，审计一眼能看完。
 func (s *Server) guard() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Method == http.MethodOptions {
@@ -234,11 +223,9 @@ func (s *Server) emitEngineStatus(write func([]byte) bool) {
 	write(frame)
 }
 
-// events 是 SSE 长连接。
-//
-// 帧格式：`id: <seq>\nevent: <name>\ndata: <json>\n\n`。
-// 断线重连带 lastEventId（EventSource 自带）或 ?since=，后端先补发环形窗口里的帧，
-// 窗口外的不补——那部分走一次快照对账，绝不假装补全。
+// events 是 SSE 长连接。帧格式 `data: {json}\n\n`，事件名在 JSON 里（seq 字段），不用 SSE 的 id/event 行。
+// 断线重连带 lastEventId（EventSource 自带）或 ?since=，先补发环形窗口里的帧，
+// 窗口外不补——走一次快照对账，绝不假装补全。
 func (s *Server) events(c *gin.Context) {
 	since := int64(0)
 	if v := c.GetHeader("Last-Event-ID"); v != "" {
@@ -287,12 +274,9 @@ func (s *Server) events(c *gin.Context) {
 	if !write(hello) {
 		return
 	}
-	// 补一张引擎状态：这帧盖住了「探测完成早于本连接」那条时序。
-	//
-	// Bootstrap 自己会触发一轮探测，而探测后台跑完之后广播的
-	// engine:detected 可能发在还没有订阅者的那一刻 —— 那一帧被静默丢弃，
-	// 于是前端停在「未安装」不动，而引擎其实早就探到了。
-	// 与其让前端去猜那一帧在不在，不如在连接建立时主动给一份当前结论。
+	// 补一张引擎状态：这帧盖住了「探测完成早于本连接」的时序——Bootstrap 触发的探测后台跑完后
+	// 广播的 engine:detected 可能发在还没有订阅者的那一刻被静默丢弃，前端停在「未安装」而引擎其实早探到了。
+	// 与其让前端猜那一帧在不在，不如连接建立时主动给一份当前结论。
 	s.emitEngineStatus(write)
 
 	ping := time.NewTicker(20 * time.Second)

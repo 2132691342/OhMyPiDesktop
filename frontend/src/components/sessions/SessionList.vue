@@ -1,24 +1,39 @@
 <script setup lang="ts">
 // 会话列表：对话页的窄栏与会话页的主栏共用。
 // 数据来自磁盘上的会话文件，所以终端里聊过的会话这里也看得到。
+//
+// 列表按时间分组（今天 / 最近 7 天 / 更早）：找会话的动作几乎总是
+// 「刚才聊的那个」，分组让这个动作一次就能命中，不用在一串相对时间里扫。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { useAppStore } from '@/stores/app'
+import { useChatStore } from '@/stores/chat'
 import { useToasts } from '@/composables/useToasts'
 import { api } from '@/api/http'
 import type { SessionRow } from '@/types/api'
 
-const props = withDefaults(defineProps<{ active?: string; compact?: boolean; workspaceOnly?: boolean }>(), {
-  active: '',
-  compact: false,
-  workspaceOnly: false,
-})
+const props = withDefaults(
+  defineProps<{
+    active?: string
+    compact?: boolean
+    workspaceOnly?: boolean
+    /** 对话页窄栏才显示「新对话」：会话页是账本视图，开新对话要去对话页 */
+    showNew?: boolean
+  }>(),
+  {
+    active: '',
+    compact: false,
+    workspaceOnly: false,
+    showNew: false,
+  },
+)
 
-const emit = defineEmits<{ open: [path: string]; changed: [] }>()
+const emit = defineEmits<{ open: [path: string]; changed: []; newChat: [] }>()
 
 const app = useAppStore()
+const chat = useChatStore()
 const toasts = useToasts()
 const { t } = useI18n()
 
@@ -38,6 +53,34 @@ const filtered = computed(() => {
   return rows.value.filter((row) =>
     [row.title, row.model, row.cwd].some((field) => (field ?? '').toLowerCase().includes(query)),
   )
+})
+
+interface Group {
+  key: string
+  label: string
+  rows: SessionRow[]
+}
+
+/** 按更新时间分三组。列表本身已按时间倒序，分组只做切分不再排序。 */
+const groups = computed<Group[]>(() => {
+  const dayStart = new Date()
+  dayStart.setHours(0, 0, 0, 0)
+  const todayStart = dayStart.getTime()
+  const weekStart = todayStart - 6 * 24 * 60 * 60_000
+  const today: SessionRow[] = []
+  const week: SessionRow[] = []
+  const older: SessionRow[] = []
+  for (const row of filtered.value) {
+    const ts = new Date(row.updated_at).getTime()
+    if (!Number.isNaN(ts) && ts >= todayStart) today.push(row)
+    else if (!Number.isNaN(ts) && ts >= weekStart) week.push(row)
+    else older.push(row)
+  }
+  const out: Group[] = []
+  if (today.length) out.push({ key: 'today', label: t('sessions.groupToday'), rows: today })
+  if (week.length) out.push({ key: 'week', label: t('sessions.groupWeek'), rows: week })
+  if (older.length) out.push({ key: 'older', label: t('sessions.groupEarlier'), rows: older })
+  return out
 })
 
 async function load() {
@@ -110,6 +153,19 @@ defineExpose({ load })
 
 <template>
   <div class="session-list" :class="{ compact }">
+    <!-- 新对话在这里而不是输入框底栏：它是会话级的动作，属于会话列表 -->
+    <div v-if="props.showNew" class="list-new">
+      <button
+        class="omp-btn primary sm new-btn"
+        :class="{ 'is-loading': chat.switching === 'new' }"
+        :disabled="chat.switching === 'new'"
+        @click="emit('newChat')"
+      >
+        <AppIcon name="plus" :size="14" />
+        {{ t('chat.newChat') }}
+      </button>
+    </div>
+
     <div class="list-head">
       <input v-model="filter" class="omp-input sm" :placeholder="t('sessions.filterPlaceholder')" />
       <button class="omp-btn icon ghost" :title="t('common.refresh')" :class="{ 'is-loading': loading }" @click="load">
@@ -123,30 +179,33 @@ defineExpose({ load })
         <p class="empty-hint">{{ t('sessions.emptyHint') }}</p>
       </div>
 
-      <div
-        v-for="row in filtered"
-        :key="row.path"
-        class="session-row omp-row-click"
-        :class="{ 'is-active': row.path === active }"
-        @click="emit('open', row.path)"
-      >
-        <div class="row-top">
-          <span class="row-title">{{ row.title }}</span>
-          <span class="row-time">{{ relative(row.updated_at) }}</span>
+      <template v-for="group in groups" :key="group.key">
+        <div class="group-head">{{ group.label }}</div>
+        <div
+          v-for="row in group.rows"
+          :key="row.path"
+          class="session-row omp-row-click"
+          :class="{ 'is-active': row.path === active }"
+          @click="emit('open', row.path)"
+        >
+          <div class="row-top">
+            <span class="row-title">{{ row.title }}</span>
+            <span class="row-time">{{ relative(row.updated_at) }}</span>
+          </div>
+          <div class="row-meta">
+            <span v-if="row.model" class="row-model">{{ row.model }}</span>
+            <span class="row-dot">·</span>
+            <span>{{ row.messages }} {{ t('sessions.messages') }}</span>
+            <span v-if="row.cost" class="row-dot">·</span>
+            <span v-if="row.cost">${{ row.cost.toFixed(3) }}</span>
+          </div>
+          <div v-if="!compact" class="row-path">{{ row.cwd }}</div>
+          <div class="row-actions">
+            <button class="omp-btn text sm" @click.stop="rename(row)">{{ t('sessions.rename') }}</button>
+            <button class="omp-btn text sm danger" @click.stop="remove(row)">{{ t('common.delete') }}</button>
+          </div>
         </div>
-        <div class="row-meta">
-          <span v-if="row.model" class="row-model">{{ row.model }}</span>
-          <span class="row-dot">·</span>
-          <span>{{ row.messages }} {{ t('sessions.messages') }}</span>
-          <span v-if="row.cost" class="row-dot">·</span>
-          <span v-if="row.cost">${{ row.cost.toFixed(3) }}</span>
-        </div>
-        <div v-if="!compact" class="row-path">{{ row.cwd }}</div>
-        <div class="row-actions">
-          <button class="omp-btn text sm" @click.stop="rename(row)">{{ t('sessions.rename') }}</button>
-          <button class="omp-btn text sm danger" @click.stop="remove(row)">{{ t('common.delete') }}</button>
-        </div>
-      </div>
+      </template>
     </div>
   </div>
 </template>
@@ -169,6 +228,28 @@ defineExpose({ load })
 .list-head .omp-input {
   height: var(--omp-ctl-sm);
   font-size: var(--omp-fs-xs);
+}
+
+/* 新对话独占一行：它是这一栏最主要的动作，值得一个整行的主色按钮 */
+.list-new {
+  padding: var(--omp-sp-2) var(--omp-sp-2) 0;
+  flex: none;
+}
+
+.new-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* 分组标题：一行小字，只做扫视的锚点，不抢行的视觉重量 */
+.group-head {
+  padding: var(--omp-sp-3) var(--omp-sp-3) var(--omp-sp-1);
+  font-size: var(--omp-fs-3xs);
+  font-weight: 700;
+  letter-spacing: var(--omp-ls-plate);
+  text-transform: uppercase;
+  color: var(--omp-faint);
+  user-select: none;
 }
 
 .list-body {

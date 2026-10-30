@@ -336,6 +336,19 @@ export const useChatStore = defineStore('chat', () => {
     asks.value = asks.value.filter((a) => a.id !== response.id)
   }
 
+  // 界面层删除一轮：后端按会话记账，引擎的账本不动。
+  // 本地先把这轮摘掉（下次投影返回时后端也不再带它），失败要抛给调用方。
+  async function hideTurn(hid: string) {
+    await api.hideTurn(sessionFile.value, hid)
+    history.value = history.value.filter((t) => t.hid !== hid)
+  }
+
+  // 撤销一次隐藏：后端撤账后重拉快照，被摘掉的轮次就回来了。
+  async function unhideTurn(hid: string) {
+    await api.unhideTurn(sessionFile.value, hid)
+    await refresh()
+  }
+
   // 收尾：这一轮从流里出来，同时解除「正在回答」。
   //
   // 不在本地并进历史——服务器的历史才是那一轮的真身，
@@ -368,6 +381,7 @@ export const useChatStore = defineStore('chat', () => {
     switching,
     context,
     contextPercent,
+    stats,
     tokensPerSecond,
     autoCompaction,
     commands,
@@ -407,6 +421,8 @@ export const useChatStore = defineStore('chat', () => {
     followUp,
     compact,
     answer,
+    hideTurn,
+    unhideTurn,
     pushNotice,
     dismissNotice,
     setStatus,

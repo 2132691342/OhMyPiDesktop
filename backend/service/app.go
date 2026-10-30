@@ -27,10 +27,8 @@ type App struct {
 	Hub    *hub.Hub
 	Engine *engine.Supervisor
 
-	// OnWorkspaceChange 在当前工作目录切换后被调用。
-	//
-	// 托盘菜单里有一支「最近工作目录」，它必须跟着变；但 service 不认识窗口，
-	// 所以只留一个回调——不回调就等于菜单与设置页各说一套话。
+	// OnWorkspaceChange 在当前工作目录切换后被调用；service 不认识窗口，只留回调：
+	// 不回调的话托盘「最近工作目录」菜单就与设置页各说一套话。
 	OnWorkspaceChange func()
 
 	mu         sync.RWMutex
@@ -45,12 +43,9 @@ type App struct {
 	// detectMu 是探测的单飞锁：首屏三个请求同时到达时只探测一轮。
 	// 它与 a.mu 分开：探测要起子进程（几秒），持 a.mu 会把读缓存的人也堵住。
 	detectMu sync.Mutex
-	// detectWait 在每轮探测开始时换上新的、结束时关掉。
-	//
-	// 它给「愿意等」的调用方一个正确的等待点。没有它，调用方只能靠
-	// SSE 上那帧 engine:detected 得知探测完了——而那一帧可能发在还没有
-	// 订阅者的时刻（Bootstrap 的探测早于 SSE 连接），于是被静默丢弃，
-	// 前端再也不会刷新，概览页就停在「未安装」不动。
+	// detectWait 在每轮探测开始时换上新的、结束时关掉，给「愿意等」的调用方一个正确的等待点。
+	// 没有它只能靠 SSE 的 engine:detected 帧，而那帧可能发在还没有订阅者的时刻
+	// （Bootstrap 探测早于 SSE 连接）被静默丢弃，前端不再刷新，概览页停在「未安装」。
 	detectWait chan struct{}
 	// bgDetecting 保证同一时刻只有一颗后台补验在跑。
 	bgDetecting atomic.Bool
@@ -58,21 +53,20 @@ type App struct {
 	// countsMu / counts 是「落盘计数」的短 TTL 缓存（概览页首屏用）。
 	countsMu sync.Mutex
 	counts   map[engine.Kind]healthCounts
-	// probeReason 是「为什么没探到」的逐引擎答案（探到了就是空串）。
-	//
-	// 它与 ids 一起写、一起读：只留结论不留原因，界面就只能把「超时没探出来」
-	// 说成「没装」，而这两件事的下一步完全相反。
+	// probeReason 是「为什么没探到」的逐引擎答案（探到了就是空串），与 ids 一起写读：
+	// 只留结论不留原因，界面会把「超时没探出来」说成「没装」，而这两件事的下一步完全相反。
 	probeReason map[engine.Kind]string
 
 	// countsBusy 保证同一引擎同时只有一颗后台重扫在跑。
 	countsBusyMu sync.Mutex
 	countsBusy   map[engine.Kind]bool
 
-	// modelCache 是模型清单的短 TTL 缓存。
-	//
-	// 它存在的原因是实测：引擎冷启动要 3~11 秒，而“打开模型下拉”
-	// 这种零风险操作不该付这个代价。见 modelcfg.go。
+	// modelCache 是模型清单的短 TTL 缓存：实测引擎冷启动要 3~11 秒，
+	// 「打开模型下拉」这种零风险操作不该付这个代价。见 modelcfg.go。
 	modelCache modelCache
+
+	// hidden 是「界面上隐藏了哪些消息轮次」的账本（见 hidden.go）。
+	hidden HiddenTurns
 
 	Version string
 }
@@ -83,11 +77,8 @@ type Options struct {
 	Hub     *hub.Hub
 	DataDir string
 	Version string
-	// SkipWarm 不在装配时预热「上游最新版」。
-	//
-	// 预热会发外网请求并把结果写回设置文件，且没有任何同步等待点——
-	// 测试里那会在 t.TempDir() 已经被回收之后才落盘，
-	// 报一个与用例本身毫无关系的「directory is not empty」。
+	// SkipWarm 不在装配时预热「上游最新版」（仅测试用）：预热发外网请求并写回设置文件，
+	// 又没有同步等待点，测试里会在 t.TempDir() 回收后才落盘，报出无关的「directory is not empty」。
 	// 生产路径永远不带这个，首屏的「先有个旧值」靠的就是它。
 	SkipWarm bool
 }
@@ -114,6 +105,8 @@ func New(opts Options) (*App, error) {
 	if !app.active.Valid() {
 		app.active = engine.KindOMP
 	}
+	// 隐藏轮次账本读不出来就当空账：它坏了不该挡住整个启动。
+	_ = app.hidden.Unmarshal(app.Store.Get(domain.KeyHiddenTurns))
 	app.Engine = engine.NewSupervisor(
 		app.Hub.Emit,
 		map[engine.Kind]engine.Dialect{
@@ -174,11 +167,9 @@ func (a *App) newSubagentStore(kind engine.Kind) engine.SubagentStore {
 	return omp.NewRoster()
 }
 
-// detectTTL 是探测结果的保鲜期。
-//
-// 探测要起子进程：omp 的 --version 几十毫秒，pi 的 --help 要起一次 Node（约 3 秒）。
-// 每次 Bootstrap 都真探一遍会让首屏慢三秒，而「引擎装在 PATH 上」这件事
-// 一分钟内不会变。所以默认走缓存，只有显式「重新检测」才强制。
+// detectTTL 是探测结果的保鲜期：探测要起子进程（omp 几十毫秒，pi 的 --help 要起一次 Node 约 3 秒），
+// 每次 Bootstrap 都真探会让首屏慢三秒，而「引擎装在 PATH 上」一分钟内不会变。
+// 默认走缓存，只有显式「重新检测」才强制。
 const detectTTL = time.Minute
 
 // refreshIndexes 按每个引擎的会话目录重建索引。
@@ -280,9 +271,7 @@ func (a *App) Identity(kind engine.Kind) engine.Identity {
 }
 
 // ProbeReason 返回「为什么没探到这个引擎」的答案。
-//
-// 空串表示这一轮的结论可信（installed 说的是真的）。
-// 非空只有三种：missing / bad-path / timeout，见 env.DetectReason。
+// 空串表示这一轮的结论可信（installed 说的是真的）；非空只有三种：missing / bad-path / timeout，见 env.DetectReason。
 func (a *App) ProbeReason(kind engine.Kind) string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()

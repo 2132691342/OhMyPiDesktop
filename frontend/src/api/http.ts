@@ -174,6 +174,10 @@ export const api = {
     post<{ ok: boolean }>('/chat/thinking', { engine, session, level }),
   setAutoCompaction: (engine: EngineKind, session: string, enabled: boolean) =>
     post<{ ok: boolean }>('/chat/autocompact', { engine, session, enabled }),
+  // 消息隐藏：界面上「删除一轮」的两个方向。hid 是历史投影带下去的轮次标识，
+  // 服务端按会话记账，引擎的会话文件与上下文不动。
+  hideTurn: (session: string, hid: string) => post<{ ok: boolean }>('/messages/hide', { session, hid }),
+  unhideTurn: (session: string, hid: string) => post<{ ok: boolean }>('/messages/unhide', { session, hid }),
 
   agents: (engine?: EngineKind) => get<{ agents: AgentRow[] }>('/agents', k(engine)),
   agentMessages: (id: string, from: number, engine?: EngineKind) =>
