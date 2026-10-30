@@ -111,9 +111,21 @@ pi ：主动发一次 get_state（25s 上限）→ 有回包就证明读循环�
 改这些命令时，以引擎自带的命令表定义为准逐字核对：参数名写错不会报错，
 引擎只会当成缺参，于是界面表现为「点了没反应」。
 
-**调用纪律**：发任何命令前先查 `Caps.Commands`。命令不存在时
-service 层返回 `ErrUnsupported`，界面据此隐藏控件——**不要发出去再处理报错**，
-那会让用户看到「点了没反应」和一堆超时。
+**调用纪律**：发命令前先查对应的 `Caps` 位。命令不存在时
+`engine.Engine` 直接返回 `CodeEngineUnsupported`，界面据此隐藏控件——
+**不要发出去再处理报错**，那会让用户看到「点了没反应」和一堆超时。
+
+能力位与守卫的位置（守卫分两层，一层在引擎层，一层在 service 层）：
+
+| 能力位 | 守卫位置 | 覆盖 |
+|---|---|---|
+| `Caps.QueueClear` | `engine.Engine.ClearQueue` | `clear_queue` |
+| `Caps.QueueEdit` | `engine.Engine.RemoveQueued` | `remove_queued_message` |
+| `Caps.Fragments` | `engine.readloop` | 收 `rpc_chunk` 做分片重组 |
+| `Caps.Goals` | `engine.frames` | `chat:goal` 事件 |
+| `Caps.Login` | `service.LoginProviders` / `service.Login` | `login` / `logout` 与登录向导 |
+| `Caps.Subagents` | `service.Agents` 等 | 子代理那 5 条 |
+| `Caps.SlashCommands` | `service.ChatState` | 命令清单（omp 推 / pi 拉） |
 
 ## 我们收的帧
 

@@ -6,7 +6,10 @@
 //
 // 端口由服务自选（随机回环端口），启动后会把实际端口与令牌打出来。
 // 它不嵌前端：前端用 npm run dev 起 Vite，然后在浏览器控制台里
-// localStorage 设 omp.dev.port / omp.dev.token 即可直连。
+// 设 localStorage 的 omp.dev.port / omp.dev.token 即可直连。
+//
+// 它的用途是「改后端时不用每次重开整个桌面应用」：编译一次、起一次服务、
+// 浏览器刷新就能看到效果。
 package main
 
 import (
@@ -15,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -32,13 +36,13 @@ func main() {
 
 	dir := *dataDir
 	if dir == "" {
-		dir = os.TempDir() + string(os.PathSeparator) + "oh-my-pi-dev"
+		dir = filepath.Join(os.TempDir(), "oh-my-pi-dev")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fmt.Println("数据目录不可写:", err)
 		os.Exit(1)
 	}
-	store, err := repo.Open(dir + string(os.PathSeparator) + "dev.json")
+	store, err := repo.Open(filepath.Join(dir, "dev.json"))
 	must(err)
 	defer store.Close()
 
@@ -63,6 +67,7 @@ func main() {
 	pkg.Infof("devserver: 已退出")
 }
 
+// must 遇错就退出：开发工具的失败不需要优雅收尾。
 func must(err error) {
 	if err != nil {
 		fmt.Println("fatal:", err)

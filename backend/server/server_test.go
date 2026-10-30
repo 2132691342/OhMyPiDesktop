@@ -1,6 +1,10 @@
 package server
 
-// 安全边界层：只测令牌闸门、来源拦截、方法限制，外加应用页与附件契约形态。
+// 安全边界层：只测令牌闸门、来源拦截、方法限制，
+// 外加应用页与附件的契约形态。
+//
+// 这一组测的是「谁能让这条服务干活」——闸门一旦失效，
+// 任何本机进程都能读用户的会话、改他的设置。
 
 import (
 	"context"
@@ -63,7 +67,7 @@ func testServer(t *testing.T) (*Server, http.Handler) {
 	return srv, srv.Handler()
 }
 
-// loopback 把请求来源标为本机，绕开来来源闸门（默认来源会被挡）。
+// loopback 把请求来源标为本机，绕开来源闸门（默认来源会被挡）。
 func loopback(req *http.Request) *http.Request {
 	req.RemoteAddr = "127.0.0.1:51234"
 	return req
@@ -189,7 +193,7 @@ func TestRejectsNonLoopback(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("外部来源状态 = %d，期望 403", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "8002") {
+	if !strings.Contains(rec.Body.String(), "7003") {
 		t.Errorf("应回报来源被拒的错误码: %s", rec.Body.String())
 	}
 }

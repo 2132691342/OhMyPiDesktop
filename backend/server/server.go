@@ -86,12 +86,12 @@ func (s *Server) guard() gin.HandlerFunc {
 		}
 		host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
 		if err != nil || !isLoopback(host) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": "8002", "message": "只接受本机请求"})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": pkg.CodeForbiddenSource, "message": "只接受本机请求"})
 			return
 		}
 		// 令牌两种带法：普通请求走请求头；SSE 走查询参数（EventSource 不能设自定义头）。
 		if c.Request.URL.Path != "/api/v1/health" && !s.tokenOK(c) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": "8003", "message": "令牌不匹配"})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": pkg.CodeUnauthorized, "message": "令牌不匹配"})
 			return
 		}
 		c.Next()

@@ -17,7 +17,7 @@ func CreateBranch(dir, name string) (*domain.GitStatusVO, error) {
 		return nil, err
 	}
 	if !validBranchName(name) {
-		return nil, pkg.New("1018", "分支名不合法",
+		return nil, pkg.New(pkg.CodeGitBadInput, "分支名不合法",
 			"只允许字母、数字、点、下划线、斜杠与连字符，且不能以连字符开头")
 	}
 	if _, err := writeRun(sc.root, writeTimeout, "checkout", "-b", strings.TrimSpace(name)); err != nil {
@@ -33,7 +33,7 @@ func SwitchBranch(dir, name string) (*domain.GitStatusVO, error) {
 		return nil, err
 	}
 	if !validBranchName(name) {
-		return nil, pkg.New("1018", "分支名不合法", name)
+		return nil, pkg.New(pkg.CodeGitBadInput, "分支名不合法", name)
 	}
 	if _, err := writeRun(sc.root, writeTimeout, "checkout", strings.TrimSpace(name)); err != nil {
 		return nil, checkoutFailure(err)
@@ -48,10 +48,10 @@ func DeleteBranch(dir, name string) (*domain.GitStatusVO, error) {
 		return nil, err
 	}
 	if !validBranchName(name) {
-		return nil, pkg.New("1018", "分支名不合法", name)
+		return nil, pkg.New(pkg.CodeGitBadInput, "分支名不合法", name)
 	}
 	if _, err := writeRun(sc.root, writeTimeout, "branch", "-d", strings.TrimSpace(name)); err != nil {
-		return nil, pkg.New("1019", "这个分支删不掉", errText(err)+"\n未合并的分支要先用自己的 Git 工具处理")
+		return nil, pkg.New(pkg.CodeGitRejected, "这个分支删不掉", errText(err)+"\n未合并的分支要先用自己的 Git 工具处理")
 	}
 	return Status(dir)
 }
@@ -64,7 +64,7 @@ func Merge(dir, name string, rebase bool) (*domain.GitStatusVO, error) {
 		return nil, err
 	}
 	if !validBranchName(name) {
-		return nil, pkg.New("1018", "分支名不合法", name)
+		return nil, pkg.New(pkg.CodeGitBadInput, "分支名不合法", name)
 	}
 	return mergeLike(dir, sc, rebase, "merge", "rebase", strings.TrimSpace(name))
 }
@@ -91,9 +91,9 @@ func mergeFailure(err error) error {
 	text := strings.ToLower(errText(err))
 	switch {
 	case strings.Contains(text, "local changes"), strings.Contains(text, "would be overwritten"):
-		return pkg.New("1019", "工作区有未提交的改动，先提交或丢弃后再合并", errText(err))
+		return pkg.New(pkg.CodeGitRejected, "工作区有未提交的改动，先提交或丢弃后再合并", errText(err))
 	case strings.Contains(text, "not something we can merge"), strings.Contains(text, "not a valid"):
-		return pkg.New("1018", "找不到这个分支", errText(err))
+		return pkg.New(pkg.CodeGitBadInput, "找不到这个分支", errText(err))
 	}
 	return err
 }
@@ -102,7 +102,7 @@ func mergeFailure(err error) error {
 func checkoutFailure(err error) error {
 	text := strings.ToLower(errText(err))
 	if strings.Contains(text, "local changes") || strings.Contains(text, "would be overwritten") {
-		return pkg.New("1019", "工作区有未提交的改动，先提交或丢弃后再切换分支", errText(err))
+		return pkg.New(pkg.CodeGitRejected, "工作区有未提交的改动，先提交或丢弃后再切换分支", errText(err))
 	}
 	return err
 }
@@ -115,20 +115,20 @@ func UpdateState(dir, action string) (*domain.GitStatusVO, error) {
 	}
 	st := sc.state()
 	if st.StateCode == domain.GitStateNone {
-		return nil, pkg.New("1018", "当前没有进行中的合并或变基", "")
+		return nil, pkg.New(pkg.CodeGitBadInput, "当前没有进行中的合并或变基", "")
 	}
 	verb := strings.TrimSpace(action)
 	if verb != domain.GitStateContinue && verb != domain.GitStateAbort {
-		return nil, pkg.New("1018", "只支持继续或中止", verb)
+		return nil, pkg.New(pkg.CodeGitBadInput, "只支持继续或中止", verb)
 	}
 	cmd := stateCommand(st.StateCode, verb)
 	if len(cmd) == 0 {
-		return nil, pkg.New("1018", "这个中间状态不支持该操作", st.StateCode)
+		return nil, pkg.New(pkg.CodeGitBadInput, "这个中间状态不支持该操作", st.StateCode)
 	}
 	if _, err := writeRun(sc.root, writeTimeout, cmd...); err != nil {
 		text := strings.ToLower(errText(err))
 		if verb == domain.GitStateContinue && strings.Contains(text, "unmerged") {
-			return nil, pkg.New("1021", "还有文件没解决冲突，先在改动列表里逐个标记已解决", "")
+			return nil, pkg.New(pkg.CodeConflictUnresolved, "还有文件没解决冲突，先在改动列表里逐个标记已解决", "")
 		}
 		return nil, err
 	}

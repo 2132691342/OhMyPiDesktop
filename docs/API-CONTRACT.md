@@ -207,7 +207,7 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | POST | `/agents/cancel` | `{engine, id}`（返回 `cancelled:false` 是幂等，不是错误） |
 | POST | `/agents/subscribe` | `{engine, level}`（`off｜progress｜events`） |
 
-> pi 下这五条返回 `code=5001`（`CodeEngineUnsupported`）。前端据 `caps.subagents`
+> pi 下这五条返回 `code=3006`（`CodeEngineUnsupported`）。前端据 `caps.subagents`
 > 根本不去调——**先看能力，再看错误**。
 
 ### 模型与服务商（配置格式分叉）
@@ -341,12 +341,12 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 ## SSE
 
 ```
-id: 42
 data: {"seq":42,"event":"chat:patch","data":{…},"sent_at":1793000000000}
 
 ```
 
-- **没有** `event:` 帧头：事件名在 `data.event` 里。这样前端只需要一个 `onmessage`，
+- **没有** `event:` 帧头，**也没有** `id:` 帧头：事件名在 `data.event` 里，
+  序号在 `data.seq` 里。这样前端只需要一个 `onmessage`，
   也不会因为浏览器对自定义事件名的处理差异而出错。
 - `seq` 单调递增。断开重连带 `?since=<lastSeq>` 或 `Last-Event-ID`，
   后端先补发环形窗口（1024 帧）内的帧；窗口外不补，前端据 `seq` 跳号自行拉快照。
@@ -426,6 +426,7 @@ GET /events?since=41
 | `engine:ready` | 引擎就绪 `{kind, work_dir, pid, protocol}` |
 | `engine:exit` | 引擎退出 `{kind, work_dir, reason}` |
 | `engine:detected` | 探测完成 `{at}`：界面据此把「检测中」换成真结果 |
+| `engine:status` | SSE 连接建立时补的一帧当前引擎状态。探测完成早于本连接时，那一帧已被丢弃，界面会停在「未安装」——这一帧补上结论，之后的 `engine:detected` 再给新的 |
 | `engine:commands` | 可用斜杠命令列表（仅 omp 主动推） |
 | `engine:config_changed` | 模型 / 思考档变化 |
 | `engine:extension_error` | 扩展报错，只进日志 |
@@ -435,7 +436,8 @@ GET /events?since=41
 | `subagent:progress` | `{id, index, agent, task, progress{…}}`（仅 omp） |
 | `subagent:event` | 子代理原始会话事件（仅 omp，`events` 档） |
 | `agents:cleared` | roster 与游标已清空（会话切换后由后端主动发） |
-| `app:progress` | 装 / 升 / 卸的进度：`{kind, action, phase, line?, command?, message?}`。`phase` = `start｜line｜done｜fail`；`start` 帧带 `command`（要跑的命令原文），`line` 帧带一行输出 |
+| `app:progress` | 装 / 升 / 卸的进度：`{kind, action, phase, line?, command?, message?}`。`phase` = `start｜line｜done｜fail`（前端 `readAppProgress` 窄化时只认这四个）；`start` 帧带 `command`（要跑的命令原文），`line` 帧带一行输出 |
+| `app:close_requested` | 关窗时弹一次选择：`{close_action}`（当前的默认动作）。窗口还没藏，所以界面上能看见这个选择框 |
 
 ### 渲染块
 

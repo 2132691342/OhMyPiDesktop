@@ -15,7 +15,7 @@
 ```
 Hub
 ├─ seq     int64           单调递增，前端据此发现跳号
-├─ ring    []frame         最近 N 帧的环形窗口，断线重连时补发
+├─ ring    []frame         最近 N 帧的环形窗口，断线重连时补发（应用用 1024 帧）
 └─ subs    map[*subscriber]struct{}
 ```
 

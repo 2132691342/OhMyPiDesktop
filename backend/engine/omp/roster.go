@@ -13,7 +13,6 @@ import (
 // 它是引擎进程状态的旁支：与进程同生命周期，会话切换时要跟着清。
 // 放在这里而不是 service，是因为它读写的全是引擎帧字段——
 // service 只做编排，不该知道 completionPercent 这种帧内部名字。
-
 // 视图类型由 engine 包定义：roster 只负责把帧字段映射过去。
 
 // Roster 管一个引擎进程的 roster 与字节游标。

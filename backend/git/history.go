@@ -48,7 +48,7 @@ func CommitDetail(dir, hash string) (*domain.GitCommitDetailVO, error) {
 		return nil, err
 	}
 	if !validRef(hash) {
-		return nil, pkg.New("1005", "提交号不合法", hash)
+		return nil, pkg.New(pkg.CodeFileMissing, "提交号不合法", hash)
 	}
 	res, err := run(sc.root, statusTimeout, "show", "--no-color", "--no-ext-diff", "--date=unix",
 		"--pretty=format:%H"+logSep+"%h"+logSep+"%s"+logSep+"%b"+logSep+"%an"+logSep+"%at"+logSep+"%P",
@@ -80,7 +80,7 @@ func FileHistory(dir, rel string, limit int) ([]domain.GitCommitVO, error) {
 	}
 	wsRel, err := relTo(dir, full)
 	if err != nil {
-		return nil, pkg.New("1004", "路径越出工作目录", rel)
+		return nil, pkg.New(pkg.CodePathEscape, "路径越出工作目录", rel)
 	}
 	if limit <= 0 || limit > maxCommits {
 		limit = maxCommits
@@ -108,11 +108,11 @@ func FileDiffInCommit(dir, hash, rel string) (*domain.GitDiffVO, error) {
 		return nil, err
 	}
 	if !validRef(hash) {
-		return nil, pkg.New("1005", "提交号不合法", hash)
+		return nil, pkg.New(pkg.CodeFileMissing, "提交号不合法", hash)
 	}
 	rel = strings.TrimSpace(rel)
 	if rel == "" {
-		return nil, pkg.New("1005", "说清是哪个文件", "")
+		return nil, pkg.New(pkg.CodeFileMissing, "说清是哪个文件", "")
 	}
 	full, err := pkg.SafeJoin(dir, rel)
 	if err != nil {
@@ -120,7 +120,7 @@ func FileDiffInCommit(dir, hash, rel string) (*domain.GitDiffVO, error) {
 	}
 	wsRel, err := relTo(dir, full)
 	if err != nil {
-		return nil, pkg.New("1004", "路径越出工作目录", rel)
+		return nil, pkg.New(pkg.CodePathEscape, "路径越出工作目录", rel)
 	}
 	// --format= 关掉提交信息，--no-ext-diff 关掉外部差异工具：只要 diff 正文。
 	res, err := run(sc.root, statusTimeout, "show", hash, "--no-color", "--no-ext-diff",
@@ -197,11 +197,11 @@ func parseLog(out string) []domain.GitCommitVO {
 func parseShow(sc *scope, out string) (*domain.GitCommitDetailVO, error) {
 	head, _, _ := strings.Cut(out, "\ndiff --git")
 	if !strings.Contains(head, logSep) {
-		return nil, pkg.New("1015", "读不到这次提交的内容", "")
+		return nil, pkg.New(pkg.CodeGitUnavailable, "读不到这次提交的内容", "")
 	}
 	f := strings.Split(head, logSep)
 	if len(f) < 7 {
-		return nil, pkg.New("1015", "这次提交的信息读不完整", "")
+		return nil, pkg.New(pkg.CodeGitUnavailable, "这次提交的信息读不完整", "")
 	}
 	when, _ := strconv.ParseInt(strings.TrimSpace(f[5]), 10, 64)
 	if when > 0 {

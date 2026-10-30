@@ -36,11 +36,11 @@ func NormalizePath(p string) string {
 // 所以比较的是两侧的「真实路径」（Windows 上再折叠大小写）。
 func SafeJoin(root, target string) (string, error) {
 	if strings.TrimSpace(root) == "" {
-		return "", New("1003", "工作目录为空", "")
+		return "", New(CodeWorkspaceInvalid, "工作目录为空", "")
 	}
 	absRoot, err := filepath.Abs(filepath.Clean(root))
 	if err != nil {
-		return "", Wrap("1003", "工作目录解析失败", err)
+		return "", Wrap(CodeWorkspaceInvalid, "工作目录解析失败", err)
 	}
 	full := NormalizePath(target)
 	if !filepath.IsAbs(full) {
@@ -57,7 +57,7 @@ func SafeJoin(root, target string) (string, error) {
 		return "", err
 	}
 	if !IsInside(realRoot, realFull) {
-		return "", New("1004", "不能操作工作目录之外的路径", realFull)
+		return "", New(CodePathEscape, "不能操作工作目录之外的路径", realFull)
 	}
 	return full, nil
 }

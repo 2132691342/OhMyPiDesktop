@@ -1,6 +1,10 @@
 package session
 
-// 只测读引擎私有文件时静默出错的点：跨引擎等价投影、标题读取、未知条目跳过、缓存有界。
+// 会话层只测读引擎私有文件时静默出错的点：跨引擎等价投影、标题兜底、
+// 未知条目跳过、缓存有界与失效。
+//
+// 这一层读的是引擎的私有格式：引擎加一种条目、挪一个字段，
+// 界面就会少显示一段对话——而那不会报错，只会让用户以为「那轮没聊过」。
 
 import (
 	"os"
@@ -34,6 +38,9 @@ func writeSession(t *testing.T, dir, name string, lines []string) string {
 }
 
 // 跨引擎等价投影：同一段对话，omp/pi 两种日志格式投影出来必须一致。
+//
+// 这是「一套读取代码 + 三点适配」的全部意义：两边投影不一致时，
+// 界面上同一条会话在两个引擎下长得不一样，用户会以为是两回事。
 func TestSessionSnapshotEquivalence(t *testing.T) {
 	roundtrip := func(name string, lines []string, kind engine.Kind) (string, string, int, int, float64, int) {
 		dir := t.TempDir()
@@ -109,6 +116,8 @@ func TestSessionSnapshotEquivalence(t *testing.T) {
 }
 
 // 读不出来的私有条目一律跳过，不能报错也不能漏掉有用会话。
+//
+// 两个引擎各有十几种私有条目类型，引擎加一种新类型时界面不该整个崩掉。
 func TestSkipUnknownEntriesDoesNotError(t *testing.T) {
 	dir := t.TempDir()
 	writeSession(t, dir, "a.jsonl", []string{
@@ -140,7 +149,28 @@ func TestUsageDefaultsWhenAbsent(t *testing.T) {
 	}
 }
 
-// 文件缓存有界：反复读超过 cacheMax 个会话文件，缓存不得无限增长。
+// 没有标题条目的会话：拿第一句话当标题。
+//
+// 两个引擎默认都不写 title / session_info，于是整个列表全是「会话 · 模型名」——
+// 一屏十几行同一个字符串，用户认不出哪条是哪个。这一条钉住那条兜底。
+func TestTitleFallsBackToFirstUserMessage(t *testing.T) {
+	dir := t.TempDir()
+	writeSession(t, dir, "a.jsonl", []string{
+		`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
+		`{"type":"message","message":{"role":"user","content":[{"type":"text","text":"帮我把这个页面的按钮五态补齐\n第二行不算标题"}],"timestamp":1}}`,
+		`{"type":"message","message":{"role":"assistant","content":"ok","timestamp":2}}`,
+	})
+	list, err := NewIndex(dir, engine.KindPi).List("")
+	if err != nil || len(list) != 1 {
+		t.Fatalf("List: %v %+v", err, list)
+	}
+	if list[0].Title != "帮我把这个页面的按钮五态补齐 第二行不算标题" {
+		t.Fatalf("标题应取第一句话并压成一行，得到 %q", list[0].Title)
+	}
+}
+
+// 缓存必须有界：用户的会话会一直累积（本机实测 90 个，重度用户几千个），
+// 每条都存着解析出来的元信息。缓存无上限时它跨引擎各有一份，且永不释放。
 func TestIndexFileCacheBounded(t *testing.T) {
 	dir := t.TempDir()
 	total := cacheMax + 200
@@ -164,27 +194,10 @@ func TestIndexFileCacheBounded(t *testing.T) {
 	}
 }
 
-// 没有标题条目的会话：拿第一句话当标题。
+// 会话改名 / 删除后必须让该文件缓存失效，否则读到旧标题。
 //
-// 两个引擎默认都不写 title / session_info，于是整个列表全是「会话 · 模型名」——
-// 一屏十几行同一个字符串，用户认不出哪条是哪个。这一条钉住那条兜底。
-func TestTitleFallsBackToFirstUserMessage(t *testing.T) {
-	dir := t.TempDir()
-	writeSession(t, dir, "a.jsonl", []string{
-		`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
-		`{"type":"message","message":{"role":"user","content":[{"type":"text","text":"帮我把这个页面的按钮五态补齐\n第二行不算标题"}],"timestamp":1}}`,
-		`{"type":"message","message":{"role":"assistant","content":"ok","timestamp":2}}`,
-	})
-	list, err := NewIndex(dir, engine.KindPi).List("")
-	if err != nil || len(list) != 1 {
-		t.Fatalf("List: %v %+v", err, list)
-	}
-	if list[0].Title != "帮我把这个页面的按钮五态补齐 第二行不算标题" {
-		t.Fatalf("标题应取第一句话并压成一行，得到 %q", list[0].Title)
-	}
-}
-
-// 会话改名/删除后必须让该文件缓存失效，否则读到旧标题。
+// 不失效的话，删掉的会话会一直出现在缓存里直到被淘汰，
+// 表现是「明明删了，列表里还在」。
 func TestIndexInvalidate(t *testing.T) {
 	dir := t.TempDir()
 	p := writeSession(t, dir, "a.jsonl", []string{

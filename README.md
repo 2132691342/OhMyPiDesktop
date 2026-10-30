@@ -107,8 +107,9 @@ OhMyPiDesktop/
 │   ├── domain/ runtime/ pkg/
 ├── frontend/src/           api / components / composables / locales / stores / types / utils / views + CSS
 ├── tools/
-│   ├── smoke/              真起引擎跑一轮，打印事件序列与投影结果
-│   └── devserver/          只起后端，供浏览器直连调试
+│   ├── smoke/              真起引擎跑一轮，打印事件顺序、会话文件、用量与块
+│   ├── devserver/          只起后端，供浏览器直连调试
+│   └── check-i18n.mjs      校验两个语言文件的键结构一致
 └── docs/                   工程文档
 ```
 
@@ -132,7 +133,7 @@ npm i -g --ignore-scripts @earendil-works/pi-coding-agent   # pi
 
 ```bash
 wails3 task dev                 # 热重载
-task test                       # 后端测试（gofmt / vet / test 统一入口见 Taskfile）
+task check                      # 跑完所有门禁（格式 / vet / 测试 / i18n 结构）
 go build ./backend/...          # 只验后端
 cd frontend && npm run build    # 前端类型检查 + 打包
 wails3 build                    # 产物 bin/OhMyPiDesktop.exe（便携版）
@@ -150,8 +151,8 @@ cd frontend && npm run dev             # Vite
 真起引擎验一轮（改了协议翻译后必做）：
 
 ```bash
-task smoke -- -engine omp -msg "Reply with exactly: OK"
-task smoke -- -engine pi  -msg "Reply with exactly: OK"
+task smoke -- -engine omp -message "Reply with exactly: OK"
+task smoke -- -engine pi  -message "Reply with exactly: OK"
 ```
 
 构建需要 Go 1.26+、Node 18+、Wails v3 CLI（`wails3`），打安装器还要 `makensis`。

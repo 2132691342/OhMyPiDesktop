@@ -115,6 +115,18 @@ main.go ──→ backend/desktop ──→ server ──→ service ──→ e
 - HTTP 恒回 200，错误在 body 的 `code` 里；前端拦截器统一抛 `ApiError`
 - **命令不存在时不发出去**，直接返回 `CodeEngineUnsupported`；前端本该已隐藏入口
 
+**一个码只有一个意思。** 界面按 `code` 分流，同一个码必须给同一种反应——
+两处不同的事共用一个码，界面就只剩「猜」，猜错的表现是给用户一个与实际问题无关的提示。
+所以：
+
+- 码只在 `pkg/errors.go` 里定义，**不许在别处写裸字符串**（`pkg.New("1015", …)` 是错的，
+  要写 `pkg.New(pkg.CodeGitUnavailable, …)`）
+- 新增一个码要同时在 `pkg/errors.go` 与 `docs/ERROR-CODES.md` 里落两处：
+  码表里加常量，处置表里写清界面该给什么反应
+- 段位：1xxx 本地环境（内部 / 路径 / Git）、2xxx 启动、3xxx 引擎进程与协议、
+  4xxx 模型与凭据、5xxx 技能 / 插件 / 引擎配置、6xxx 会话、7xxx 入参与鉴权、
+  8xxx 文件 / 路径 / 网络、9xxx 引擎自身的装 / 升 / 卸
+
 ## 4. 并发
 
 - 一个引擎进程 = 一个读协程（独占 stdout）+ 一把写锁（半行写入会让解析器吞掉后续命令）
@@ -189,6 +201,10 @@ json tag 同步用 snake_case（`branch_name`）。
   与重复覆盖同一分支的用例，只留「会悄无声息错」的长链路：跨引擎投影等价、增量与全量等价、
   分片重组丢弃残缺、实例回收有界、探测单飞。复用已有 helper（如 `fakeDialect` / `writeSession`），
   不在各测试文件里重新定义
+- **一个测试文件只讲一个主题**，超过 500 行就按主题拆开（`engine` 包拆成
+  `engine_test.go` / `translate_test.go` / `supervisor_test.go`，
+  `service` 包拆成 `service_test.go` / `engines_test.go` / `history_test.go`）。
+  拆分的理由和源码一样：文件一长，「这条用例在测什么」就要翻半天
 - 后端：`go test ./backend/... -count=1`
 - 前端：`vue-tsc --noEmit` 是硬门禁；没有 UI 单测（成本高、断言脆）
 - 改了协议翻译或会话投影，必须先跑冒烟：真起一个引擎进程跑一轮

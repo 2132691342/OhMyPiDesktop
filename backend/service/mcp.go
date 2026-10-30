@@ -26,14 +26,13 @@ import (
 
 // ---------------- MCP ----------------
 
-// McpList 列出某引擎的 MCP 服务器。
-//
-// live 为真时额外问一次引擎的连接状态（pi 有 `mcp list --json`，omp 没有），
-// 并把状态并到同一批行上。探测失败不算错误：配置照样给，
-// 只是状态栏留空——「引擎没起」不该让整页打不开。
 // McpList 列 MCP 服务器。kind 为空表示两个引擎都列（“全部”作用域）。
 //
-// live 只对单引擎有意义：实时探测要问引擎进程，而“两个引擎的实时状态”
+// live 为真时额外问一次引擎的连接状态（pi 有 `mcp list --json`，omp 没有），
+// 并把状态并到同一批行上。探测失败不算错误：配置照样给，只是状态栏留空——
+// 「引擎没起」不该让整页打不开。
+//
+// live 只对单引擎有意义：实时探测要问引擎进程，而“两个引擎的实时状态」
 // 在同一个请求里拿不到一致快照——所以全部作用域不做 live。
 func (a *App) McpList(ctx context.Context, kind engine.Kind, live bool) (*domain.McpListVO, error) {
 	if kind.Valid() {

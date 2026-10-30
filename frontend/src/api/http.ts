@@ -74,8 +74,10 @@ export async function ensureClient(): Promise<AxiosInstance> {
       return res
     },
     (err) => {
+      // 连不上后端是网络问题（8003），不是「缺包管理器」——
+      // 同一个码两种意思会让界面没法分流。
       const message = err?.code === 'ECONNABORTED' ? '后端响应超时' : (err?.message ?? '连不上后端')
-      throw new ApiError('9001', message)
+      throw new ApiError('8003', message)
     },
   )
   return client

@@ -3,13 +3,12 @@ package engine
 // 工具差异的提取与解析。
 //
 // 两个引擎都把差异放在工具结果的 details 里，但格式不同：
+// omp 的 details.diff 是编号差异（@@ 区块头 + "+42|正文"，行号是它自己算的：
+// 删行给旧行号、增行给新行号、上下文行给旧行号）；
+// pi 的 details.diff 是同样的编号差异但用空格分隔（"+42 正文"），
+// 另有一份 details.patch 才是标准 unified diff。
 //
-//	omp: details.diff 是「编号差异」——@@ 区块头 + "+42|正文" 这样的行，
-//	     行号是它自己算的（删行为旧行号，增行为新行号，行为旧行号）。
-//	pi:  details.diff 同样是编号差异但用空格分隔（"+42 正文"），
-//	     另有一份 details.patch 才是标准 unified diff。
-//
-// 我们不猜格式：按行首字符判定，再看分隔符是竖线还是空格。
+// 不猜格式：按行首字符判定，再看分隔符是竖线还是空格。
 // 判错的后果是整份差异渲染成一堆乱码，而且用户看不出是界面坏了。
 
 import (
@@ -46,18 +45,11 @@ type toolDetails struct {
 
 // ExtractToolDiff 从工具结果里取出差异文本与被改动的文件路径。
 //
-// 入参有两种形状，两处都要支持：
+// 入参有两种形状：流式帧里 details 嵌在 result 中，历史消息里 details 本身就是
+// 那个对象。只认一种的后果是「刚聊完能看到差异，刷新一下就没了」。
 //
-//	流式帧: {"content":[...],"details":{"diff":"..."}}  —— details 嵌在 result 里
-//	历史消息: {"diff":"..."}                        —— details 本身就是那个对象
-//
-// 只认一种的后果是「刚聊完能看到差异，刷新一下就没了」——
-// 而用户会以为引擎把改动撤销了。
-//
-// 取的顺序有讲究：
-//  1. patch 优先——它是标准 unified diff，能直接给出新旧行号；
-//  2. 没有 patch 再用 diff——那是编号差异，行号要另算。
-//
+// patch 优先——它是标准 unified diff，能直接给出新旧行号；
+// 没有 patch 再用 diff——那是编号差异，行号要另算。
 // 两个都空的工具（read / bash / grep）本来就没有差异，返回空不是错误。
 func ExtractToolDiff(result json.RawMessage) (diffText, filePath string) {
 	if len(result) == 0 {

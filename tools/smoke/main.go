@@ -4,13 +4,13 @@
 // 只在真进程上成立——握手、帧顺序、结束帧、会话落盘，这四件事任一坏了
 // 单元测试都是绿的。改了协议翻译或会话投影之后跑一次。
 //
+// 它只读设置里的引擎路径、只跑一轮、只打印结果；不改任何设置文件，
+// 也不走 HTTP。会话文件是引擎自己写的，所以这条路径同时验证了
+// 「界面读到的历史」与「引擎写下的账本」是同一份。
+//
 // 用法（本机装了 pi 或 omp）：
 //
 //	go run ./tools/smoke -engine pi -message "Reply with exactly: OK"
-//
-// 它只读设置里的引擎路径、只跑一轮、只打印帧序列；不改任何设置文件，
-// 也不走 HTTP。会话文件是引擎自己写的，所以这条路径同时验证了
-// 「界面读到的历史」与「引擎写下的账本」是同一份。
 package main
 
 import (
@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +45,7 @@ func main() {
 		workDir, _ = os.Getwd()
 	}
 
+	// order 记这一轮的事件顺序：它直接暴露「一轮怎么算完」用对了判据没有。
 	var mu sync.Mutex
 	var order []string
 	done := make(chan struct{})
@@ -101,11 +103,55 @@ func main() {
 		os.Exit(1)
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-	fmt.Printf("共 %d 帧，事件顺序：\n", len(order))
+	report(e, ctx, order)
+}
+
+// report 打印这一轮的事实：事件顺序、会话文件、用量与最后一轮的块。
+//
+// 这几项是「协议翻译与会话投影没坏」的直接证据：
+// 顺序对说明一轮的收尾判据用对了；会话文件对说明引擎写下的账本能对回去；
+// 用量与块对说明翻译层没有把内容吞掉。
+func report(e *engine.Engine, ctx context.Context, order []string) {
+	fmt.Println("\n--- 事件顺序 ---")
+	fmt.Printf("共 %d 帧\n", len(order))
 	for _, name := range order {
 		fmt.Println("  ", name)
+	}
+
+	if file := e.CurrentSessionFile(); file != "" {
+		fmt.Printf("\n会话文件：%s\n", file)
+	}
+
+	if stats, err := e.Stats(ctx); err == nil {
+		fmt.Printf("\n用量：%d 条消息，token %d（入 %d / 出 %d / 缓存读 %d / 缓存写 %d），花费 %.4f\n",
+			stats.TotalMessages, stats.Tokens.Total,
+			stats.Tokens.Input, stats.Tokens.Output,
+			stats.Tokens.CacheRead, stats.Tokens.CacheWrite, stats.Cost)
+	} else {
+		fmt.Printf("\n用量：读不到（%v）\n", err)
+	}
+
+	fmt.Println("\n--- 最后一轮的块 ---")
+	turn := e.Translator().Current()
+	if turn == nil {
+		fmt.Println("（没有当前轮）")
+		return
+	}
+	fmt.Printf("模型：%s\n块数：%d\n", turn.Model, len(turn.Blocks))
+	for i, b := range turn.Blocks {
+		text := strings.TrimSpace(b.Text)
+		if len(text) > 120 {
+			text = text[:120] + "…"
+		}
+		switch b.Kind {
+		case engine.BlockTool:
+			fmt.Printf("  [%d] 工具 %s 状态=%s 耗时=%dms %s\n",
+				i, b.ToolName, b.Status, b.DurationMS, text)
+		case engine.BlockThinking:
+			fmt.Printf("  [%d] 思考 %s\n", i, text)
+		default:
+			fmt.Printf("  [%d] 正文 %s\n", i, text)
+		}
 	}
 }
 

@@ -160,20 +160,20 @@ func Status(dir string) (*domain.GitStatusVO, error) {
 // Diff 读取 dir 工作的 rel 文件差异；rel 为空表示整个工作区。路径必须落在 dir 之内。
 func Diff(dir, rel string) (*domain.GitDiffVO, error) {
 	if !Available() {
-		return nil, pkg.New("1015", "这台电脑上还没有 Git，装好后就能看改动", "")
+		return nil, pkg.New(pkg.CodeGitUnavailable, "这台电脑上还没有 Git，装好后就能看改动", "")
 	}
 	scope, err := openScope(dir)
 	if err != nil {
 		return nil, err
 	}
 	if scope == nil {
-		return nil, pkg.New("1015", "这个工作目录还不是 Git 仓库，初始化后才能看改动", "")
+		return nil, pkg.New(pkg.CodeGitUnavailable, "这个工作目录还不是 Git 仓库，初始化后才能看改动", "")
 	}
 
 	rel = strings.TrimSpace(rel)
 	if rel == "" {
 		if !pkg.DirExists(dir) {
-			return nil, pkg.New("1003", "工作目录不存在", dir)
+			return nil, pkg.New(pkg.CodeWorkspaceInvalid, "工作目录不存在", dir)
 		}
 		return scope.diffAll()
 	}
@@ -184,12 +184,12 @@ func Diff(dir, rel string) (*domain.GitDiffVO, error) {
 	}
 	inside, err := relTo(dir, full)
 	if err != nil {
-		return nil, pkg.New("1004", "路径越出工作目录", rel)
+		return nil, pkg.New(pkg.CodePathEscape, "路径越出工作目录", rel)
 	}
 	// git 的路径参数是仓库根相对，界面给的是工作区相对：两者之差就是工作区前缀。
 	fromRoot := scope.relFromRoot(inside)
 	if !pkg.FileExists(full) && !scope.isTracked(fromRoot) {
-		return nil, pkg.New("1005", "文件不存在", rel)
+		return nil, pkg.New(pkg.CodeFileMissing, "文件不存在", rel)
 	}
 	return scope.diffOne(full, rel, fromRoot)
 }

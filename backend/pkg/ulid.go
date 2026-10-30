@@ -1,4 +1,3 @@
-// Package pkg 收口跨包共用的叶子工具：错误码、日志、原子写文件、ID。
 package pkg
 
 // ULID 是业务标识符的生成与解析。

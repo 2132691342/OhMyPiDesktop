@@ -305,7 +305,7 @@ func (ix *Index) Detail(path string) (*Detail, error) {
 
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, pkg.Wrap(pkg.CodeInternal, "打不开会话文件", err)
+		return nil, pkg.Wrap(pkg.CodeSessionInvalid, "打不开会话文件", err)
 	}
 	defer f.Close()
 

@@ -1,22 +1,25 @@
-// 校验两个语言文件的键结构完全一致（AGENTS.md §7）。
+// 校验两个语言文件的键结构完全一致。
 //
 // 用真实执行而不是文本解析：文案里含换行、引号与 : 号（界面上要显示的
 // 句子本来就长这样），任何基于行/正则的解析都会在某个句子上翻车。
 // 这里让 Node 直接加载 TS 模块，拿到的就是组件实际看到的那棵树。
 //
 // 用法：node tools/check-i18n.mjs
-import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const LANGS = ['zh-CN', 'en']
 const tmp = mkdtempSync(join(tmpdir(), 'i18n-'))
 
+// loadMessages 加载一个语言文件，返回扁平化之前的消息树。
+//
+// 语言文件是 `export default {...}`，直接 import 需要 Node 认得 TS。
+// 这里把它改写成普通赋值再落成 .mjs 交给 Node 执行——
+// 拿到的是组件实际看到的那棵树，而不是一段被正则猜出来的文本。
 function loadMessages(lang) {
   const src = readFileSync(`frontend/src/locales/${lang}.ts`, 'utf8')
-  // 把 `export default` 换成一个普通赋值，再落成 .mjs 交给 Node 执行。
   const js = src.replace(/export\s+default\s+/, 'globalThis.__messages = ')
   const file = join(tmp, `${lang}.mjs`)
   writeFileSync(file, js + '\nexport default globalThis.__messages\n')
@@ -27,6 +30,7 @@ function loadMessages(lang) {
   return JSON.parse(out)
 }
 
+// flatten 把消息树摊平成点分路径的集合。
 function flatten(obj, prefix = '') {
   const out = []
   for (const [k, v] of Object.entries(obj)) {

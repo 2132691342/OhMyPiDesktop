@@ -117,9 +117,15 @@ func Fetch(dir, remote string) (*domain.GitStatusVO, error)
 |---|---|
 | 系统里没有 git | `Status.Available=false` + `reason`，**不是错误** |
 | 目录不在仓库里 | `Status.IsRepo=false` + `reason`，**不是错误** |
-| 路径越界 | `pkg.CodeBadRequest`（`SafeJoin` 拦下） |
-| git 命令失败 | `pkg.Wrap(CodeInternal, …, err)`，`detail` 带 git 的 stderr 首行 |
-| 命令超时 | `CodeEngineTimeout` |
+| 路径越界 | `pkg.CodePathEscape`（`SafeJoin` 拦下） |
+| 文件不存在 | `pkg.CodeFileMissing` |
+| git 命令超时 | `pkg.CodeGitTimeout` |
+| git 命令失败 | `pkg.CodeGitUnavailable`，`detail` 带 git 的 stderr 首行 |
+| 分支名 / 远端名不合法 | `pkg.CodeGitBadInput` |
+| git 拒绝了这次操作 | `pkg.CodeGitRejected` |
+| 推送被拒 / 认证失败 / 连不上 | `pkg.CodePushRejected` / `CodePushAuth` / `CodePushNetwork` |
+
+每个码的前端处置见 [ERROR-CODES.md](../ERROR-CODES.md)。
 
 ## 关键流程
 

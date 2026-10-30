@@ -90,8 +90,10 @@ func ResolveLayout(kind engine.Kind, profile string) (Layout, error)
 func Layouts(profile string) map[engine.Kind]Layout
 func (l Layout) Exists() bool
 
-func Detect(customExe string, kind engine.Kind) (engine.Identity, error)
+func Detect(ctx context.Context, customExe string, kind engine.Kind) (engine.Identity, error)
+func DetectReason(ctx context.Context, customExe string, kind engine.Kind) (engine.Identity, string)
 func MatchKind(kind engine.Kind, exe string) bool
+func InstallCandidates(kind engine.Kind) []string
 ```
 
 `Detect` 找不到时返回 `Exe == ""` 的 Identity，**不是错误**：

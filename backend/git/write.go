@@ -32,20 +32,20 @@ func writeRunEnv(dir string, timeout time.Duration, env []string, args ...string
 		// runEnv 在拿到退出码前就失败了（超时 / 起不了进程）：原样上交，别改语义。
 		return res, err
 	}
-	return res, pkg.New("1019", "这个 Git 操作没有完成", res.output())
+	return res, pkg.New(pkg.CodeGitRejected, "这个 Git 操作没有完成", res.output())
 }
 
 // requireScope 统一的前置校验：装了 git、dir 在仓库里，并交出定位结果。
 func requireScope(dir string) (*scope, error) {
 	if !Available() {
-		return nil, pkg.New("1015", "这台电脑上还没有 Git，装好后就能看历史", "")
+		return nil, pkg.New(pkg.CodeGitUnavailable, "这台电脑上还没有 Git，装好后就能看历史", "")
 	}
 	sc, err := openScope(dir)
 	if err != nil {
 		return nil, err
 	}
 	if sc == nil {
-		return nil, pkg.New("1015", "这个工作目录还不是 Git 仓库，初始化后才能写入", "")
+		return nil, pkg.New(pkg.CodeGitUnavailable, "这个工作目录还不是 Git 仓库，初始化后才能写入", "")
 	}
 	return sc, nil
 }
@@ -103,7 +103,7 @@ func Discard(dir string, paths []string) (*domain.GitStatusVO, error) {
 		return nil, err
 	}
 	if len(paths) == 0 {
-		return nil, pkg.New("1018", "丢弃改动必须显式指定文件", "不提供「全部丢弃」：那等于一次不可逆的清空")
+		return nil, pkg.New(pkg.CodeGitBadInput, "丢弃改动必须显式指定文件", "不提供「全部丢弃」：那等于一次不可逆的清空")
 	}
 	args, err := sc.pathsArg(paths)
 	if err != nil {
@@ -142,7 +142,7 @@ func Discard(dir string, paths []string) (*domain.GitStatusVO, error) {
 			return nil, jerr
 		}
 		if err := os.RemoveAll(full); err != nil {
-			return nil, pkg.Wrap("1007", "删除未跟踪文件失败", err)
+			return nil, pkg.Wrap(pkg.CodeUntrackedDelete, "删除未跟踪文件失败", err)
 		}
 	}
 	return Status(dir)
@@ -156,10 +156,10 @@ func Commit(dir, message string, amend bool) (*domain.GitCommitRESP, error) {
 	}
 	msg := strings.TrimSpace(message)
 	if msg == "" {
-		return nil, pkg.New("1016", "提交信息还没填，写一句这次改了什么", "")
+		return nil, pkg.New(pkg.CodeCommitMessage, "提交信息还没填，写一句这次改了什么", "")
 	}
 	if len([]rune(msg)) > domain.GitCommitMsgLimit {
-		return nil, pkg.New("1016", "提交信息太长了，缩短到一句摘要", "")
+		return nil, pkg.New(pkg.CodeCommitMessage, "提交信息太长了，缩短到一句摘要", "")
 	}
 	args := []string{"commit", "-m", msg}
 	if amend {
@@ -184,14 +184,14 @@ func commitFailure(sc *scope, err error) error {
 	switch {
 	case strings.Contains(text, "nothing to commit"), strings.Contains(text, "no changes added to commit"),
 		strings.Contains(text, "nothing added to commit"):
-		return pkg.New("1017", "没有可提交的改动，先勾选文件入栈", "")
+		return pkg.New(pkg.CodeNothingToCommit, "没有可提交的改动，先勾选文件入栈", "")
 	case strings.Contains(text, "author identity unknown"), strings.Contains(text, "unable to auto-detect email"):
-		return pkg.New("1020", "这台电脑上还没配置 Git 用户名与邮箱，配好后才能提交",
+		return pkg.New(pkg.CodeGitIdentity, "这台电脑上还没配置 Git 用户名与邮箱，配好后才能提交",
 			"在设置页的 Git 一节填入用户名与邮箱，或执行 git config --global user.name/user.email")
 	case strings.Contains(text, "unmerged"), strings.Contains(text, "conflict"):
-		return pkg.New("1021", "还有文件没解决冲突，先在改动列表里逐个标记已解决", "")
+		return pkg.New(pkg.CodeConflictUnresolved, "还有文件没解决冲突，先在改动列表里逐个标记已解决", "")
 	case strings.Contains(text, "hook"), strings.Contains(text, "pre-commit"):
-		return pkg.New("1019", "提交钩子拒绝了这次提交", errText(err))
+		return pkg.New(pkg.CodeGitRejected, "提交钩子拒绝了这次提交", errText(err))
 	}
 	return err
 }

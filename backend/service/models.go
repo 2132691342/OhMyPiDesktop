@@ -250,5 +250,11 @@ func (a *App) Login(ctx context.Context, kind engine.Kind, provider string) erro
 	}
 	// 登录会让一批新模型变得可用：清单缓存要失效。
 	a.InvalidateModels(kind)
-	return a.EngineFor(kind, a.Workspace()).Call(ctx, "login", engine.LoginParams(provider), nil, 600*time.Second)
+	err := a.EngineFor(kind, a.Workspace()).Call(ctx, "login", engine.LoginParams(provider), nil, 600*time.Second)
+	if err != nil {
+		// 登录失败要单独一个码：界面据此把登录卡片留在原位并显示原因，
+		// 而不是一个泛化的「内部错误」。
+		return pkg.Wrap(pkg.CodeLoginFailed, "登录没成功", err)
+	}
+	return nil
 }

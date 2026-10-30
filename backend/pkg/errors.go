@@ -1,4 +1,4 @@
-// Package pkg 收口跨包共用的叶子工具：错误码、日志、原子写文件。
+// Package pkg 收口跨包共用的叶子工具：错误码、日志、原子写文件、ID。
 package pkg
 
 import (
@@ -44,43 +44,93 @@ func As(err error) *AppError {
 	return &AppError{Code: CodeInternal, Message: "内部错误", Detail: err.Error()}
 }
 
-// 错误码段位：1xxx 内部，2xxx 启动，3xxx 引擎进程/协议，4xxx 模型/凭据，
-// 5xxx 技能/插件/能力不支持，6xxx 会话，7xxx 入参/鉴权，8xxx 文件/路径/网络，
-// 9xxx 引擎自身的装 / 升级 / 卸载。
+// 错误码段位：1xxx 本地环境（内部 / 路径 / Git），2xxx 启动与装配，
+// 3xxx 引擎进程与协议，4xxx 模型与凭据，5xxx 技能 / 插件 / 引擎配置，
+// 6xxx 会话，7xxx 入参与鉴权，8xxx 文件 / 路径 / 网络，9xxx 引擎自身的装 / 升 / 卸。
+//
+// 一个码只能有一个意思：界面上「同一个码」必须给同一种反应，
+// 而那要求这里的码唯一。两处不同的事用同一个码，界面就没法分流。
+//
 // 全表与「前端该怎么反应」见 docs/ERROR-CODES.md——两边必须同步。
 const (
+	// 1xxx：本地环境出错了。内部错误、路径校验、Git 操作。
 	CodeInternal = "1001"
+	// CodeWorkspaceInvalid 工作目录为空 / 不存在 / 解析失败。
+	CodeWorkspaceInvalid = "1003"
+	// CodePathEscape 路径越出工作目录。
+	CodePathEscape = "1004"
+	// CodeFileMissing 文件不存在。
+	CodeFileMissing = "1005"
+	// CodeUntrackedDelete 删除未跟踪文件失败。
+	CodeUntrackedDelete = "1007"
+	// CodeGitTimeout Git 命令超时。
+	CodeGitTimeout = "1014"
+	// CodeGitUnavailable 没装 Git / 不是仓库 / 读不到 Git 的信息。
+	CodeGitUnavailable = "1015"
+	// CodeCommitMessage 提交信息没填或太长。
+	CodeCommitMessage = "1016"
+	// CodeNothingToCommit 没有可提交的改动。
+	CodeNothingToCommit = "1017"
+	// CodeGitBadInput Git 的入参不合法（分支名 / 远端名 / 强制推送级别）。
+	CodeGitBadInput = "1018"
+	// CodeGitRejected Git 拒绝了这次操作（工作区有改动 / 钩子拒绝 / 分支删不掉）。
+	CodeGitRejected = "1019"
+	// CodeGitIdentity Git 的用户名与邮箱没配。
+	CodeGitIdentity = "1020"
+	// CodeConflictUnresolved 还有冲突没解决。
+	CodeConflictUnresolved = "1021"
+	// CodeRemoteAmbiguous 远端目标不明确（多个远端 / 当前分支没有上游）。
+	CodeRemoteAmbiguous = "1022"
+	// CodeNoRemote 这个仓库还没配置远端。
+	CodeNoRemote = "1023"
+	// CodePushRejected 推送被拒（远端有本地没有的提交）。
+	CodePushRejected = "1024"
+	// CodePushAuth 远端拒绝了身份验证。
+	CodePushAuth = "1025"
+	// CodePushNetwork 连不上远端。
+	CodePushNetwork = "1026"
+	// CodeLeaseRejected 带租约的强制推送被拒（远端又变了）。
+	CodeLeaseRejected = "1027"
 
+	// 2xxx：启动与装配。
 	CodeStartup       = "2001"
 	CodeDataDir       = "2002"
 	CodeSettingsWrite = "2003"
 
+	// 3xxx：引擎进程与协议。
 	CodeEngineDown        = "3001"
 	CodeEngineBusy        = "3002"
 	CodeEngineTimeout     = "3003"
 	CodeProtocol          = "3004"
 	CodeEngineUnsupported = "3006"
-	CodeEngineNoSession   = "3007"
 
-	CodeModelInvalid   = "4001"
-	CodeProviderExists = "4002"
-	CodeLoginFailed    = "4003"
+	// 4xxx：模型与凭据。
+	CodeModelInvalid = "4001"
+	CodeLoginFailed  = "4003"
 
+	// 5xxx：技能 / 插件 / 引擎配置。
 	CodeSkillInvalid  = "5002"
 	CodeSkillReadOnly = "5003"
 	CodePluginFailed  = "5004"
 	CodeConfigRead    = "5005"
 	CodeConfigParse   = "5006"
 
+	// 6xxx：会话。
 	CodeSessionInvalid = "6001"
 	CodeSessionBusy    = "6002"
 
-	CodeBadRequest   = "7001"
+	// 7xxx：入参与鉴权。
+	CodeBadRequest = "7001"
+	// CodeUnauthorized 启动令牌不匹配。
 	CodeUnauthorized = "7002"
+	// CodeForbiddenSource 请求不是来自本机。
+	CodeForbiddenSource = "7003"
 
-	CodeNotFound      = "8001"
-	CodeFileBusy      = "8002"
-	CodeNetwork       = "8003"
+	// 8xxx：文件 / 路径 / 网络。
+	CodeNotFound = "8001"
+	// CodeNetwork 网络请求失败（含连不上后端）。
+	CodeNetwork = "8003"
+	// CodeInstallFailed 装 / 升 / 卸的命令跑失败了。
 	CodeInstallFailed = "8004"
 
 	// 9xxx 是「应用管理」段：装 / 升级 / 卸载引擎本身。

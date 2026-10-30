@@ -1,5 +1,11 @@
 package hub
 
+// 事件总线只测三件会静默出错的事：退订与广播并发时不 panic、
+// 慢消费者丢最旧的一帧而不是阻塞广播、重放只在环形窗口内补齐。
+//
+// 这一层是全站唯一的出口：它坏了，界面要么卡死（阻塞），
+// 要么带着半截状态继续跑（假装补全）。
+
 import (
 	"sync"
 	"testing"
@@ -45,6 +51,8 @@ func TestEmitAndUnsubscribeConcurrently(t *testing.T) {
 }
 
 // 慢消费者必须丢最旧的一帧，而不是阻塞广播。
+//
+// 阻塞广播的后果是整个后端卡住：一条连接慢下来，所有界面都跟着停。
 func TestSlowConsumerDropsOldest(t *testing.T) {
 	h := New(64)
 	sub, _, cancel := h.Subscribe(0)
@@ -76,6 +84,8 @@ func TestSlowConsumerDropsOldest(t *testing.T) {
 }
 
 // 重放只在环形窗口内补齐；窗口外不补（靠快照对账）。
+//
+// 假装补全会让界面带着半截状态继续跑，比明确对账更危险。
 func TestReplayOnlyWithinWindow(t *testing.T) {
 	h := New(8)
 	for i := 0; i < 20; i++ {
@@ -101,6 +111,7 @@ func TestReplayOnlyWithinWindow(t *testing.T) {
 	}
 }
 
+// countLines 数一串 SSE 帧里的行数。
 func countLines(b []byte) int {
 	n := 0
 	for _, c := range b {

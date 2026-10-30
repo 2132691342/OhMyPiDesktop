@@ -1,5 +1,10 @@
 package upstream
 
+// 向上游服务商问模型清单：只测拼地址与解析这两种会静默出错的事。
+//
+// 拼错地址的表现是「点了没反应」；解析错的表现是「清单是空的」——
+// 而空清单会被界面当成「这个服务商没有模型」。
+
 import (
 	"testing"
 )
@@ -31,7 +36,7 @@ func TestModelsEndpoint(t *testing.T) {
 	}
 }
 
-// 响应形状有三种兼容写法，都要能挑出模型 id。
+// 响应形状有三种兼容写法，都要能挑出模型 id；空清单要报错而不是交一张空表。
 func TestParseModels(t *testing.T) {
 	cases := []struct {
 		name string
@@ -58,11 +63,10 @@ func TestParseModels(t *testing.T) {
 			}
 		})
 	}
-}
 
-// 空清单要报错而不是交一张空表：空表会被界面当成「这个服务商没有模型」。
-func TestParseModelsEmpty(t *testing.T) {
-	if _, err := parseModels(`{"data":[]}`); err == nil {
-		t.Fatal("空清单应该报错")
-	}
+	t.Run("空清单要报错", func(t *testing.T) {
+		if _, err := parseModels(`{"data":[]}`); err == nil {
+			t.Fatal("空清单应该报错")
+		}
+	})
 }

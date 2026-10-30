@@ -26,12 +26,12 @@ func Pull(dir string, remote, branch string, rebase bool) (*domain.GitStatusVO, 
 	}
 	if r := strings.TrimSpace(remote); r != "" {
 		if !validRemoteName(r) {
-			return nil, pkg.New("1018", "远端名不合法", r)
+			return nil, pkg.New(pkg.CodeGitBadInput, "远端名不合法", r)
 		}
 		args = append(args, r)
 		if b := strings.TrimSpace(branch); b != "" {
 			if !validBranchName(b) {
-				return nil, pkg.New("1018", "分支名不合法", b)
+				return nil, pkg.New(pkg.CodeGitBadInput, "分支名不合法", b)
 			}
 			args = append(args, b)
 		}
@@ -55,7 +55,7 @@ func Push(dir string, req domain.GitPushREQ) (*domain.GitStatusVO, error) {
 	}
 	cur := sc.branch()
 	if cur == "" {
-		return nil, pkg.New("1018", "还没有提交，先提交一次再推送", "")
+		return nil, pkg.New(pkg.CodeGitBadInput, "还没有提交，先提交一次再推送", "")
 	}
 	remoteName := strings.TrimSpace(req.RemoteName)
 	branchName := strings.TrimSpace(req.BranchName)
@@ -63,10 +63,10 @@ func Push(dir string, req domain.GitPushREQ) (*domain.GitStatusVO, error) {
 		branchName = cur
 	}
 	if !validBranchName(branchName) {
-		return nil, pkg.New("1018", "分支名不合法", branchName)
+		return nil, pkg.New(pkg.CodeGitBadInput, "分支名不合法", branchName)
 	}
 	if remoteName != "" && !validRemoteName(remoteName) {
-		return nil, pkg.New("1018", "远端名不合法", remoteName)
+		return nil, pkg.New(pkg.CodeGitBadInput, "远端名不合法", remoteName)
 	}
 	// 没指定远端时按上游推断；再没有就只认唯一远端，多于一个必须让用户选。
 	if remoteName == "" {
@@ -78,10 +78,10 @@ func Push(dir string, req domain.GitPushREQ) (*domain.GitStatusVO, error) {
 			case 1:
 				remoteName = remotes[0]
 			case 0:
-				return nil, pkg.New("1023", "这个仓库还没有配置远端",
+				return nil, pkg.New(pkg.CodeNoRemote, "这个仓库还没有配置远端",
 					"先在设置里添加一个远端地址（git remote add origin <url>）")
 			default:
-				return nil, pkg.New("1022", "这个仓库有多个远端，请选择推送目标", strings.Join(remotes, ", "))
+				return nil, pkg.New(pkg.CodeRemoteAmbiguous, "这个仓库有多个远端，请选择推送目标", strings.Join(remotes, ", "))
 			}
 		}
 	}
@@ -96,11 +96,11 @@ func Push(dir string, req domain.GitPushREQ) (*domain.GitStatusVO, error) {
 	case domain.GitForceTrue:
 		// 无条件强制推送会静默覆盖别人的提交，必须输入分支名确认。
 		if strings.TrimSpace(req.Confirm) != branchName {
-			return nil, pkg.New("1018", "强制推送需要输入分支名确认", "请输入 "+branchName)
+			return nil, pkg.New(pkg.CodeGitBadInput, "强制推送需要输入分支名确认", "请输入 "+branchName)
 		}
 		args = append(args, "--force")
 	default:
-		return nil, pkg.New("1018", "不认识的强制推送级别", req.Force)
+		return nil, pkg.New(pkg.CodeGitBadInput, "不认识的强制推送级别", req.Force)
 	}
 
 	// 没上游或显式要求时建立跟踪，否则第一次推送永远会被 git 拒。
@@ -127,7 +127,7 @@ func Fetch(dir, remote string) (*domain.GitStatusVO, error) {
 	args := []string{"fetch", "--prune"}
 	if target != "" {
 		if !validRemoteName(target) {
-			return nil, pkg.New("1018", "远端名不合法", target)
+			return nil, pkg.New(pkg.CodeGitBadInput, "远端名不合法", target)
 		}
 		args = append(args, target)
 	} else if remotes := sc.remoteNames(); len(remotes) == 1 {
@@ -151,22 +151,22 @@ func pushFailure(err error) error {
 	switch {
 	case strings.Contains(text, "non-fast-forward"), strings.Contains(text, "fetch first"),
 		strings.Contains(text, "updates were rejected"):
-		return pkg.New("1024", "远端有本地没有的提交，推送被拒绝",
+		return pkg.New(pkg.CodePushRejected, "远端有本地没有的提交，推送被拒绝",
 			"先拉取合并；确认要覆盖远端时用强制推送（会改写远端历史）")
 	case strings.Contains(text, "stale info"):
-		return pkg.New("1027", "远端在你上次同步之后又变了，带租约的强制推送已拒绝",
+		return pkg.New(pkg.CodeLeaseRejected, "远端在你上次同步之后又变了，带租约的强制推送已拒绝",
 			"先「取回远端」看清楚别人推了什么；确认之后再用无条件强制推送覆盖")
 	case strings.Contains(text, "no upstream branch"):
-		return pkg.New("1022", "当前分支还没有上游分支", "推送时勾选「建立上游」")
+		return pkg.New(pkg.CodeRemoteAmbiguous, "当前分支还没有上游分支", "推送时勾选「建立上游」")
 	case strings.Contains(text, "authentication failed"), strings.Contains(text, "could not read username"),
 		strings.Contains(text, "terminal prompts disabled"), strings.Contains(text, "permission denied"):
-		return pkg.New("1025", "远端拒绝了身份验证",
+		return pkg.New(pkg.CodePushAuth, "远端拒绝了身份验证",
 			"这个仓库需要凭据（HTTPS 令牌或 SSH 密钥），请在自己的终端里配置一次")
 	case strings.Contains(text, "could not resolve host"), strings.Contains(text, "network"),
 		strings.Contains(text, "connection refused"), strings.Contains(text, "timed out"):
-		return pkg.New("1026", "连不上远端，检查网络或远端地址", errText(err))
+		return pkg.New(pkg.CodePushNetwork, "连不上远端，检查网络或远端地址", errText(err))
 	case strings.Contains(text, "no configured push destination"), strings.Contains(text, "no remote"):
-		return pkg.New("1023", "这个仓库还没有配置远端", "请先添加一个远端地址")
+		return pkg.New(pkg.CodeNoRemote, "这个仓库还没有配置远端", "请先添加一个远端地址")
 	}
 	return err
 }
@@ -174,15 +174,15 @@ func pushFailure(err error) error {
 // Init 在当前目录初始化仓库；已存在仓库时不做任何事（不覆盖用户的分支配置）。
 func Init(dir string, branch string) (*domain.GitStatusVO, error) {
 	if !Available() {
-		return nil, pkg.New("1015", "这台电脑上还没有 Git，装好后才能初始化仓库", "")
+		return nil, pkg.New(pkg.CodeGitUnavailable, "这台电脑上还没有 Git，装好后才能初始化仓库", "")
 	}
 	if !pkg.DirExists(dir) {
-		return nil, pkg.New("1003", "工作目录不存在", dir)
+		return nil, pkg.New(pkg.CodeWorkspaceInvalid, "工作目录不存在", dir)
 	}
 	args := []string{"init"}
 	if b := strings.TrimSpace(branch); b != "" {
 		if !validBranchName(b) {
-			return nil, pkg.New("1018", "分支名不合法", b)
+			return nil, pkg.New(pkg.CodeGitBadInput, "分支名不合法", b)
 		}
 		args = append(args, "--initial-branch="+b)
 	}
@@ -200,13 +200,13 @@ func AddRemote(dir, name, url string) (*domain.GitStatusVO, error) {
 	}
 	name, url = strings.TrimSpace(name), strings.TrimSpace(url)
 	if !validRemoteName(name) {
-		return nil, pkg.New("1018", "远端名不合法", "只允许字母、数字与 . _ -")
+		return nil, pkg.New(pkg.CodeGitBadInput, "远端名不合法", "只允许字母、数字与 . _ -")
 	}
 	if !validRemoteURL(url) {
-		return nil, pkg.New("1018", "远端地址不合法", "支持 https:// / ssh:// / git@host:path / 本地目录")
+		return nil, pkg.New(pkg.CodeGitBadInput, "远端地址不合法", "支持 https:// / ssh:// / git@host:path / 本地目录")
 	}
 	if _, err := writeRun(sc.root, writeTimeout, "remote", "add", name, url); err != nil {
-		return nil, pkg.New("1019", "添加远端失败", errText(err)+"\n同名远端可能已存在")
+		return nil, pkg.New(pkg.CodeGitRejected, "添加远端失败", errText(err)+"\n同名远端可能已存在")
 	}
 	return Status(dir)
 }

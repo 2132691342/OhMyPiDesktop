@@ -21,7 +21,7 @@ func (s *scope) pathsArg(paths []string) ([]string, error) {
 		}
 		// 落进仓库的路径先过安全检查：绝对路径、盘符、`..` 一律拒绝，不降级成「全部」。
 		if !validRepoRel(p) {
-			return nil, pkg.New("1004", "路径越出工作目录", p)
+			return nil, pkg.New(pkg.CodePathEscape, "路径越出工作目录", p)
 		}
 		out = append(out, s.relFromRoot(p))
 	}

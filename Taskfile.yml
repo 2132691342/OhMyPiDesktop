@@ -72,6 +72,16 @@ tasks:
     cmds:
       - node tools/check-i18n.mjs
 
+  # 一条命令跑完所有门禁。改完东西想知道「有没有弄坏什么」就跑这个，
+  # 不用记该跑哪几条——漏掉一条的代价是 CI 上才发现。
+  check:
+    summary: Runs every local gate (format, vet, tests, i18n structure)
+    cmds:
+      - task: fmt:check
+      - task: vet
+      - task: test
+      - task: i18n:check
+
   # 真起一个引擎跑一轮。改了协议翻译或会话投影后必做——
   # 单元测试测不到「引擎真的这么吐帧」。
   smoke:

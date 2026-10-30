@@ -48,11 +48,11 @@ cd frontend && npm run build
 「引擎真的这么吐帧」。`tools/smoke` 做这件事：
 
 ```bash
-task smoke -- -engine omp -msg "Reply with exactly: OK"
-task smoke -- -engine pi  -msg "Reply with exactly: OK"
+task smoke -- -engine omp -message "Reply with exactly: OK"
+task smoke -- -engine pi  -message "Reply with exactly: OK"
 ```
 
-它打印事件计数、事件顺序、会话文件位置、用量与最后一轮的块。
+它打印事件顺序、会话文件位置、用量与最后一轮的块。
 **要看的三处**：
 
 1. 事件顺序里 `chat:start → chat:turn → … → chat:turn_end → chat:settled → chat:done`
@@ -63,7 +63,7 @@ task smoke -- -engine pi  -msg "Reply with exactly: OK"
 `tools/smoke` 也可以指定工作目录与引擎路径：
 
 ```bash
-task smoke -- -engine pi -dir C:\Users\me\src\my-project -msg "hi"
+task smoke -- -engine pi -dir C:\Users\me\src\my-project -message "hi"
 ```
 
 ## 调试真实引擎

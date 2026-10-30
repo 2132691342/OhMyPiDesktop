@@ -1,24 +1,10 @@
 // Package upstream 向上游服务商问「有哪些模型」。
 //
-// 它的存在理由：模型清单在引擎里是一份运行时事实，而配一个服务商时
-// 用户手上只有地址与密钥。「有哪些模型」这个问题只有上游知道。
+// 模型清单在引擎里是一份运行时事实，而配一个服务商时用户手上只有地址与密钥——
+// 「有哪些模型」这个问题只有上游知道。
 //
 // 只做一件事：按协议向 /models 问一次，把响应归一成模型 id 列表。
-// 不写配置、不管凭据管理、不猜模型能力——那些是引擎与配置的事。
-//
-// 各家协议的问法不同，差别收在 api 字段里：
-//
-//	openai-completions / openai-responses / google-generative-ai
-//	    GET {base}/models，响应 {"data":[{"id":"..."}]}
-//
-//	anthropic-messages
-//	    GET {base}/models，响应 {"data":[{"id":"..."}]}
-//
-//	openai-codex-responses（Codex 后端）
-//	    同 OpenAI 形状，但 base 可能已经带 /v1，要按需拼而不是无脑拼 /models。
-//
-// 拼地址的规则：base 里已经有 /v1 或以 / 结尾的，就直接接 /models；
-// 否则接 /v1/models。用户填的地址形状不一，这两种都常见。
+// 不写配置、不管凭据管理、不猜模型能力。
 package upstream
 
 import (

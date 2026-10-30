@@ -96,7 +96,7 @@ type Item struct {
   ├─ type=="title" && v==1   → omp：取 title/source，继续读下一行当头部
   └─ 其它                     → pi ：这一行就是头部
 读头部（type=="session"）
-  ├─ version 必须 == 3（其它版本只显示「版本不兼容」，不尝试解析）
+  ├─ version 不解析、不校验（引擎升 major 时旧会话照样能列能看）
   ├─ cwd / id / timestamp / parentSession
   └─ title / titleSource（omp 头部也可能带）
 逐行读条目
@@ -142,6 +142,7 @@ Index.List(workspace):
   os.Remove(<path>)                 // 用户正在跑的会话，引擎自己会拦？不会，所以上面先判
   os.RemoveAll(<path 去掉 .jsonl>)   // artifacts 目录，可能不存在
   顺序不能反：先删正文，再删附件
+  删完丢掉该文件的索引缓存（否则列表里还留着「已经删了」的会话）
 ```
 
 **为什么先删正文**：万一只删掉附件而正文还在，用户看到的是一个「打不开的历史」；
@@ -166,7 +167,7 @@ Index.List(workspace):
 | 不解析会话版本号 | 读只认 `type`；引擎升 major 时旧会话照样能列能看，读不到的字段回落默认值，不会把新格式读成垃圾 |
 | 未知条目跳过不报错 | 新版引擎会加类型 |
 | 删必须成对（正文 + artifacts） | 否则越积越脏 |
-| 删除前必须过四道校验 | 尤其是「正在用的会话」 |
+| 删除前必须确认会话空闲 | 正在用的会话不能删 |
 | 缓存键含 size | 秒级 mtime 会漏更新 |
 | 单行上限 | 一个畸形文件不能把内存吃光 |
 

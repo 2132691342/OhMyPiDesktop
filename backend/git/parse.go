@@ -10,6 +10,7 @@ import (
 	"OhMyPiDesktop/backend/pkg"
 	"bufio"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strconv"
@@ -176,18 +177,26 @@ func runEnv(dir string, timeout time.Duration, env []string, args ...string) (re
 		res.code = ee.ExitCode()
 	}
 	if ctx.Err() != nil {
-		return res, pkg.Wrap("1015", "读取版本信息超时，仓库可能太大", err)
+		return res, pkg.Wrap(pkg.CodeGitTimeout, "读取版本信息超时，仓库可能太大", err)
 	}
 	msg := res.output()
 	if msg == "" {
 		msg = err.Error()
 	}
-	return res, pkg.Wrap("1015", "读取版本信息失败："+firstLine(msg), err)
+	return res, pkg.Wrap(pkg.CodeGitUnavailable, "读取版本信息失败："+firstLine(msg), err)
 }
 
-// isTimeout 判断错误是不是超时（超时已经是 1015，不该被当成「不是仓库」吞掉）。
+// isTimeout 判断错误是不是超时。超时有自己的码（1014），
+// 不该被当成「不是仓库」吞掉——那会让界面一直说「装 Git 吧」。
 func isTimeout(err error) bool {
-	return strings.Contains(err.Error(), "超时")
+	if err == nil {
+		return false
+	}
+	var ae *pkg.AppError
+	if errors.As(err, &ae) {
+		return ae.Code == pkg.CodeGitTimeout
+	}
+	return false
 }
 
 // firstLine 取一段输出的首行：完整输出可能有几十行，toast 里放不下。
