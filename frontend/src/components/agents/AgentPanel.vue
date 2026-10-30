@@ -7,6 +7,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
+import AgentDetail from '@/components/agents/AgentDetail.vue'
 import { useAgentsStore } from '@/stores/agents'
 import { useAppStore } from '@/stores/app'
 import { useToasts } from '@/composables/useToasts'
@@ -82,25 +83,7 @@ function statusClass(status: string): string {
   return 'idle'
 }
 
-function money(v: number): string {
-  if (!v) return '$0'
-  return `$${v.toFixed(v < 0.01 ? 4 : 2)}`
-}
-
-function tokens(v: number): string {
-  if (!v) return '0'
-  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`
-  return String(Math.round(v))
-}
-
-function seconds(ms: number): string {
-  if (!ms) return '0s'
-  const s = Math.round(ms / 1000)
-  if (s < 60) return `${s}s`
-  return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
-}
-
-// 只渲尾部：子代理可能产出几万字，全量渲染会把主线程压住。
+/** 抽一条消息的纯文本并截尾：子代理可能产出几万字。 */
 function tailText(raw: unknown, limit = 1600): string {
   const text = extractText(raw)
   if (text.length <= limit) return text
@@ -127,7 +110,9 @@ function extractText(raw: unknown): string {
 const transcript = computed(() => {
   const id = detail.value?.id
   if (!id) return []
-  return (agents.messages[id] ?? []).slice(-30)
+  // 只渲尾部：子代理可能产出几万字，全量渲染会把主线程压住。
+  // 抽文本放在这一层，AgentDetail 只负责渲染字符串。
+  return (agents.messages[id] ?? []).slice(-30).map((msg) => tailText(msg))
 })
 </script>
 
@@ -161,54 +146,31 @@ const transcript = computed(() => {
         </li>
       </ul>
 
-      <div v-if="detail" class="detail">
-        <div class="detail-stage">{{ detail.progress.stage || detail.description || detail.task }}</div>
+      <AgentDetail v-if="detail" :detail="detail" :wide="agents.open" :transcript="transcript" />
 
-        <div class="bar">
-          <div class="bar-fill" :style="{ width: `${Math.min(100, Math.max(0, detail.progress.completion))}%` }" />
-        </div>
-
-        <div class="readouts">
-          <span>{{ detail.progress.completion }}%</span>
-          <span v-if="detail.progress.current_tool" class="mono">{{ detail.progress.current_tool }}</span>
-          <span>{{ money(detail.progress.cost) }}</span>
-          <span>{{ tokens(detail.progress.tokens) }} tok</span>
-          <span v-if="detail.progress.context_max">
-            {{ Math.round((detail.progress.context_used / detail.progress.context_max) * 100) }}%
-          </span>
-          <span>{{ seconds(detail.progress.duration_ms) }}</span>
-        </div>
-
-        <div v-if="agents.open" class="transcript selectable">
-          <p v-for="(msg, i) in transcript" :key="i" class="turn">
-            {{ tailText(msg) }}
-          </p>
-        </div>
-
-        <div class="actions">
-          <input
-            v-model="steerDraft"
-            class="omp-input sm"
-            :placeholder="t('agents.steerHint')"
-            @keydown.enter.prevent="sendSteer"
-          />
-          <button
-            class="omp-btn sm"
-            :class="{ 'is-loading': steering }"
-            :disabled="steering || !steerDraft.trim()"
-            @click="sendSteer"
-          >
-            {{ t('agents.steer') }}
-          </button>
-          <button
-            class="omp-btn sm danger"
-            :class="{ 'is-loading': cancelling === detail.id }"
-            :disabled="cancelling === detail.id"
-            @click="cancelAgent(detail.id)"
-          >
-            {{ t('agents.cancel') }}
-          </button>
-        </div>
+      <div v-if="detail" class="actions">
+        <input
+          v-model="steerDraft"
+          class="omp-input sm"
+          :placeholder="t('agents.steerHint')"
+          @keydown.enter.prevent="sendSteer"
+        />
+        <button
+          class="omp-btn sm"
+          :class="{ 'is-loading': steering }"
+          :disabled="steering || !steerDraft.trim()"
+          @click="sendSteer"
+        >
+          {{ t('agents.steer') }}
+        </button>
+        <button
+          class="omp-btn sm danger"
+          :class="{ 'is-loading': cancelling === detail.id }"
+          :disabled="cancelling === detail.id"
+          @click="cancelAgent(detail.id)"
+        >
+          {{ t('agents.cancel') }}
+        </button>
       </div>
     </div>
   </aside>

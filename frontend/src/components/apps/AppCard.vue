@@ -12,6 +12,9 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
+import AppProgress from '@/components/apps/AppProgress.vue'
+import AppManualCommands from '@/components/apps/AppManualCommands.vue'
+import AppConfirm from '@/components/apps/AppConfirm.vue'
 import type { AppRow } from '@/types/api'
 import type { AppProgressLog } from '@/stores/app'
 
@@ -30,17 +33,11 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const open = ref(false)
+// 折叠态属于这一条进度框自己：它刷新时不该把用户的展开状态重置。
 const manualOpen = ref(false)
 
 /** 有现场或正在跑才展开；跑完自动收起。 */
 const showProgress = computed(() => Boolean(props.progress || props.busy))
-
-const phaseLabel = computed(() => {
-  if (props.progress?.phase === 'fail') return t('apps.phaseFail')
-  if (props.busy) return t('apps.phaseRunning')
-  return t('apps.phaseDone')
-})
 
 /** 未知版本、落后、最新 —— 三种状态各有各的说法，绝不混用。 */
 const versionState = computed<'outdated' | 'current' | 'unknown' | 'none'>(() => {
@@ -169,65 +166,18 @@ function confirm() {
 
     <!-- 动手之前的确认：把那行命令摆出来。
          用户点的是「装 / 升级 / 卸载」，但真正发生的是这条命令。 -->
-    <div v-if="pendingAction" class="confirm">
-      <div class="confirm-head">
-        {{ pendingAction === 'update' ? t('apps.confirmUpdate') : t('apps.confirmUninstall') }}
-      </div>
-      <code v-if="previewCommand" class="confirm-cmd mono selectable">{{ previewCommand }}</code>
-      <p class="confirm-hint">
-        {{ pendingAction === 'update' ? t('apps.confirmUpdateHint') : t('apps.confirmUninstallHint') }}
-      </p>
-      <div class="confirm-actions">
-        <button class="omp-btn sm ghost" @click="cancel">{{ t('common.cancel') }}</button>
-        <button
-          class="omp-btn sm"
-          :class="pendingAction === 'uninstall' ? 'danger' : 'primary'"
-          @click="confirm"
-        >
-          {{ pendingAction === 'update' ? t('common.update') : t('common.uninstall') }}
-        </button>
-      </div>
-    </div>
+    <AppConfirm
+      v-if="pendingAction"
+      :action="pendingAction"
+      :command="previewCommand"
+      @cancel="cancel"
+      @confirm="confirm"
+    />
 
     <!-- 手动命令：给不想（或不能）由界面代跑的人 -->
-    <div v-if="manualOpen" class="manual">
-      <div class="manual-head">{{ t('apps.manualCommands') }}</div>
-      <div class="manual-row">
-        <span class="manual-label">{{ t('common.install') }}</span>
-        <code class="manual-cmd mono selectable">{{ row.install_command }}</code>
-        <button class="omp-btn text sm" @click="emit('copy', row.install_command)">
-          {{ copied === row.install_command ? t('settings.copied') : t('settings.copyCommand') }}
-        </button>
-      </div>
-      <div v-if="row.update_preview" class="manual-row">
-        <span class="manual-label">{{ t('common.update') }}</span>
-        <code class="manual-cmd mono selectable">{{ row.update_preview }}</code>
-        <button class="omp-btn text sm" @click="emit('copy', row.update_preview)">
-          {{ copied === row.update_preview ? t('settings.copied') : t('settings.copyCommand') }}
-        </button>
-      </div>
-      <div v-if="row.uninstall_preview" class="manual-row">
-        <span class="manual-label">{{ t('common.uninstall') }}</span>
-        <code class="manual-cmd mono selectable">{{ row.uninstall_preview }}</code>
-        <button class="omp-btn text sm" @click="emit('copy', row.uninstall_preview)">
-          {{ copied === row.uninstall_preview ? t('settings.copied') : t('settings.copyCommand') }}
-        </button>
-      </div>
-      <p class="manual-hint">{{ t('apps.manualHint') }}</p>
-    </div>
+    <AppManualCommands v-if="manualOpen" :row="row" :copied="copied" @copy="(text) => emit('copy', text)" />
 
-    <div v-if="showProgress" class="progress">
-      <button class="progress-head" type="button" @click="open = !open">
-        <span class="dot" :class="progress?.phase === 'fail' ? 'bad' : busy ? 'run' : 'ok'" />
-        <span class="progress-label">{{ phaseLabel }}</span>
-        <span class="push" />
-        <AppIcon name="chevron" :size="12" :class="['chev', { open }]" />
-      </button>
-      <div v-if="open" class="progress-body">
-        <code v-if="progress?.command" class="progress-cmd mono selectable">{{ progress.command }}</code>
-        <pre class="progress-log selectable">{{ (progress?.lines ?? []).join('\n') }}</pre>
-      </div>
-    </div>
+    <AppProgress v-if="showProgress" :progress="progress ?? null" :busy="props.busy" />
 
     <p class="app-foot">
       <a class="docs" :href="row.docs_url" target="_blank" rel="noreferrer">{{ t('apps.docs') }}</a>
@@ -381,201 +331,8 @@ function confirm() {
   color: var(--omp-warn);
 }
 
-/* 确认面板：把那行命令摆出来，再问一次 */
-.confirm {
-  display: flex;
-  flex-direction: column;
-  gap: var(--omp-sp-2);
-  padding: var(--omp-sp-3);
-  border: 1px solid var(--omp-line);
-  border-left: 2px solid var(--omp-brand-2);
-  border-radius: var(--omp-r-sm);
-  background: var(--omp-hover);
-}
-
-.confirm-head {
-  font-size: var(--omp-fs-2xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--omp-faint);
-}
-
-.confirm-cmd {
-  padding: var(--omp-sp-2);
-  border-radius: var(--omp-r-sm);
-  background: var(--omp-code-bg);
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-ink-5);
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.confirm-hint {
-  margin: 0;
-  font-size: var(--omp-fs-3xs);
-  line-height: 1.6;
-  color: var(--omp-faint);
-}
-
-.confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--omp-sp-2);
-}
-
-/* 手动命令清单 */
-.manual {
-  display: flex;
-  flex-direction: column;
-  gap: var(--omp-sp-2);
-  padding: var(--omp-sp-3);
-  border: 1px solid var(--omp-line);
-  border-radius: var(--omp-r-sm);
-  background: var(--omp-hover);
-}
-
-.manual-head {
-  font-size: var(--omp-fs-2xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--omp-faint);
-}
-
-.manual-row {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  min-width: 0;
-}
-
-.manual-label {
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-mute);
-  width: 3em;
-  flex: none;
-}
-
-.manual-cmd {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-ink-5);
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.manual-hint {
-  margin: 0;
-  font-size: var(--omp-fs-3xs);
-  line-height: 1.6;
-  color: var(--omp-faint);
-}
-
-/* 进度默认收起：装一个引擎的日志能到几百行，
-   常驻展开会把「装的什么版本」挤到看不见的地方。 */
-.progress {
-  border: 1px solid var(--omp-line);
-  border-radius: var(--omp-r);
-  overflow: hidden;
-}
-
-.progress-head {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  width: 100%;
-  padding: var(--omp-sp-2) var(--omp-sp-3);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  color: var(--omp-ink-5);
-  font-size: var(--omp-fs-2xs);
-  transition: background var(--omp-dur-fast) var(--omp-ease);
-}
-
-.progress-head:hover {
-  background: var(--omp-hover);
-}
-
-.progress-label {
-  font-weight: 600;
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--omp-faint);
-  flex: none;
-}
-
-.dot.ok {
-  background: var(--omp-ok);
-}
-
-.dot.bad {
-  background: var(--omp-bad);
-}
-
-.dot.run {
-  background: var(--omp-brand-2);
-  animation: pulse 1.4s var(--omp-ease) infinite;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.chev {
-  color: var(--omp-faint);
-  transform: rotate(180deg);
-  transition: transform var(--omp-dur-fast) var(--omp-ease);
-}
-
-.chev.open {
-  transform: rotate(0deg);
-}
-
-.progress-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--omp-sp-2);
-  padding: 0 var(--omp-sp-3) var(--omp-sp-3);
-}
-
-.progress-cmd {
-  padding: var(--omp-sp-2);
-  border-radius: var(--omp-r-sm);
-  background: var(--omp-sunken);
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-mute);
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.progress-log {
-  margin: 0;
-  max-height: 220px;
-  overflow: auto;
-  padding: var(--omp-sp-2);
-  border-radius: var(--omp-r-sm);
-  background: var(--omp-code-bg);
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  line-height: 1.6;
-  color: var(--omp-ink-5);
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
+/* 确认面板的样式随 AppConfirm 搬走了；
+   手动命令清单与进度框也一样。 */
 .app-foot {
   margin: 0;
 }
