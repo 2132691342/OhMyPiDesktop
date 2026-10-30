@@ -13,6 +13,8 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
 import EngineScopeBar from '@/components/common/EngineScopeBar.vue'
+import McpDialog from '@/components/mcp/McpDialog.vue'
+import McpTable from '@/components/mcp/McpTable.vue'
 import { useEngineScope } from '@/composables/useEngineScope'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
@@ -30,6 +32,7 @@ const busyName = ref('')
 const testing = ref(false)
 const dialog = ref(false)
 const editing = ref<McpServer | null>(null)
+// 草稿类型定义在 McpDialog 里，这里只声明同一形状（弹窗与父组件共享一份）。
 
 // 表单：一条命令或一个 URL，二选一
 const form = ref({
@@ -175,14 +178,6 @@ async function probe() {
   }
 }
 
-function statusTag(row: McpServer): { cls: string; text: string } {
-  if (row.live_status === 'connected') return { cls: 'ok', text: t('mcp.connected') }
-  if (row.live_status === 'failed') return { cls: 'bad', text: t('mcp.failed') }
-  if (row.live_status) return { cls: 'warn', text: row.live_status }
-  if (!row.enabled) return { cls: '', text: t('mcp.disabled') }
-  return { cls: 'brand', text: t('mcp.configured') }
-}
-
 watch(scope, () => {
   data.value = null
   void load()
@@ -237,125 +232,18 @@ onMounted(() => void load())
         {{ data.read_errors.join('；') }}
       </p>
 
-      <section>
-        <div class="omp-sec-head">
-          <span class="omp-sec-title">{{ t('mcp.servers') }} <span class="count">{{ servers.length }}</span></span>
-        </div>
-
-        <div v-if="!servers.length && !loading" class="omp-empty">
-          <span class="omp-tile omp-tile--lg omp-tile--neutral"><AppIcon name="server" :size="22" /></span>
-          <p class="omp-empty-title">{{ t('mcp.emptyTitle') }}</p>
-          <p class="omp-empty-hint">{{ t('mcp.emptyHint') }}</p>
-          <button class="omp-btn sm primary" @click="openCreate">{{ t('mcp.add') }}</button>
-        </div>
-
-        <el-table v-else :data="servers" size="small" class="mcp-table">
-          <el-table-column :label="t('mcp.name')" min-width="140">
-            <template #default="{ row }">
-              <div class="cell-name">
-                <span class="name">{{ row.server_name }}</span>
-                <span v-if="row.desc" class="desc">{{ row.desc }}</span>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('mcp.transport')" width="92">
-            <template #default="{ row }">
-              <span class="tag">{{ row.transport_kind || '—' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('mcp.target')" min-width="180">
-            <template #default="{ row }">
-              <span class="omp-mono clip">{{ row.command_line || row.server_url || '—' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('mcp.scope')" width="86">
-            <template #default="{ row }">
-              <span class="tag">{{ row.scope_kind }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('mcp.status')" width="104">
-            <template #default="{ row }">
-              <span class="tag" :class="statusTag(row).cls">{{ statusTag(row).text }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('common.actions')" width="188" align="right">
-            <template #default="{ row }">
-              <div class="row-actions">
-                <el-switch
-                  :model-value="row.enabled"
-                  :disabled="Boolean(busyName)"
-                  @change="(v: boolean) => toggle(row, v)"
-                />
-                <button class="omp-btn text sm" :disabled="Boolean(busyName)" @click="openEdit(row)">
-                  {{ t('common.edit') }}
-                </button>
-                <button
-                  class="omp-btn text sm danger"
-                  :class="{ 'is-loading': busyName === row.server_name }"
-                  :disabled="Boolean(busyName)"
-                  @click="remove(row)"
-                >
-                  {{ t('common.delete') }}
-                </button>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <!-- 停用名单压住时说明原因：否则用户只会以为开关坏了 -->
-        <p v-if="servers.some((s) => s.disabled_by_deny)" class="hint">
-          {{ t('mcp.denyHint') }}
-        </p>
-      </section>
+      <McpTable
+        :servers="servers"
+        :loading="loading"
+        :busy-name="busyName"
+        @create="openCreate"
+        @edit="openEdit"
+        @remove="remove"
+        @toggle="toggle"
+      />
     </div>
 
-    <el-dialog v-model="dialog" :title="editing ? t('mcp.editTitle') : t('mcp.addTitle')" width="520">
-      <el-form label-position="top" size="small">
-        <el-form-item :label="t('mcp.name')">
-          <el-input v-model="form.server_name" :disabled="Boolean(editing)" :placeholder="t('mcp.namePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('mcp.mode')">
-          <el-radio-group v-model="form.mode">
-            <el-radio-button value="command">{{ t('mcp.modeCommand') }}</el-radio-button>
-            <el-radio-button value="url">{{ t('mcp.modeUrl') }}</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="form.mode === 'command'" :label="t('mcp.command')">
-          <el-input v-model="form.command_text" :placeholder="t('mcp.commandPlaceholder')" />
-        </el-form-item>
-        <template v-else>
-          <el-form-item :label="t('mcp.url')">
-            <el-input v-model="form.server_url" placeholder="https://example.com/mcp" />
-          </el-form-item>
-          <el-form-item :label="t('mcp.transport')">
-            <el-radio-group v-model="form.transport_kind">
-              <el-radio-button value="http">http</el-radio-button>
-              <el-radio-button value="sse">sse</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
-        </template>
-        <el-form-item v-if="form.mode === 'command'" :label="t('mcp.workDir')">
-          <el-input v-model="form.work_dir" :placeholder="t('mcp.workDirPlaceholder')" />
-        </el-form-item>
-        <el-form-item v-if="form.mode === 'command'" :label="t('mcp.env')">
-          <el-input v-model="form.env_text" type="textarea" :rows="3" :placeholder="t('mcp.envPlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('mcp.desc')">
-          <el-input v-model="form.desc" :placeholder="t('mcp.descPlaceholder')" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <button class="omp-btn" @click="dialog = false">{{ t('common.cancel') }}</button>
-        <button
-          class="omp-btn primary"
-          :class="{ 'is-loading': saving }"
-          :disabled="saving || !form.server_name.trim()"
-          @click="save"
-        >
-          {{ t('common.save') }}
-        </button>
-      </template>
-    </el-dialog>
+    <McpDialog v-model:open="dialog" :form="form" :editing="editing?.server_name ?? ''" :saving="saving" @save="save" />
   </div>
 </template>
 
