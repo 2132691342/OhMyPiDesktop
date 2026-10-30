@@ -8,8 +8,10 @@ import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import AppIcon from '@/components/common/AppIcon.vue'
 import EngineScopeBar from '@/components/common/EngineScopeBar.vue'
+import SkillRowItem from '@/components/skills/SkillRow.vue'
+import SkillDrawer from '@/components/skills/SkillDrawer.vue'
+import SkillCreateDialog from '@/components/skills/SkillCreateDialog.vue'
 import { useEngineScope } from '@/composables/useEngineScope'
-import CodeEditor from '@/components/common/CodeEditor.vue'
 import { api } from '@/api/http'
 import { useToasts } from '@/composables/useToasts'
 import { useAppStore } from '@/stores/app'
@@ -46,16 +48,12 @@ const deleting = ref('')
 const contentOpen = ref(false)
 const contentRow = ref<SkillRow | null>(null)
 const content = ref('')
-// 编辑态只对用户目录（可写）的技能开放：工作区与插件来的那一份属于别人，
-// 改了就变成「本地漂移」，下次拉代码或装包时静默被覆盖。
-const editing = ref(false)
-const draftContent = ref('')
+// 编辑态与草稿都在 SkillDrawer 里：它们只在那一个抽屉存在期间有意义。
 const contentLoading = ref(false)
 const saving = ref(false)
 
 const createOpen = ref(false)
 const creating = ref(false)
-const draft = ref({ name: '', description: '', body: '' })
 
 const filtered = computed(() => {
   const query = filter.value.trim().toLowerCase()
@@ -71,9 +69,6 @@ const groups = computed(() =>
     (group) => group.rows.length > 0,
   ),
 )
-
-// 后端拒绝的这些字符会落到路径上，先在这里挡住，避免一次必然失败的请求
-const nameInvalid = computed(() => !draft.value.name.trim() || /[\\/:*?"<>|]/.test(draft.value.name.trim()))
 
 async function load() {
   loading.value = true
@@ -104,14 +99,11 @@ async function toggle(row: SkillRow, enabled: boolean) {
 async function openContent(row: SkillRow) {
   contentRow.value = row
   content.value = ''
-  draftContent.value = ''
-  editing.value = false
   contentOpen.value = true
   contentLoading.value = true
   try {
     const data = await api.skillContent(row.path)
     content.value = data.content ?? ''
-    draftContent.value = content.value
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
     contentOpen.value = false
@@ -120,26 +112,14 @@ async function openContent(row: SkillRow) {
   }
 }
 
-// 抽屉关掉时丢弃未保存的修改：留着它们会让「下次打开看到的是旧内容还是新草稿」
-// 变成一件需要想的事，而抽屉本来只是「看一眼、改一下」。
-watch(contentOpen, (open) => {
-  if (!open) {
-    editing.value = false
-    draftContent.value = content.value
-  }
-})
-
-const dirty = computed(() => editing.value && draftContent.value !== content.value)
-
-async function saveContent() {
+// 抽屉交上来的新正文：它已经在自己的草稿里改完了，这里只负责写盘与重载清单。
+async function saveContent(text: string) {
   const row = contentRow.value
   if (!row || saving.value) return
   saving.value = true
   try {
-    const data = await api.saveSkillContent(rowEngine(row), row.path, draftContent.value)
-    content.value = data.content ?? draftContent.value
-    draftContent.value = content.value
-    editing.value = false
+    const data = await api.saveSkillContent(rowEngine(row), row.path, text)
+    content.value = data.content ?? text
     toasts.push('ok', t('skills.saved'))
     // 正文里可能改了 frontmatter（名字 / 描述 / 启用），清单得跟着重读。
     await load()
@@ -173,15 +153,14 @@ async function remove(row: SkillRow) {
 }
 
 function openCreate() {
-  draft.value = { name: '', description: '', body: '' }
   createOpen.value = true
 }
 
-async function create() {
-  if (nameInvalid.value || creating.value) return
+async function create(input: { name: string; description: string; body: string }) {
+  if (creating.value) return
   creating.value = true
   try {
-    await api.createSkill(draft.value.name.trim(), draft.value.description.trim(), draft.value.body, writeKind.value)
+    await api.createSkill(input.name, input.description, input.body, writeKind.value)
     toasts.push('ok', t('common.saved'))
     createOpen.value = false
     await load()
@@ -247,106 +226,32 @@ onMounted(load)
           </div>
 
           <div class="skill-list">
-            <article v-for="row in group.rows" :key="row.path" class="skill-row card-pad">
-              <div class="skill-main">
-                <div class="skill-head">
-                  <span class="skill-name">{{ row.name }}</span>
-                  <span class="tag">{{ t(`skills.sources.${row.source}`) }}</span>
-                  <span v-if="!row.editable" class="tag readonly-tag">{{ t('skills.readonly') }}</span>
-                </div>
-                <p v-if="row.description" class="skill-desc">{{ row.description }}</p>
-                <div class="skill-path selectable">{{ row.dir }}</div>
-              </div>
-
-              <div class="skill-actions">
-                <!-- 引擎没有启停开关时不渲染控件（不渲染成灰开关） -->
-                <el-switch
-                  v-if="caps?.skill_toggle || row.kind === 'pi'"
-                  :model-value="row.enabled"
-                  :loading="toggling === row.path"
-                  :disabled="Boolean(toggling) && toggling !== row.path"
-                  :title="row.enabled ? t('common.enabled') : t('common.disabled')"
-                  @change="(value: string | number | boolean) => toggle(row, Boolean(value))"
-                />
-                <button class="omp-btn text sm" @click="openContent(row)">{{ t('skills.view') }}</button>
-                <button
-                  v-if="row.editable"
-                  class="omp-btn text sm danger"
-                  :class="{ 'is-loading': deleting === row.path }"
-                  :disabled="Boolean(deleting)"
-                  @click="remove(row)"
-                >
-                  {{ t('common.delete') }}
-                </button>
-              </div>
-            </article>
+            <SkillRowItem
+              v-for="row in group.rows"
+              :key="row.path"
+              :row="row"
+              :can-toggle="Boolean(caps?.skill_toggle) || row.kind === 'pi'"
+              :toggling="toggling"
+              :deleting="deleting"
+              @toggle="toggle"
+              @view="openContent"
+              @remove="remove"
+            />
           </div>
         </section>
       </template>
     </div>
 
-    <el-drawer v-model="contentOpen" :title="contentRow?.name || t('skills.view')" size="720px">
-      <div v-if="contentLoading" class="drawer-loading">{{ t('common.loading') }}</div>
-      <template v-else>
-        <div class="drawer-bar">
-          <span class="drawer-path mono selectable">{{ contentRow?.path }}</span>
-          <span class="push" />
-          <template v-if="contentRow?.editable">
-            <template v-if="editing">
-              <button class="omp-btn sm" :disabled="saving" @click="editing = false; draftContent = content">
-                {{ t('common.cancel') }}
-              </button>
-              <button
-                class="omp-btn primary sm"
-                :class="{ 'is-loading': saving }"
-                :disabled="saving || !dirty"
-                @click="saveContent"
-              >
-                {{ t('common.save') }}
-              </button>
-            </template>
-            <button v-else class="omp-btn sm" @click="editing = true">
-              <AppIcon name="edit" :size="13" />
-              {{ t('common.edit') }}
-            </button>
-          </template>
-          <span v-else class="tag readonly-tag">{{ t('skills.readonly') }}</span>
-        </div>
-        <CodeEditor v-model="draftContent" lang="markdown" :readonly="!editing" min-height="70vh" />
-      </template>
-    </el-drawer>
+    <SkillDrawer
+      v-model:open="contentOpen"
+      :row="contentRow"
+      :content="content"
+      :loading="contentLoading"
+      :saving="saving"
+      @save="saveContent"
+    />
 
-    <el-dialog v-model="createOpen" :title="t('skills.createTitle')" width="560px">
-      <div class="form">
-        <label class="field">
-          <span class="field-label">{{ t('skills.nameLabel') }}</span>
-          <input v-model="draft.name" class="omp-input" :placeholder="t('skills.nameHint')" />
-          <span v-if="nameInvalid && draft.name" class="field-hint bad">{{ t('skills.nameHint') }}</span>
-        </label>
-        <label class="field">
-          <span class="field-label">{{ t('skills.descLabel') }}</span>
-          <input v-model="draft.description" class="omp-input" :placeholder="t('skills.descHint')" />
-        </label>
-        <label class="field">
-          <span class="field-label">{{ t('skills.bodyLabel') }}</span>
-          <textarea v-model="draft.body" class="omp-input" rows="10" :placeholder="t('skills.bodyHint')" />
-        </label>
-      </div>
-
-      <template #footer>
-        <div class="dialog-foot">
-          <button class="omp-btn" :disabled="creating" @click="createOpen = false">{{ t('common.cancel') }}</button>
-          <button
-            class="omp-btn primary"
-            :class="{ 'is-loading': creating }"
-            :disabled="creating || nameInvalid"
-            @click="create"
-          >
-            {{ t('common.create') }}
-          </button>
-        </div>
-      </template>
-    </el-dialog>
+    <SkillCreateDialog v-model:open="createOpen" :creating="creating" @create="create" />
   </div>
 </template>
 
@@ -423,66 +328,7 @@ onMounted(load)
   gap: var(--omp-sp-2);
 }
 
-.skill-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--omp-sp-4);
-  padding: var(--omp-sp-3) var(--omp-sp-4);
-}
-
-.skill-main {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-}
-
-.skill-head {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  min-width: 0;
-}
-
-.skill-name {
-  font-size: var(--omp-fs-sm);
-  font-weight: 650;
-  color: var(--omp-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.skill-desc {
-  margin: 0;
-  font-size: var(--omp-fs-xs);
-  line-height: 1.55;
-  color: var(--omp-mute);
-}
-
-.skill-path {
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 只读标签压暗：它是状态说明，不是可点的分类 */
-.readonly-tag {
-  opacity: 0.65;
-}
-
-.skill-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  flex: none;
-}
-
+/* 技能条目的样式随 SkillRow 搬走了 */
 .no-match {
   margin: 0;
   padding: var(--omp-sp-6) 0;
@@ -491,63 +337,5 @@ onMounted(load)
   text-align: center;
 }
 
-.drawer-loading {
-  font-size: var(--omp-fs-sm);
-  color: var(--omp-mute);
-}
-
-/* 抽屉顶部一条工具行：路径 + 右侧动作。路径占剩余宽度，动作不换行。 */
-.drawer-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  margin-bottom: var(--omp-sp-3);
-  min-height: var(--omp-ctl-sm);
-}
-
-.drawer-path {
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.push {
-  flex: 1;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--omp-sp-4);
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--omp-sp-1);
-}
-
-.field-label {
-  font-size: var(--omp-fs-2xs);
-  font-weight: 600;
-  color: var(--omp-ink-5);
-}
-
-.field-hint {
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
-}
-
-.field-hint.bad {
-  color: var(--omp-bad);
-}
-
-.dialog-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--omp-sp-2);
-}
+/* 抽屉与新建弹窗的样式随 SkillDrawer / SkillCreateDialog 搬走了 */
 </style>
