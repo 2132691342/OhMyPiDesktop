@@ -12,9 +12,10 @@
 
 ```
 skill
-├── Sources   // 两引擎各自的发现顺序
-├── Parse     // frontmatter（name / description / enabled / …）
-└── Toggle    // 只改 enabled 一行，原子写
+├── Roots     // 调用方填的发现根：用户 / 托管 / 项目（每一级）/ 插件目录
+├── Scan      // 一份扫描逻辑：<dir>/<name>/SKILL.md，同名后者覆盖前者
+│   └── parseSkill  // frontmatter（name / description / enabled / globs / …）
+└── Toggle / TogglePi  // 只改启用键一行，原子写（omp 改 enabled，pi 改 disable-model-invocation）
 
 plugin（读取在 env 层，用例在 service 层）
 ├── 列：读引擎自己的登记清单
@@ -36,7 +37,7 @@ MCP 独立成篇，见 [mcp.md](mcp.md)。
 |---|---|---|
 | 用户级 | `~/.omp/agent/skills` | `~/.pi/agent/skills` |
 | 托管级 | `~/.omp/agent/managed-skills` | —（`ManagedDir` 为空，不扫） |
-| 项目级 | 工作区逐级 `.omp/skills` | 工作区 `.pi/skills` |
+| 项目级 | 工作区逐级向上找最多 8 层：`.omp/skills` | 同左：`.pi/skills` |
 | 插件级 | `~/.omp/plugins/node_modules/*/skills` | `~/.pi/agent/npm/node_modules/*/skills` |
 
 同名覆盖顺序：`project → user → managed → plugin`（后者覆盖前者），
@@ -74,7 +75,14 @@ func TogglePi(path string, enabled bool) error // pi：disable-model-invocation
 func Create(rootDir, name, description, body string) (string, error)
 func DeleteByPath(path string) error
 func Content(path string) (string, error)
+func SaveContent(path, text string) error     // 只认 SKILL.md；256 KB 上限；原子写
 ```
+
+正文编辑是一条独立用例：`SkillContent` 读原文（含 frontmatter，界面直接显示），
+`SaveSkillContent` 先验归属（只允许用户技能目录，工作区与插件来的那份跟着
+仓库或包版本走）再调 `skill.SaveContent`——只认文件名 `SKILL.md`，
+正文上限 256 KB，原子写（临时文件 + rename：写到一半断电会留下半个
+SKILL.md，而引擎启动时一定会读它）。
 
 插件的读取在 `env` 层，视图形态在 `domain`：
 
@@ -118,14 +126,18 @@ Toggle(path, enabled):
 
 **为什么改字段而不是移目录**：移目录会让引擎的发现缓存键变化，
 也让「我明明装过」的困惑变多；`enabled: false` 是引擎自己认的开关。
+pi 的 `TogglePi` 同理：关 = 写 `disable-model-invocation: true`，开 = 删掉这个键
+（不写这个键就是默认的「让模型看见」）。
 
 ### 新建
 
 ```
 Create(name, description, body):
-  1. name 校验：小写字母/数字/连字符，无路径分隔符
+  1. name 校验：非空、不含 `\/:*?"<>|`（路径分隔符与 Windows 非法字符）；
+     大写、空格、点都放行
   2. 目标 = <用户技能根>/<name>/SKILL.md，必须不存在
-  3. 写 frontmatter（name / description / enabled: true）+ 正文
+  3. 写 frontmatter（name / description，不写 enabled——默认就是启用）+ 正文；
+     正文为空时写一份默认模板（标题 + 什么时候用 + 步骤）
   4. 不回写任何索引文件
 ```
 
@@ -155,21 +167,22 @@ omp: omp plugin install <spec>
 pi : pi install <spec> / pi remove <name>
 ```
 
-**长任务**：安装可能要几十秒。按钮进 loading（锁尺寸），下方逐行追加 stdout，
-完成或失败都刷新列表。**不要用固定时长超时**——大包会超；用 context 取消 +
-用户可点的「取消」。
+**长任务**：安装可能要几十秒。按钮进 loading（锁尺寸），命令的合并输出随响应返回，
+完成或失败都刷新列表。装卸有**固定上限**：安装 10 分钟、卸载 3 分钟
+（`runText` 的 timeout 参数），叠加请求自己的 context 取消——卡死的 CLI 不能
+永久占位，用户取消也要立即生效。
 
 ## 约束
 
 | 约束 | 原因 |
 |---|---|
-| 只改 `enabled` 一行 | 别的内容属于用户与引擎 |
+| 只改启用键那一行 | 别的内容属于用户与引擎 |
 | `Editable` 由后端判定 | 前端不该重新推导目录归属 |
 | 删除只允许用户目录 | 删掉插件带的技能会破坏插件 |
 | 新建不覆盖已存在 | 覆盖等于无声毁掉用户写的技能 |
 | 插件装卸走引擎 CLI | 我们不解析 `node_modules`，不造第二套真相 |
 | 不写受管技能目录 | 那是 auto-learn 的领地 |
-| 插件安装不用固定超时 | 网络与包大小不可预测 |
+| 插件装卸有固定上限（装 10 分钟 / 卸 3 分钟） | 卡死的 CLI 不能永久占位；请求取消仍然立即生效 |
 
 ## 取舍
 
@@ -179,4 +192,4 @@ pi : pi install <spec> / pi remove <name>
 | 只按 `Editable` 开放 | 用户不能在工作区技能上点开关 | 不会出现「点了被引擎忽略」的假开关 |
 | 插件列表读登记文件 | 依赖引擎的清单格式（两处各一份） | 不受 CLI 参数变动影响，不把间接依赖当插件 |
 | 新建只写 SKILL.md | 没有模板库 | 结构简单，用户能直接用编辑器改 |
-| 安装可取消而不是超时 | 要多一层 context 传递 | 大包不会因为「等太久」被误判失败 |
+| 装卸固定上限叠加可取消 | 要多一层 context 传递 | 卡死有底线，取消立即生效，时限内的正常安装不误判 |

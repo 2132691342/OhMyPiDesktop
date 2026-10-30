@@ -38,7 +38,7 @@
 | Caps 字段 | omp | pi | 界面影响 |
 |---|---|---|---|
 | `subagents` | ✅ | — | 右栏子代理面板整块不渲染 |
-| `goals` | ✅ | — | `chat:goal` 事件不订阅 |
+| `goals` | ✅ | — | 前端当前不消费 `chat:goal`（`events.ts` 无 case），该能力暂无界面落点 |
 | `todos` | ✅ | — | 不显示待办阶段 |
 | `login` | ✅ | — | 模型页「登录」区与 `chat:open_url` 抽屉不渲染 |
 | `fragments` | ✅ | — | 收 `rpc_chunk` 做分片重组 |

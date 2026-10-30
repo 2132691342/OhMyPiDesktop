@@ -7,7 +7,7 @@
 引擎负责思考与干活，OhMyPiDesktop 负责让你看见并控制它是怎么干的。
 ```
 
-两个引擎可同时在管：输入框上方选一个，其余界面按它的能力自动调整。
+两个引擎可同时在管：在输入区底栏的引擎芯片上选一个，其余界面按它的能力自动调整。
 
 ## 设计主张
 
@@ -199,6 +199,7 @@ task smoke -- -engine pi  -message "Reply with exactly: OK"
 | [docs/modules/mcp.md](docs/modules/mcp.md) | MCP 服务器：共用的 mcp.json 读写、启用优先级、启停分叉 |
 | [docs/modules/subagents.md](docs/modules/subagents.md) | 子代理观测台：双源数据、字节游标、干预 |
 | [docs/modules/git.md](docs/modules/git.md) | 工作区：版本状态、白名单写入、文件面板 |
+| [docs/modules/upstream.md](docs/modules/upstream.md) | 上游探测：向服务商问模型清单 |
 
 ## 协议
 

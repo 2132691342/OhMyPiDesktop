@@ -14,11 +14,9 @@
 ## 设计
 
 ```
-service/agents
-├── roster      // get_subagents 快照（权威）
-├── progress    // subagent_progress 帧（增量）
-├── transcript  // get_subagent_messages 字节游标
-└── control     // steer / cancel
+backend/engine/omp/roster.go   // 状态：roster 快照（权威）、progress 帧覆盖、字节游标、订阅档位
+backend/engine/agents.go       // 视图类型：Agent / AgentProgress / SubagentStore 接口（与帧字段名解耦）
+backend/service/agents.go      // 五条用例：list（开订阅 + 对账）/ messages / steer / cancel / subscribe
 ```
 
 ### 为什么需要两条数据源
@@ -39,6 +37,10 @@ service/agents
 而 `get_subagent_messages{subagentId, fromByte}` 让我们按需只拉「用户正在看的那个」。
 
 ## 契约
+
+`Agent` / `AgentProgress` 定义在 `backend/engine/agents.go`（读写的全是引擎帧字段，
+service 不该知道帧内部的名字，那里只做类型别名）；`TranscriptPage` 在
+`backend/service/agents.go`。
 
 ```go
 type Agent struct {
@@ -70,10 +72,10 @@ type AgentProgress struct {
 }
 
 type TranscriptPage struct {
-    Entries []json.RawMessage `json:"entries"`
-    Messages []json.RawMessage `json:"messages"`
-    Next    int64              `json:"next"`     // 下一次的 fromByte
-    Reset   bool               `json:"reset"`    // true 时要清空本地重放
+    Entries  []map[string]any `json:"entries"`
+    Messages []map[string]any `json:"messages"`
+    Next     int64            `json:"next"`     // 下一次的 fromByte
+    Reset    bool             `json:"reset"`    // true 时要清空本地重放
 }
 ```
 
@@ -82,13 +84,14 @@ type TranscriptPage struct {
 ### 打开观测
 
 ```
-引擎就绪（omp）
-  → set_subagent_subscription{level:"progress"}    // 默认是 off，不打开永远是空的
-  → get_subagents                                   // 首次对账
+Agents（列名单）每次调用：
+  EnsureSubscription(level:"progress")   // 订阅默认 off，不开永远没有进度帧
+  get_subagents → Snapshot               // 顺手对账
 ```
 
-**这一条不做，整个面板永远是空的**，而且没有任何报错提示。
-它是本规格里最容易漏掉的一步。
+订阅不开整个面板永远是空的，而且没有任何报错——所以开订阅与对账合在同一条
+用例里，不存在「忘了开」的路径。订阅档位与对账时机的协议参数见
+[PROTOCOL.md](../PROTOCOL.md) 的子代理一节。
 
 ### 收帧
 
@@ -101,21 +104,10 @@ subagent_event{id, event}                    → 仅"events"档；直接转发�
 
 ### 拉 transcript
 
-```
-脏集合（每 500ms 合并一次）：
-  for id in dirty:
-      page := get_subagent_messages{id, fromByte: cursor[id]}
-      if page.Reset:
-          清空本地该 id 的 transcript
-          cursor[id] = 0
-          重拉
-      else:
-          追加 page.Entries / page.Messages
-          cursor[id] = page.Next
-```
-
-**为什么 500ms**：子代理的一个工具调用可能产生几十条增量，
-每条都拉就是几十次 IPC。500ms 合并后用户看不出延迟。
+`AgentMessages` 按需只拉「用户正在看的那个」：带 `fromByte` 游标取增量，游标推进到
+返回的 `next`（引擎没给游标时原地不动，退回 `from` 会把同一段反复重读）；
+`reset:true` 就清空本地重放——引擎侧上下文被压缩过，本地比磁盘多出一截。
+轮询节流与帧细节见 [PROTOCOL.md](../PROTOCOL.md) 的子代理一节。
 
 ### 干预
 
@@ -129,15 +121,15 @@ cancel:  cancel_subagent{id}
 
 ### 会话切换必须清空
 
+宿主侧只有两条路径会换会话：`Switch`（switch_session）与 `NewSession`（new_session）。
+两者成功后走同一个 `afterSessionBound`：
+
 ```
-new_session / switch_session / branch / fork / open_session 成功后：
-  roster = {}
-  cursor = {}
-  emit("agents:cleared")
+roster 清空（名单 + 游标）→ emit("agents:cleared")
 ```
 
-引擎内部在这几条命令成功后会 `clear()` 并把旧 id 放进 256 条墓碑表，
-之后到达的旧 id 帧会被丢弃。**我们不清空的话，界面会一直显示已经消失的子代理。**
+引擎内部在 fork 等场景也会自己清（旧 id 进墓碑表，之后到达的旧 id 帧被丢弃），
+那是引擎行为，不列为本仓的调用点。**我们不清空的话，界面会一直显示已经消失的子代理。**
 
 ## 约束
 

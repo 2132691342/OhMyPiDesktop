@@ -88,8 +88,8 @@ omp 是 pi 的 fork，两者协议家族相同（同一套 JSONL 信封、同一
 
 ## 为什么不自己存会话
 
-引擎的 JSONL 是唯一账本。再存一份，两本账迟早分叉——
-表现是「界面上有、终端里没有」或者反过来。
+引擎的 JSONL 是唯一账本，再存一份迟早分叉。数据归属与写边界见
+[DATA-MODEL.md](DATA-MODEL.md)。
 
 ## 启动时序
 
@@ -111,15 +111,13 @@ desktop.Run
   └─ OnShutdown  → 停引擎（进程树）→ 停 HTTP → 关设置存储
 ```
 
-端口不再靠事件推：v3 没有 `OnDomReady`，装配成功之后由第一次 `getEndpoint()`
-顺手把服务起起来，`Start()` 直接返回端口。前端仍要等 `startDone`，
+端口由第一次 `getEndpoint()` 顺手把服务起起来（v3 没有 `OnDomReady` 可用），
+`Start()` 直接返回端口。前端仍要等 `startDone`，
 因为 `ServiceStartup` 与前端 mount 之间没有顺序保证。
 
-**窗口为什么等前端 Ready() 才显示**：v3 把建窗推迟到主循环的 `pendingRun`，
-`ServiceStartup` 执行时窗口还不存在。那一刻调 `Show()` 只会走「先建窗、再
-return」的分支——窗口建出来了但仍是隐藏的；紧随其后的 `Focus()` 会踩到尚未
-初始化的 WebView2 controller 并 panic。所以装配阶段一律不碰窗口：前端画完
-首屏再调 `Ready()`，一次 `Show + Restore + Focus` 解决三个状态，顺带没有白屏。
+**窗口等前端 Ready() 才显示**：装配阶段一律不碰窗口对象，前端画完首屏
+再调 `Ready()`，一次 `Show + Restore + Focus` 解决显示、白屏与 panic 三个问题。
+v3 建窗时序的具体推理见 [modules/desktop.md](modules/desktop.md)。
 
 关窗不等于退出：`WindowClosing` 钩子里 `e.Cancel()` 把窗口收进托盘，
 真正退出只有托盘菜单的「退出」一条路。
@@ -138,24 +136,11 @@ return」的分支——窗口建出来了但仍是隐藏的；紧随其后的 `
 | 上游最新版是多少 | `engine.QueryLatest` | 是 | 否 |
 | 装 / 升级 / 卸载要跑什么 | `engine` 的分发事实 + `service/apps.go` | 代跑 | 是 |
 
-第一次需要显示时才探测，之后缓存一分钟：
-
-```
-对每个引擎 kind ∈ {omp, pi}（并发）：
-  候选 = [设置里的 engine.path.<kind>] + [npm 全局 shim] + [PATH 上的 <kind>]
-          + [官方安装器的落点]
-  对每个候选：--version → 正则判种类 → （疑似 pi 时）--help 复核
-  命中后：按可执行文件位置判安装渠道
-```
-
-**最后一档候选不是可选的。** 两个引擎的官方安装器都不往 PATH 里写东西：
-omp 装进 `%LOCALAPPDATA%\omp\omp.exe`，pi 装进托管布局的
-`<root>/releases/<version>/node_modules/.bin/pi.cmd`（当前版本写在
-`current-version` 里）。只看 PATH 的应用会在一台明明装好的机器上给出
-「未安装」+ 安装命令——那是「这软件连装没装都看不出来」这一句抱怨的唯一来源。
-候选只按官方安装器的落点推确切路径，不扫盘：扫盘会把别的目录里同名的
-二进制也当成引擎。整条链有 6 秒总预算，卡死的候选以「探测超时」而不是
-无限挂起的形式告诉用户。
+第一次需要显示时才探测，之后缓存一分钟。探测对每个引擎按候选顺序跑 `--version`
+（显式路径、npm 全局 shim、PATH、官方安装器落点），疑似 pi 时用 `--help` 复核，
+命中后按可执行文件位置判安装渠道。官方安装器落点这一档不可省——两个引擎都不往
+PATH 里写东西，只查 PATH 会在一台装好的机器上误报「未安装」。
+候选表、判据与 6 秒超时预算见 [modules/env.md](modules/env.md)。
 
 探测结果进 `Bootstrap.engines`，界面据此决定：显示哪个引擎可用、输入框里给几个选项、
 哪些页面要显示「该引擎不支持」。三步判据、缓存策略与坑见
@@ -224,19 +209,10 @@ ChatState:
 **为什么分 delta / block / blocks 三种更新**：正文是逐字长出来的，整块重发就是 O(字数²)；
 工具卡是状态跳变，整块替换最省事；换回合才需要整表。
 
-**一轮结束时谁收尾**（两家判据不同，这是最容易写错的一处）：
-
-```
-omp：agent_end{yielded:true}  → FinishFromTurn（推整轮 + chat:done）
-     yielded:false            → 还在重试 / 压缩 / stop-time reminder，继续等
-     另外 prompt_result 也会收尾（它比 agent_end 更晚到，重复时有 runID 保护）
-
-pi ：agent_end{willRetry}     → 只更新投影（取 stopReason），不收尾
-     agent_settled{aborted}   → chat:settled + FinishFromTurn
-```
-
-`FinishRun` 用「当前 runID 是否为空」做幂等：已经收过尾的重复帧不会再发一次
-`chat:done`。这条保护是必需的——两家都会在结束附近发多个帧。
+**一轮结束时谁收尾**：两家的结束判据不同（omp 看 `agent_end{yielded}`，
+pi 看 `agent_settled`），帧级判据与收尾规则见 [PROTOCOL.md](PROTOCOL.md)。
+收尾用「当前 runID 是否为空」做幂等——两家都会在结束附近发多个帧，
+重复帧不能再发一次 `chat:done`。
 
 ## 事件出口
 
@@ -244,7 +220,7 @@ pi ：agent_end{willRetry}     → 只更新投影（取 stopReason），不收�
 
 1. **排列**：`seq` 单调递增，前端发现跳号就拉一次快照对账
 2. **重放**：环形窗口内断线重连能补齐；窗口外不补，那部分必须走快照。
-   窗口大小由构造时给（应用用 1024 帧），窗口是固定内存，不随会话长度增长
+   窗口大小由构造时给定（见 [modules/hub.md](modules/hub.md)），窗口是固定内存，不随会话长度增长
 3. **不阻塞**：投递必须 O(1)——慢消费者丢最旧的帧，绝不阻塞广播
 
 **为什么不做「补齐一切」**：假装补全会让界面带着半截状态继续跑，比明确对账更危险。
@@ -286,21 +262,16 @@ Supervisor                      // 按 (Kind, WorkDir) 管理 Engine
 `Consume` 返回 `true` 表示这一帧不往上派发。公共层的 `onFrame` 只认两引擎共有的帧形态——
 私有帧必须先被 Dialect 转成共有形态（或就地发出事件），否则翻译表会变成两份。
 
-关键约束（改了就会出问题）：
+关键约束（改了就会出问题；传输层不变量的完整清单见 [PROTOCOL.md](PROTOCOL.md) 的「不变量」）：
 
 | 约束 | 原因 |
 |---|---|
-| stdout 只按 `\n` 切分 | JSON 字符串里可以有 U+2028/U+2029，按 Unicode 行分隔切会截断记录 |
-| 响应按 `id` 关联 | `prompt` / `bash` / `predict_word` 会乱序返回，按到达顺序配会配错 |
-| 未知帧忽略，不报错 | 装扩展的环境首帧就是 `extension_ui_request`；新版引擎加帧不能让旧界面起不来 |
 | `ready` 只有 omp 有 | pi 没有握手帧，**等首帧必须带超时**，否则永久挂起 |
 | omp：`chat:done` 只看 `agent_end.yielded` | 重试 / 压缩都挂在 `agent_end` 之后，提前完成会让界面自相矛盾 |
 | pi：`chat:done` 看 `agent_settled` | pi 没有 `prompt_result`，也没有 `yielded` |
 | 停止走 `abort` | 排队消息要跟着停，否则用户排的那句话凭空消失 |
-| 进程死亡不自动重发 | 工具可能已有副作用，重发等于执行两次 |
 | 子进程 `CREATE_NO_WINDOW` | 否则每拉一次闪一个黑框 |
 | 杀进程走 `taskkill /T` | 引擎会拉起子代理与 bash 工具进程，只杀父进程会留孤儿 |
-| 投影只在一个协程里写 | 翻译器跨协程共享必须加锁，否则块下标会错位 |
 
 ## 应用级偏好（注册表与系统调用）
 

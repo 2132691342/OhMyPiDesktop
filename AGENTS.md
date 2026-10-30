@@ -63,7 +63,7 @@ main.go ──→ backend/desktop ──→ server ──→ service ──→ e
 | `backend/git` | `domain` / `pkg` | `service` / `engine` / `env` |
 | `backend/upstream` | `pkg` | `service` / `server` / `env` / `engine` |
 | `backend/platform` | `pkg` | `service` / `engine` / `env` / `domain`（只给 `backend/desktop` 与 service 用） |
-| `backend/session` / `skill` | `pkg` / `domain` | `service` / `server` / `engine` 实现 |
+| `backend/session` / `skill` | `pkg` / `domain` / `engine`（只读结果类型） | `service` / `server` / `engine/omp` / `engine/pi` 的具体实现 |
 | `backend/service` | 以上全部 | `server` / `backend/desktop` / 任何 `wails` |
 | `backend/server` | `service` / `hub` / `pkg` | `wails` |
 | `backend/desktop` | `backend/*` + `wails` | 被 `backend/*` 反向依赖 |
@@ -241,7 +241,9 @@ json tag 同步用 snake_case（`branch_name`）。
    应当没有输出。
 
 注释的尺度：**字段有注释、方法有签名、每个文件有一句大概说明**就够了。
-不要把实现细节写进注释——那是文档的活。注释只讲「为什么」，不讲「是什么」。
+连续的注释块**不超过 3 行**：讲不完的道理归文档，注释里塞不下。
+不要把实现细节写进注释——那是文档的活。注释只讲「为什么」，不讲「是什么」，
+不写变更记录（「之前」「不再」「 originally」都不要）。
 
 文档的归属：
 

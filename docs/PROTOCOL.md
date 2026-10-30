@@ -69,7 +69,7 @@ pi ：主动发一次 get_state（25s 上限）→ 有回包就证明读循环�
 
 | 场景 | 命令 | 参数差异 |
 |---|---|---|
-| 发一轮 | `prompt` | 共有。omp 返回 `{agentInvoked}`，pi 返回 `{disposition}`；参数字段两边完全一致 |
+| 发一轮 | `prompt` | 共有。omp 的 `prompt_result` 帧带 `agentInvoked`，pi 没有这一帧（结束只能从 `agent_settled` 推断）；参数字段两边完全一致 |
 | 插话（当前轮补一句） | `steer` | 共有，参数同 `prompt` |
 | 排队（这一轮结束后再说） | `follow_up` | 共有，参数同 `prompt` |
 | 停止 | `abort` | 共有 |
@@ -100,7 +100,6 @@ pi ：主动发一次 get_state（25s 上限）→ 有回包就证明读循环�
 `Caps.QueueEdit`（omp）与 `Caps.QueueClear`（pi），不能共用一个入口。
 
 **参数名陷阱**：协议里的参数名不统一，猜错不会报错，引擎只会当成缺参而静默不做。
-已踩过的：
 
 | 命令 | 正确参数 | 错误写法 |
 |---|---|---|

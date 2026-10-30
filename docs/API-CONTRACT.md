@@ -101,7 +101,7 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/apps` | 两行：`kind / app_name / installed / version / exe / source / channel / channel_label / latest_version / latest_note / outdated / install_command / update_command / uninstall_command / docs_url / can_install / can_update / can_uninstall / blocker / busy`。`refresh=1` 忽略 30 分钟的「最新版」缓存 |
+| GET | `/apps` | 两行：`kind / app_name / installed / version / exe / source / channel / channel_label / latest_version / latest_note / outdated / install_command / update_command / uninstall_command / update_preview / uninstall_preview / docs_url / can_install / can_update / can_uninstall / blocker / busy`。`refresh=1` 忽略 30 分钟的「最新版」缓存 |
 | POST | `/apps/install` | `{engine}` → 同 `/apps` |
 | POST | `/apps/update` | `{engine}` → 同 `/apps` |
 | POST | `/apps/uninstall` | `{engine}` → 同 `/apps` |
@@ -110,11 +110,10 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 返回值是整个清单而不是被改的那一行：装完两个引擎的相对状态可能都变了
 （比如 omp 装上了，界面里「缺引擎」的横幅就该消失）。
 
-> **边界：“能装”不等于“我们自己实现安装”。** 三个动作跑的都是引擎官方发布的
-> 安装器与包管理器命令，且与 `install_command` 里展示的那串**完全是同一行**。
-> 没有 `/apps/rollback`、没有内置运行时、没有自建分发源。
-> 渠道判不出来时 `can_uninstall=false` 且 `blocker` 给一句手动路径——
-> 界面那时**不渲染**卸载按钮。详见 [modules/apps.md](modules/apps.md)。
+> 三个动作跑的都是引擎官方发布的安装器与包管理器命令，且与 `install_command`
+> 展示的那串**完全是同一行**；渠道判不出来时 `can_uninstall=false` 且 `blocker`
+> 给一句手动路径，界面那时**不渲染**卸载按钮。安装链路与分发事实见
+> [modules/apps.md](modules/apps.md)。
 
 ### 会话
 
@@ -137,29 +136,13 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | POST | `/chat/clear-queue` | 清空排队 `{engine, session}`（仅 `caps.queue_clear`） |
 | POST | `/chat/remove-queued` | 移除单条排队 `{engine, session, message, queue}` → `{removed}`（仅 `caps.queue_edit`） |
 | POST | `/chat/compact` | 压缩上下文 `{engine, session, instructions?}` |
-
-### 历史轮的形状
-
-`chat/state` 的 `history` 是后端投影好的轮次，界面直接渲染：
-
-```json
-{"role": "assistant", "model": "10router/cbcn/hy4-preview",
- "blocks": [{"kind": "tool", "tool_call_id": "c1", "tool_name": "read",
-              "output": "module X", "status": "done", "duration_ms": 5},
-            {"kind": "text", "text": "读完了"}],
- "usage": {"input_tokens": 150, "output_tokens": 9,
-           "cache_read_tokens": 0, "cache_write_tokens": 0,
-           "cost_usd": 0.0031, "elapsed_ms": 4000}}
-```
-
-**同一题的多条助手消息并成一轮**：引擎会把一次回答拆成「工具调用前一条、
-工具调用后一条」，每条各带一份用量与时间戳。投影合并它们——
-用量取最后一条（引擎报的是累计值），`elapsed_ms` 是「提问时刻到末条时刻」的差。
-不合并的后果是静默的：界面上一次回答会出现两次助手徽章、两行读数，
-而直播那一轮也会因为块结构对不上历史而被重复渲染一遍。
-
-**工具结果回填到工具块上**，不单独成轮：`toolResult` 按 `toolCallId` 找回它
-对应的那一块，把 `output` / `is_error` / `duration_ms` / `diff` 填进去。
+| POST | `/messages/hide` | 隐藏一轮消息 `{session, hid}`。界面层的「删除」：按会话记账，引擎账本不动 |
+| POST | `/messages/unhide` | 撤销一次隐藏 `{session, hid}`。撤没有的不报错 |
+| POST | `/chat/answer` | 回答提问 `{engine, session, request}` |
+| POST | `/chat/new` | 在当前目录开新会话 `{engine}` |
+| POST | `/chat/model` | 换模型 `{engine, session, provider, model}` |
+| POST | `/chat/thinking` | 换思考档 `{engine, session, level}` |
+| POST | `/chat/autocompact` | 自动压缩开关 `{engine, session, enabled}` |
 
 ### 附件
 
@@ -191,11 +174,34 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | 模型能力 | 当前模型不收图片（模型 `input` 里没有 `image`） |
 
 模型信息读不到（引擎没起、或没报 `input` 字段）时**不拦**：读不到状态不等于不支持。
-| POST | `/chat/answer` | 回答提问 `{engine, session, request}` |
-| POST | `/chat/new` | 在当前目录开新会话 `{engine}` |
-| POST | `/chat/model` | 换模型 `{engine, session, provider, model}` |
-| POST | `/chat/thinking` | 换思考档 `{engine, session, level}` |
-| POST | `/chat/autocompact` | 自动压缩开关 `{engine, session, enabled}` |
+
+### 历史轮的形状
+
+`chat/state` 的 `history` 是后端投影好的轮次，界面直接渲染：
+
+```json
+{"role": "assistant", "model": "10router/cbcn/hy4-preview", "hid": "9f2c01ab77e4d5c8#1",
+ "blocks": [{"kind": "tool", "tool_call_id": "c1", "tool_name": "read",
+              "output": "module X", "status": "done", "duration_ms": 5},
+            {"kind": "text", "text": "读完了"}],
+ "usage": {"input_tokens": 150, "output_tokens": 9,
+           "cache_read_tokens": 0, "cache_write_tokens": 0,
+           "cost_usd": 0.0031, "elapsed_ms": 4000}}
+```
+
+**同一题的多条助手消息并成一轮**：引擎会把一次回答拆成「工具调用前一条、
+工具调用后一条」，每条各带一份用量与时间戳。投影合并它们——
+用量取最后一条（引擎报的是累计值），`elapsed_ms` 是「提问时刻到末条时刻」的差。
+不合并的后果是静默的：界面上一次回答会出现两次助手徽章、两行读数，
+而直播那一轮也会因为块结构对不上历史而被重复渲染一遍。
+
+**工具结果回填到工具块上**，不单独成轮：`toolResult` 按 `toolCallId` 找回它
+对应的那一块，把 `output` / `is_error` / `duration_ms` / `diff` 填进去。
+
+**每轮带 `hid`（内容指纹 # 出现序号）**：界面上的「删除一轮」是界面层隐藏——
+前端把这个字段原样回传给 `/messages/hide`，服务端按会话记账，历史投影返回前
+把命中的轮次摘掉（指纹怎么算、序号为什么需要，机制见 [DATA-MODEL.md](DATA-MODEL.md)）。
+直播轮没有 `hid`，因此不可删。
 
 ### 子代理（仅 omp）
 
@@ -393,8 +399,6 @@ GET /events?since=41
 | `seq > lastSeq+1` | 跳号：接受该帧，并触发一次全量对账（拉 `chat/state`） |
 | `seq <= lastSeq` | 丢弃（重连重复） |
 
-**为什么不补齐一切**：假装补全会让界面带着半截状态继续跑，比明确对账更危险。
-
 ### 事件表
 
 | 事件 | 载荷要点 |
@@ -473,28 +477,18 @@ pi 给的是标准 unified diff（`details.patch`）与一份自己的编号差�
 
 ### 一轮对话怎么结束
 
-一轮只有两种结束方式，两种都必须让界面解除「正在回答」：
-
-| 方式 | 触发 | 发什么 |
-|---|---|---|
-| 正常 | 引擎的结束帧（omp `agent_end{yielded}` / pi `agent_settled`） | `chat:done` |
-| 异常 | 引擎进程死了，或被手动停止 / 重启 / 回收 | `chat:error` + `chat:done` |
-
-异常那条路径是必需的：进程死了之后，引擎再也不会发结束帧，
-而 `chat:done` 的幂等靠 `runID`——进程死的时候 `runID` 已经被清掉了，
-那一轮会永远收不了尾。界面于是停在「正在回答」：输入框禁用、停止按钮一直转圈，
-用户只能重启应用。
-
-所以进程退出这条路径要自己收尾：把这一轮标成出错（`chat:error` 带原因），
-再发一次 `chat:done`（`stop_reason` 为 `engine_exit`）。空闲时进程退出
-（回收、手动停止）没有轮要收，不发这两个事件。
+一轮只有两种结束方式，两种都必须让界面解除「正在回答」：正常结束发 `chat:done`；
+异常结束（进程死了，或被停止 / 重启 / 回收）由后端自己收尾——发 `chat:error` 带原因，
+再发一次 `chat:done`。异常路径是必需的：进程死了之后引擎不会再发结束帧，
+不补这条界面会永远停在「正在回答」。空闲时进程退出没有轮要收，不发这两个事件。
+各引擎的结束帧判据见 [PROTOCOL.md](PROTOCOL.md)。
 
 ## 契约版本
 
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`12`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+当前：`13`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
 只增可选字段不需要。
 
 新增端点本身不需要升版本（前端没调它就不受影响）；

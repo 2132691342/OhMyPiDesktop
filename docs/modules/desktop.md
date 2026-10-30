@@ -15,6 +15,9 @@
 | `app.go` | 怎么装配并运行一个桌面应用（窗口、托盘、生命周期、装配顺序） |
 | `bindings.go` | 前端能直接调哪些系统能力（端口、目录选择框、窗控、退出） |
 | `tray.go` | 关窗之后，托盘菜单能做什么 |
+| `dialog_windows.go` / `dialog_other.go` | 界面起来之前怎么把致命错误告诉用户（Windows 弹原生消息框，其余平台只写日志） |
+| `scale.go` | 屏幕缩放比的平台无关入口，建窗尺寸换算用 |
+| `scale_windows.go` / `scale_other.go` | 主屏缩放比怎么读（Windows 走原生 DPI API，其余平台恒 100%） |
 
 ## 窗口：为什么等前端 Ready() 才显示
 
@@ -37,29 +40,28 @@
 `Ready()` 用 `revealed` 原子量挡住重复调用：前端每次热重载都会再调一次，
 重复 `Show` 会让窗口在用户眼前闪。
 
-开机自启（`--hidden`）时 `Ready()` 直接返回：只上托盘，不弹窗。
+开机自启（`--hidden`）时 `Ready()` 先重铺一次托盘菜单（建托盘时工作目录与最近列表
+还没载入），再直接返回：只上托盘，不弹窗。
 
 ## 窗口尺寸与位置
 
 逻辑尺寸 **800×600**（CSS 像素），与前端的容器查询断点配套：800 宽时对话侧栏收窄、
-工作区三栏压缩。
+工作区三栏压缩。Wails v3 把建窗声明的 `Width/Height` 当**物理像素**用，所以建窗时
+按主屏缩放比把逻辑尺寸放大再声明（缩放比读自原生 DPI API，见 `scale_windows.go`）；
+`Ready()` 里再用逻辑值 `SetSize` 一次，由 Wails 按当前 DPI 换算回来。
 
 **不设最小尺寸**。Wails 的最小尺寸走 `WM_GETMINMAXINFO`，它按窗口 DPI 换算，
 而声明的尺寸是物理像素——两者基准不一致时窗口会被系统强行撑大。
 布局尺寸交给前端：`.shell-main` 是容器查询的锚点，窄窗口下侧栏与三栏自己收窄。
 
-**位置在 `Ready()` 里按主屏工作区显式计算**，不是建窗时交给 Wails 居中：
+**位置分两步定**：建窗时声明 `InitialPosition: WindowCentered`，窗口先落在屏幕正中
+（不设则 Windows 走级联默认位置，首次启动窗口会靠到屏幕右上角）；`Ready()` 里改完
+尺寸，再用 `centerOnPrimaryScreen()` 按主屏工作区精调一次。
 
-- 不用 Wails 的 `Center()`：它在 Windows 上走 `CenterWindow`，那个实现取尺寸用
-  `GetClientRect`、取监视器用 `GetMonitorInfoForWindow`。对一个「`Hidden` 小尺寸
-  建窗、随后又被 `SetSize` 改过」的无边框窗口，两个基准不一致（客户区 vs 窗口区），
-  结果会偏。
-- 也不用建窗时的 `InitialPosition: WindowCentered`：它按建窗那一刻的尺寸算，
-  而那个尺寸可能被系统裁过（`Hidden` 窗口判定不准屏幕归属），于是最终尺寸与
-  居中位置对不上。
-
-`centerOnPrimaryScreen()` 直接用主屏 `WorkArea` 与 `win.Size()` 算，两个量都是
-我们自己定的；拿不到屏幕信息就退回 `Center()`。实测窗口与理论居中的偏差为 0~1px。
+精调不直接调 Wails 的 `Center()`：它取尺寸用 `GetClientRect`、取监视器用
+`GetMonitorInfoForWindow`，对这个被 `SetSize` 改过尺寸的无边框窗口，两个基准
+不一致（客户区 vs 窗口区），结果会偏。`centerOnPrimaryScreen()` 直接用主屏
+`WorkArea` 与 `win.Size()` 算，两个量是同一套基准；拿不到屏幕信息才退回 `Center()`。
 
 窄窗口下视图靠**容器查询**收窄，不用媒体查询：`.shell-main` 声明
 `container-type: inline-size`，对话页侧栏从 232px 收到 188px，
@@ -102,9 +104,17 @@
 
 ## 关窗不退出
 
-`WindowClosing` 钩子里 `e.Cancel()` 把窗口收进托盘（拦截窗口关闭就是 `e.Cancel()`；
-返回 `false` 不拦截）。真正退出只有托盘「退出」一条路——
-`quitting` 为真时钩子放行。
+关窗行为由设置里的 `close_action` 决定，`WindowClosing` 钩子的两条分支都先 `e.Cancel()`
+拦下这次关闭：
+
+- **tray（默认）**：窗口收进托盘（`Hide()`）。第一次收托盘先发事件让界面弹选择框——
+  静默躲起来在用户眼里就是「关不掉」。
+- **quit**：拦截之后主动走 `requestQuit()` 真退出。不能放行让窗口自然关：窗口关闭后
+  托盘还挂着，只剩托盘时消息循环不会自己结束，进程就「关不掉」。
+
+所有退出路径（托盘菜单「退出」、绑定 `Quit()`、quit 分支的关窗）都汇到 `requestQuit()`：
+置 `quitting` 标志后异步 `app.Quit()`，`WindowClosing` 钩子看到该标志就不再拦截，
+窗口正常关闭。
 
 ## WebView2 缓存放哪
 
@@ -155,8 +165,10 @@ v3 的绑定 id 是 `FNV32a(导入路径.类型.方法)`。导入路径里含**�
 | `backend/desktop/bindings_test.go` | `go test ./backend/...` | 导入路径漂移 + 每个方法的 id 对不上 |
 | CI 的「Verify bindings are in sync」 | `.github/workflows/ci.yml` | 生成物没跟着代码一起提交 |
 
-门禁的判定依据全部从「后端现在的样子」推出来（包在模块内的位置、方法的导出名），
-不写死任何路径——写死的话，门只会在第一次漂移时有效。
+判定依据里有两样是写死的：包在模块内的路径（`backend/desktop`）与模块名
+（`OhMyPiDesktop`）。绑定方法清单只增不减——新增绑定方法要加进清单（否则不会被
+检查），删方法要同步删条目（否则门会失败）。挪包或改绑定面时这道门失败，
+那正是它该失败的时候，失败信息里写着怎么重新生成、import 改到哪。
 
 改包的位置、给绑定加方法、删绑定方法，都要重跑：
 
@@ -172,12 +184,12 @@ wails3 task common:generate:bindings
 ```
 runtime.Resolve()           数据目录（含 webview 缓存路径）
 application.New()           单实例 + 绑定 + 资源
-Window.NewWithOptions()     登记窗口参数，Hidden
-RegisterHook(WindowClosing) 关窗收托盘
+Window.NewWithOptions()     登记窗口参数（Hidden + 居中初值 + 按缩放比放大的物理尺寸）
+RegisterHook(WindowClosing) 关窗按 close_action 收托盘或退出
 SystemTray.New()            托盘与菜单
 app.Run()                   → ServiceStartup（装配业务）→ 建窗 → 消息循环
                                 前端 mount → Endpoint() → server.Start()
-                                → Ready()（窗口显示）
+                                → Ready()（重铺托盘菜单；非 --hidden 时显示窗口）
 ```
 
 ## 不变量

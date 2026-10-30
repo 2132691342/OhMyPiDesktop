@@ -20,7 +20,7 @@ MCP 服务器给引擎额外的工具。两个引擎在**这一处共用同一�
 
 ```
 env/mcpcfg          // 文件的读、写、启停、删除。只改掌管的键
-├── File            // mcpServers + disabledServers + enabledServers + Rest
+├── File            // mcpServers + disabledServers + enabledServers + autoEnableCodemode(仅 pi) + Rest
 ├── Entry           // 已知字段 + Rest（headers / auth / oauth / timeout …）
 ├── Read / Write    // 未知键原样带回
 ├── Upsert / Remove

@@ -40,7 +40,7 @@ cd frontend && npm run build
 ```
 
 仓库里的 `.go` 文件统一是 LF 行尾（见 `.gitattributes`），本地与 CI 的 `gofmt -l`
-表现一致，不再有 CRLF 误报。格式化用 `task fmt`，CI 用 `task fmt:check` 卡格式。
+表现一致，没有 CRLF 误报。格式化用 `task fmt`，CI 用 `task fmt:check` 卡格式。
 
 ## 验证真实引擎
 
@@ -60,7 +60,7 @@ task smoke -- -engine pi  -message "Reply with exactly: OK"
 2. 最后一轮的块与引擎实际说的一致（正文、思考、工具卡都在）。
 3. 用量与上下文水位非零。
 
-`tools/smoke` 也可以指定工作目录与引擎路径：
+`tools/smoke` 也可以指定工作目录：
 
 ```bash
 task smoke -- -engine pi -dir C:\Users\me\src\my-project -message "hi"
@@ -145,9 +145,9 @@ curl -H "X-Desktop-Token: <token>" http://127.0.0.1:<port>/api/v1/engines
 
 ```go
 // 探测引擎要起子进程（pi 的 --help 要起一次 Node，几秒）
-restore := service.SetDetector(func(path string, kind engine.Kind) (engine.Identity, error) {
+restore := service.SetDetector(func(ctx context.Context, path string, kind engine.Kind) (engine.Identity, string) {
     return engine.Identity{Kind: kind, Exe: `C:\fake\` + string(kind) + `.exe`,
-        Version: "1.0.0", Channel: engine.ChannelNPM, Caps: engine.CapsFor(kind)}, nil
+        Version: "1.0.0", Channel: engine.ChannelNPM, Caps: engine.CapsFor(kind)}, ""
 })
 defer restore()
 

@@ -14,10 +14,18 @@
 
 ```
 backend/git/                 ← 能力域，只依赖 domain + pkg
-├── git.go        status / diff / scope（工作区到仓库根的映射）、porcelain 解析
-├── write.go      stage / unstage / discard / commit / branch / merge / push / pull / …
-├── history.go    提交列表、单提交详情、文件历史
-└── exec_windows.go  hideConsole
+├── git.go            Status / Diff 读入口；git 可执行文件的解析与缓存（SetExe / Available / Version）
+├── scope.go          一次读写的定位：仓库根 + 工作区前缀，两套相对路径的换算，
+│                     分支 / 上游 / 仓库中间态查询，porcelain -z 解析与状态码归类
+├── parse.go          跑 git 的那一层（run / runEnv、超时、错误归因）+ diff 正文解析
+├── diff.go           改动清单、numstat、逐文件 diff、未跟踪文件整篇读
+├── write.go          stage / unstage / discard / commit（只动工作区与索引）
+├── branch.go         建分支 / 切换 / 删除 / 合并 / 中间态的继续与中止（动 HEAD 与 refs）
+├── remote.go         pull / push / fetch / init / remote add（走网络与登记远端）
+├── validate.go       入参校验：路径、分支名、远端名与 URL（认不出来就拒绝，不近似执行）
+├── history.go        提交列表、单提交详情、文件历史、单提交内单文件 diff（只读）
+├── exec_windows.go   hideConsole（GUI 进程起 git 不闪黑窗）
+└── git_test.go       文件历史与单文件差异共享路径翻译的回归
 
 backend/service/workspace.go ← 编排：把「当前工作目录」拼上 git 调用
 backend/domain/git.go        ← 视图类型（Status / Diff / Commit / Branch）
@@ -43,8 +51,9 @@ workspace 相对路径  ──映射──→  仓库根相对路径   （git �
         └───────── 反向换算 ────────────┘
 ```
 
-`scope` 保存：`ws`（工作区绝对路径）、`root`（仓库根）、`gitDir`。
-`relFromRoot` / `relToWorkspace` / `pathspec` 三件工具做换算。
+`scope` 保存：`root`（仓库根）、`prefix`（工作区相对仓库根的前缀）与
+`core.quotepath` 的读法；`.git` 的真实路径（worktree 场景）由 `gitDir()` 现查。
+`relFromRoot` / `relToWorkspace` / `pathsArg` 三件工具做换算。
 **diff 头里的路径是仓库根相对的**，直接当工作区相对路径用会拼出错误文件。
 
 ### 写入是白名单
@@ -80,6 +89,7 @@ workspace 相对路径  ──映射──→  仓库根相对路径   （git �
 // 读
 func Status(dir string) (*domain.GitStatusVO, error)
 func Diff(dir, rel string) (*domain.GitDiffVO, error)
+func FileDiffInCommit(dir, hash, rel string) (*domain.GitDiffVO, error) // 提交详情里点开一个文件
 func History(dir string, limit int) ([]domain.GitCommitVO, error)
 func CommitDetail(dir, hash string) (*domain.GitCommitDetailVO, error)
 func FileHistory(dir, rel string, limit int) ([]domain.GitCommitVO, error)
@@ -120,9 +130,9 @@ func Fetch(dir, remote string) (*domain.GitStatusVO, error)
 | 路径越界 | `pkg.CodePathEscape`（`SafeJoin` 拦下） |
 | 文件不存在 | `pkg.CodeFileMissing` |
 | git 命令超时 | `pkg.CodeGitTimeout` |
-| git 命令失败 | `pkg.CodeGitUnavailable`，`detail` 带 git 的 stderr 首行 |
+| 读命令失败（起不了进程 / 非零退出） | `pkg.CodeGitUnavailable`，`detail` 带 git 输出首行 |
 | 分支名 / 远端名不合法 | `pkg.CodeGitBadInput` |
-| git 拒绝了这次操作 | `pkg.CodeGitRejected` |
+| 写命令被 git 拒绝（非零退出） | `pkg.CodeGitRejected`，`detail` 合并 stdout + stderr（git 的失败原因大多写在 stdout） |
 | 推送被拒 / 认证失败 / 连不上 | `pkg.CodePushRejected` / `CodePushAuth` / `CodePushNetwork` |
 
 每个码的前端处置见 [ERROR-CODES.md](../ERROR-CODES.md)。
@@ -135,9 +145,9 @@ func Fetch(dir, remote string) (*domain.GitStatusVO, error)
 insideWorkTree(dir)
   → git status --porcelain=v1 -z（--untracked-files=all）
   → parsePorcelainZ：XY 两位 → {staged, status, conflict}
-  → git symbolic-ref --short HEAD（分支）
-  → 读 .git 里的 MERGE_HEAD / rebase-merge / CHERRY_PICK_HEAD → state
-  → git rev-parse --abbrev-ref @{upstream}（上游）
+  → git rev-parse --abbrev-ref HEAD（分支）
+  → 读 .git 里的 rebase-merge / rebase-apply / MERGE_HEAD / CHERRY_PICK_HEAD / REVERT_HEAD → state
+  → git rev-parse --abbrev-ref --symbolic-full-name @{upstream}（上游）
   → git rev-list --left-right --count @{upstream}...HEAD（ahead/behind）
   → numstat 汇总每个文件的增删
 ```
