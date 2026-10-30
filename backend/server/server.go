@@ -207,8 +207,11 @@ func query(c *gin.Context, key string) string { return strings.TrimSpace(c.Query
 //
 // 失败不中断连接：这一帧只是「顺便说一声」，而连接本身要继续活下去。
 func (s *Server) emitEngineStatus(write func([]byte) bool) {
-	status, err := s.svc.EngineStatus(context.Background())
-	if err != nil {
+	// 用 EngineSnapshot 而不是 EngineStatus：连接建立时不能催一次探测。
+	// 探测会起子进程、写缓存，而客户端随时可能断开；客户端要的只是
+	// 「后端现在知道什么」，新的结论由之后那一帧 engine:detected 补上。
+	status := s.svc.EngineSnapshot()
+	if status == nil {
 		return
 	}
 	raw, err := json.Marshal(status)

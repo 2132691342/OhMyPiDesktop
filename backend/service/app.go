@@ -77,6 +77,13 @@ type Options struct {
 	Hub     *hub.Hub
 	DataDir string
 	Version string
+	// SkipWarm 不在装配时预热「上游最新版」。
+	//
+	// 预热会发外网请求并把结果写回设置文件，且没有任何同步等待点——
+	// 测试里那会在 t.TempDir() 已经被回收之后才落盘，
+	// 报一个与用例本身毫无关系的「directory is not empty」。
+	// 生产路径永远不带这个，首屏的「先有个旧值」靠的就是它。
+	SkipWarm bool
 }
 
 // New 装配用例层并恢复上次的设置。
@@ -120,7 +127,9 @@ func New(opts Options) (*App, error) {
 	app.loadCachedLatest()
 	// 首次启动时磁盘上没有任何结论：后台预热一次，
 	// 用户进概览页时通常已经有值了（而这条路径本身不等网络）。
-	engine.WarmLatest()
+	if !opts.SkipWarm {
+		engine.WarmLatest()
+	}
 	// 探测推迟到第一次 Bootstrap：装配阶段不该等两个子进程，
 	// 而「引擎装在哪」只在界面要显示时才需要。
 	return app, nil
@@ -259,8 +268,18 @@ func (a *App) detectInBackground() {
 		// 但探测命令本身仍有上限（engine.ProbeTimeout）：那是给「候选卡死」
 		// 兜底的，与「客户端断开」不是一回事。
 		a.detectOnce(context.Background())
-		a.invalidateCountsLater()
 	}()
+}
+
+// WaitBackground 等后台探测跑完。
+//
+// 为什么要有它：探测是故意异步的（首屏不该等子进程），而它会写设置缓存。
+// 进程退出时不等它，就会在临时目录已经被删的情况下继续写——
+// 测试里表现为 t.TempDir() 的 RemoveAll 报「directory is not empty」，
+// 而那个报错与测试想断言的东西毫无关系。
+func (a *App) WaitBackground() {
+	a.detectMu.Lock()
+	a.detectMu.Unlock()
 }
 
 // HasCachedIdentity 报告是否已有可展示的探测结论。

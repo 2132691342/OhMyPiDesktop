@@ -56,8 +56,29 @@ type envLayoutVO struct {
 }
 
 // EngineStatus 组装引擎状态。
+//
+// 它会顺手催一次探测（缓存不新时后台补），因为这是设置页与缺引擎横幅
+// 拿状态的入口——那些场景下用户期望的就是「给我最新的」。
 func (a *App) EngineStatus(ctx context.Context) (*EngineStatus, error) {
 	a.detectAll(ctx, false)
+	return a.engineSnapshot(), nil
+}
+
+// EngineSnapshot 只读当前已知的引擎状态，**不触发任何探测**。
+//
+// 为什么单独一个：SSE 连接建立时要补一帧状态，而那件事
+// 不能顺手催一次探测——探测会起子进程、会写缓存，
+// 而客户端随时可能在下一毫秒断开。更实际的是：连接建立时
+// 连「探测该不该跑」都还没确定（可能刚跑完）。
+//
+// 它只回答「后端现在知道什么」，不知道的部分交给之后那一帧
+// engine:detected——那才是探测真出结果的地方。
+func (a *App) EngineSnapshot() *EngineStatus {
+	return a.engineSnapshot()
+}
+
+// engineSnapshot 是 EngineStatus 与 EngineSnapshot 共用的组装体。
+func (a *App) engineSnapshot() *EngineStatus {
 	out := &EngineStatus{
 		Engines:    []EngineInfo{},
 		Running:    a.Engine.Running(),
@@ -81,7 +102,7 @@ func (a *App) EngineStatus(ctx context.Context) (*EngineStatus, error) {
 		out.Engines = append(out.Engines, info)
 		out.Install[string(kind)] = engine.InstallHint(kind)
 	}
-	return out, nil
+	return out
 }
 
 // DetectEngines 强制重新探测（设置页的「重新检测」）。
@@ -371,18 +392,6 @@ func (a *App) storeCounts(kind engine.Kind, c healthCounts) {
 	a.countsMu.Lock()
 	a.counts[kind] = c
 	a.countsMu.Unlock()
-}
-
-// invalidateCountsLater 在后台补验之后延迟丢掉计数缓存。
-//
-// 不立刻丢：刚探完的那一刻各引擎目录还没变，立即失效只会多扫一轮；
-// 而计数缓存本身的 TTL 就是 countsTTL，等它自然过期即可。
-// 这里只给「探测刚证明引擎换了版本」这一种情况留一个后手。
-func (a *App) invalidateCountsLater() {
-	go func() {
-		time.Sleep(countsTTL / 2)
-		a.InvalidateCounts()
-	}()
 }
 
 // InvalidateCounts 丢掉计数缓存（装完插件 / 删了会话 / 换了工作目录之后）。

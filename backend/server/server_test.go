@@ -43,14 +43,22 @@ func testServer(t *testing.T) (*Server, http.Handler) {
 	}
 	t.Cleanup(func() { store.Close() })
 	svc, err := service.New(service.Options{
-		Store:   store,
-		Hub:     hub.New(16),
-		DataDir: dir,
-		Version: "test",
+		Store:    store,
+		Hub:      hub.New(16),
+		DataDir:  dir,
+		Version:  "test",
+		SkipWarm: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 等后台探测退完再让 TempDir 被回收。
+	//
+	// 探测是故意异步的（首屏不该等子进程），而它会写设置缓存；
+	// 不等它就跑完用例，t.TempDir() 的 RemoveAll 会撞上
+	// 那个还在跑的写入，报「directory is not empty」——
+	// 而那个报错与测试本身想断言的东西毫无关系。
+	t.Cleanup(func() { svc.WaitBackground() })
 	srv := New(svc, svc.Hub, "secret-token")
 	return srv, srv.Handler()
 }
