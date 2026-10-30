@@ -61,6 +61,7 @@ main.go ──→ backend/desktop ──→ server ──→ service ──→ e
 | `backend/env` | `pkg` / `engine`（只读 `Identity` 等结果类型） | `omp` / `pi` 的具体实现 |
 | `backend/env/ompcfg` / `picfg` | `pkg` | `env` / `engine` / `service` |
 | `backend/git` | `domain` / `pkg` | `service` / `engine` / `env` |
+| `backend/upstream` | `pkg` | `service` / `server` / `env` / `engine` |
 | `backend/platform` | `pkg` | `service` / `engine` / `env` / `domain`（只给 `backend/desktop` 与 service 用） |
 | `backend/session` / `skill` | `pkg` / `domain` | `service` / `server` / `engine` 实现 |
 | `backend/service` | 以上全部 | `server` / `backend/desktop` / 任何 `wails` |
@@ -96,6 +97,7 @@ main.go ──→ backend/desktop ──→ server ──→ service ──→ e
 | HTTP 响应外壳 | `backend/server` | 在 service 里构造 gin 对象 |
 | 子代理字节游标 | `backend/engine/omp/roster.go`（存储）+ `service/agents.go`（用例） | 在 handler 里存游标 |
 | git 调用 | `backend/git` | 在 service / handler 里 `exec.Command("git", …)` |
+| 向上游服务商问模型清单 | `backend/upstream` | 在 service 里自己拼 URL 发 HTTP |
 | 开机自启 / 系统唤起 | `backend/platform` | 在 service 里直接读注册表或调 `explorer` |
 
 `service` 只编排：拿数据、做判断、调下一层。它不解析文件格式、不做 HTTP。
@@ -257,6 +259,7 @@ json tag 同步用 snake_case（`branch_name`）。
 | `docs/modules/skill.md` | `skill`（技能发现与启停）+ 插件的 CLI 装卸 |
 | `docs/modules/subagents.md` | `engine/omp` 的子代理观测台 |
 | `docs/modules/git.md` | `git`（工作区版本状态与白名单写入） |
+| `docs/modules/upstream.md` | `upstream`（向上游服务商问模型清单） |
 | `docs/modules/hub.md` | `hub`（事件总线） |
 | `docs/modules/repo.md` | `repo`（设置存储）+ `platform`（注册表与系统调用） |
 

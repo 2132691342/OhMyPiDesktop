@@ -55,6 +55,19 @@ export function useComposerMenu(
 
   watch(draft, detect)
 
+  /**
+   * 过滤词变了就把高亮拉回第一项。
+   *
+   * 不这么做的话：候选列表从 8 项缩到 2 项，而高亮还停在第 7 项——
+   * 此时按回车选中的是一个看不见的条目（或者什么都没发生）。
+   */
+  watch(
+    () => draft.value.slice(1),
+    () => {
+      if (menu.value === 'slash') menuIndex.value = 0
+    },
+  )
+
   const mentionOpen = computed(() => menu.value === 'mention')
 
   /** 合并后的命令表：内置在前、引擎在后，按输入过滤。 */
@@ -73,7 +86,9 @@ export function useComposerMenu(
     return merged.filter((item) => item.name.toLowerCase().includes(query))
   })
 
-  const slashOpen = computed(() => menu.value === 'slash' && slashItems.value.length > 0)
+  // 斜杠菜单只要处于「/ 开头」状态就显示：没有匹配项时也要告诉用户
+  // 「没有匹配的」，而不是菜单默默消失——后者看起来像按了没反应。
+  const slashOpen = computed(() => menu.value === 'slash')
 
   /** 跑一条内置命令，把结果话术转成提示。 */
   async function runBuiltin(key: string): Promise<void> {

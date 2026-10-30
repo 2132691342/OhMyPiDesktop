@@ -5,23 +5,15 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, streamURL } from '@/api/http'
 import { getEndpoint, pickFolder } from '@/api/wails'
-import type {
-  AppProgress,
-  AppRow,
-  AskRequest,
-  Bootstrap,
-  ChatBlock,
-  ChatPatch,
-  EngineCaps,
-  EngineKind,
-  EngineStatus,
-  SessionRow,
-  SlashCommand,
-  WorkspaceRow,
-} from '@/types/api'
+import type { AppRow, Bootstrap, EngineCaps, EngineKind, EngineStatus, SessionRow, WorkspaceRow } from '@/types/api'
 import { useChatStore } from './chat'
 import { useAgentsStore } from './agents'
 import { useToasts } from '@/composables/useToasts'
+import { routeFrame } from './events'
+import { readFrame } from '@/utils/sse'
+import type { AppProgressLog } from '@/utils/sse'
+
+export type { AppProgressLog }
 
 export const useAppStore = defineStore('app', () => {
   const ready = ref(false)
@@ -67,8 +59,6 @@ export const useAppStore = defineStore('app', () => {
   const installed = computed(() => engines.value?.engines.filter((e) => e.installed) ?? [])
   /** 全都没有引擎时，输入区要禁用并给安装命令。 */
   const hasEngine = computed(() => installed.value.length > 0)
-  /** 只有一个引擎时不显示选择器（不占位置）。 */
-  const showEnginePicker = computed(() => installed.value.length > 1)
   /** 某引擎的能力表；没探测到就按「什么都不能」处理。 */
   function capsOf(kind: EngineKind): EngineCaps | null {
     const found = engines.value?.engines.find((e) => e.kind === kind)
@@ -151,9 +141,23 @@ export const useAppStore = defineStore('app', () => {
 
   // 会话列表跟当前引擎走：两个引擎的会话文件不是能互换接着聊的东西，
   // 混在一张表里会让人以为点开就能继续。
+  //
+  // 两份缓存在这里：切引擎时先把目标引擎的列表摆上（不等往返），
+  // 后台再补一份新的。否则切完的那一两秒里，列表里全是另一个引擎的会话。
+  const sessionCache = ref<Record<EngineKind, SessionRow[]>>({ omp: [], pi: [] })
+
   async function refreshSessions() {
-    const data = await api.sessions(workspace.value || undefined, chat.kind)
-    sessions.value = data.sessions ?? []
+    const target = chat.kind
+    const data = await api.sessions(workspace.value || undefined, target)
+    const rows = data.sessions ?? []
+    sessionCache.value = { ...sessionCache.value, [target]: rows }
+    // 请求飞的半秒里用户又切了：不能拿旧引擎的列表覆盖当前引擎的。
+    if (chat.kind === target) sessions.value = rows
+  }
+
+  /** 切引擎时立刻把列表换过去：会话列表是一个一直看得见的栏目。 */
+  function showCachedSessions(kind: EngineKind) {
+    sessions.value = sessionCache.value[kind] ?? []
   }
 
   /**
@@ -239,6 +243,7 @@ export const useAppStore = defineStore('app', () => {
     active.value = kind
     // 先同步过滤目标再切通道：反过来的话，切换期间到达的旧引擎帧会被放进来。
     setActiveKind(kind)
+    showCachedSessions(kind)
     void chat.switchEngine(kind)
     // 会话列表跟着引擎走：它是一份非当前引擎的数据，切完就该换。
     void refreshSessions()
@@ -309,205 +314,27 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  function route(event: string, data: Record<string, unknown>) {
-    // 两个引擎、多个工作目录共用一条 SSE。聊天与子代理帧只属于某一个引擎，
-    // 不属于当前引擎的要丢掉——否则切走之后旧实例仍在推的正文会跳进新会话。
-    //
-    // 引擎状态、安装进度、会话标题是全局的，**不能**过滤，
-    // 否则切过去看到的是旧状态。所以过滤只做在聊天类命名空间上。
-    if (isChatScoped(event) && !belongsToActive(data)) return
-
-    switch (event) {
-      case 'stream:open':
-        return
-      case 'engine:status': {
-        // SSE 连接建立时后端补的一张当前引擎状态。
-        // 它盖住「探测完成早于本连接」那条时序：那一帧 engine:detected
-        // 发在没有订阅者的时刻会被丢掉，前端就停在「未安装」不动。
-        void refreshEngines()
-        return
-      }
-      case 'engine:ready':
-      case 'engine:exit':
-        void refreshEngines()
-        return
-      case 'engine:detected':
-        // 探测完成了：引擎清单要跟着换。之前只有用户手动点「重新检测」
-        // 才会更新，于是首发时概览页一直显示「没装」——
-        // 而那只是因为探测还在跑，不是一个事实。
-        //
-        // 这一帧可能永远不来（Bootstrap 触发的那轮探测可能早于 SSE 连接），
-        // 所以 app.detecting 之外还有 detectedAt 那条兜底。
-        void refreshEngines()
-        return
-      case 'engine:commands': {
-        const list = readCommands(data.commands)
-        if (list.length) chat.commands = list
-        return
-      }
-      case 'app:progress': {
-        const frame = readAppProgress(data)
-        if (!frame) return
-        const prev = appProgress.value[frame.kind]
-        const next: AppProgressLog = {
-          action: frame.action,
-          phase: frame.phase,
-          command: frame.phase === 'start' ? asString(frame.command) : (prev?.command ?? ''),
-          lines: frame.phase === 'start' ? [] : [...(prev?.lines ?? [])],
-          message: asString(frame.message),
-        }
-        if (frame.phase === 'line') {
-          next.lines.push(asString(frame.line))
-          // 面板只留最后 400 行：装一个引擎的日志能到几百行，
-          // 全留会让长任务把内存吃掉，而用户看的是尾部。
-          if (next.lines.length > 400) next.lines = next.lines.slice(-400)
-        }
-        appProgress.value = { ...appProgress.value, [frame.kind]: next }
-        if (frame.phase === 'done' || frame.phase === 'fail') {
-          // 结束后重拉清单与引擎状态：装在后台跑完时界面也要跟上。
-          void loadApps(true).catch(() => undefined)
-          void refreshEngines().catch(() => undefined)
-        }
-        return
-      }
-      case 'app:close_requested': {
-        // 首次按关闭：不静默躲进托盘，而是问一次。
-        // 静默隐藏是「关不掉」这种抱怨的唯一来源。
-        closePrompt.value = true
-        return
-      }
-      case 'engine:extension_error':
-        return // 扩展自己的报错不该弹给用户
-      case 'chat:start':
-        chat.streaming = true
-        chat.promptError = ''
-        return
-      case 'chat:turn': {
-        const runID = asString(data.run_id)
-        const blocks = readBlocks(data.blocks)
-        // 已经收过尾的那一轮，之后的权威快照丢掉。
-        //
-        // 引擎在 chat:done 之后还会补一帧整表快照，而那时这一轮已被并进历史——
-        // 再接受一次，界面尾部会多出一条重复的回复。
-        // 判据是「这一轮是不是已经结束过」而不是「当前没在流式」：
-        // 断流重连时 streaming 可能还是 false，但那是一轮真的在跑的快照。
-        if (!chat.streaming && runID && runID === chat.lastFinishedRunId) return
-        if (!chat.turn || chat.turn.run_id !== runID) {
-          chat.turn = { run_id: runID, user_message: asString(data.user_message), blocks }
-        } else if (!chat.turn.user_message) {
-          chat.turn.user_message = asString(data.user_message)
-        }
-        return
-      }
-      case 'chat:patch': {
-        const patch = readPatch(data)
-        if (patch) chat.applyPatch(patch)
-        return
-      }
-      case 'chat:blocks': {
-        if (chat.turn && asString(data.run_id) === chat.turn.run_id) {
-          chat.turn.blocks = readBlocks(data.blocks)
-        }
-        return
-      }
-      case 'chat:queue':
-        chat.queue = { steering: readStrings(data.steering), followUp: readStrings(data.followUp) }
-        return
-      case 'chat:ask': {
-        const ask = readAsk(data)
-        if (ask) chat.asks = [...chat.asks.filter((a) => a.id !== ask.id), ask]
-        return
-      }
-      case 'chat:notify': {
-        const level = asString(data.level, 'info')
-        chat.pushNotice(level, asString(data.message))
-        return
-      }
-      case 'chat:status':
-        chat.setStatus(asString(data.key), asString(data.text))
-        return
-      case 'chat:widget':
-        chat.setWidget(asString(data.key), readStrings(data.lines))
-        return
-      case 'chat:retry':
-        chat.retry = { attempt: asNumber(data.attempt), max: asNumber(data.max), delay_ms: asNumber(data.delay_ms) }
-        return
-      case 'chat:retry_end':
-        chat.retry = null
-        return
-      case 'chat:compaction':
-        chat.compacting = data.state === 'start'
-        return
-      case 'chat:turn_end':
-        if (data.usage) void chat.refresh(chat.sessionFile)
-        return
-      case 'chat:done':
-        chat.finishTurn()
-        void chat.refresh(chat.sessionFile)
-        void refreshSessions()
-        return
-      case 'chat:settled':
-        chat.streaming = false
-        return
-      case 'chat:prompt_result': {
-        const status = asString(data.status)
-        if (status && status !== 'completed') {
-          chat.promptError = asString(data.message, '这一轮没有完成')
-        }
-        return
-      }
-      case 'chat:error':
-        chat.promptError = asString(data.message, '出错了')
-        chat.streaming = false
-        toasts.push('error', chat.promptError)
-        return
-      case 'chat:open_url': {
-        // 优先用 launchUrl（短回环重定向），它比原始长地址更可能在默认浏览器里打开。
-        const url = asString(data.launch_url) || asString(data.url)
-        if (!url) return
-        pendingLink.value = {
-          url,
-          label: asString(data.url),
-          instructions: asString(data.instructions),
-        }
-        return
-      }
-      case 'chat:editor_text': {
-        const text = asString(data.text)
-        if (text) chat.draftOverride = text
-        return
-      }
-      case 'chat:notice': {
-        const level = asString(data.level, 'info')
-        toasts.push(level === 'error' ? 'error' : level === 'warning' ? 'warn' : 'info', asString(data.message))
-        return
-      }
-      case 'chat:command_output':
-        chat.pushNotice('info', asString(data.text))
-        return
-      case 'chat:gap':
-        void reconcile()
-        return
-      case 'subagent:lifecycle':
-        agents.applyLifecycle(data)
-        return
-      case 'subagent:progress':
-        agents.applyProgress(data)
-        return
-      case 'subagent:event':
-        return // 只有 events 档才有；面板不订阅这一档
-      case 'agents:cleared':
-        // 会话切换后引擎已丢弃旧 id 的帧，本地也必须清干净，
-        // 否则界面会一直显示已经不存在的子代理。
-        agents.reset()
-        return
-      case 'session:info':
-      case 'session:title':
-        void refreshSessions()
-        return
-      default:
-        return
-    }
+  /** 分派一帧事件。分派表在 stores/events.ts。 */
+  function route(event: string, data: Record<string, unknown>): void {
+    routeFrame(event, data, currentActiveKind, {
+      chat,
+      agents,
+      refreshEngines,
+      refreshSessions,
+      loadApps,
+      reconcile,
+      appProgress: appProgress.value,
+      setAppProgress: (kind, next) => {
+        appProgress.value = { ...appProgress.value, [kind]: next }
+      },
+      setClosePrompt: (open) => {
+        closePrompt.value = open
+      },
+      setPendingLink: (link) => {
+        pendingLink.value = link
+      },
+      toast: (level, message) => toasts.push(level, message),
+    })
   }
 
   // 跳到设置页（缺引擎时「去设置」这类动作的目标）。
@@ -548,7 +375,6 @@ export const useAppStore = defineStore('app', () => {
     theme,
     installed,
     hasEngine,
-    showEnginePicker,
     capsOf,
     installHint,
     load,
@@ -569,16 +395,8 @@ export const useAppStore = defineStore('app', () => {
 })
 
 // ---------------- SSE 载荷的类型边界 ----------------
-// 事件体是 JSON 解析出来的 unknown 树：先校验再取字段，绝不 as 一个形状上去直接读。
-
-/** 一个应用的一次长任务现场：命令、逐行输出、当前阶段。 */
-export interface AppProgressLog {
-  action: string
-  phase: string
-  command: string
-  lines: string[]
-  message: string
-}
+// 窄化逻辑在 utils/sse.ts，分派表在 stores/events.ts。
+// 这里只回答「这一帧属于谁」。
 
 /** 当前正在看的引擎。由 store 在切引擎时同步。 */
 let currentActiveKind = ''
@@ -586,177 +404,4 @@ let currentActiveKind = ''
 /** 同步当前引擎，供帧过滤读。 */
 export function setActiveKind(kind: string) {
   currentActiveKind = kind
-}
-
-/** 哪些事件属于「某一个引擎的某一次对话」。
- *
- * 判据是命名空间：chat:* 是一个会话内的流，subagent:* 与 agents:* 同属于它。
- * engine:* / app:* / session:* 是全局事实（引擎起没起、装到哪一步、最新标题），
- * 两个引擎都会改，过滤掉就会「切过去看到旧状态」。
- */
-function isChatScoped(event: string): boolean {
-  return event.startsWith('chat:') || event.startsWith('subagent:') || event.startsWith('agents:')
-}
-
-/** 判断一帧是否属于当前正在看的引擎。
- *
- * 两个引擎、以及同一引擎的多个工作目录，共用同一条 SSE。帧上带着
- * engine_kind，不属于当前引擎的聊天帧必须丢掉——不丢的话，切走之后
- * 旧实例仍在推的正文会跳进新会话。
- *
- * 帧上没带 engine_kind 时一律放过：全局事件（安装进度、引擎状态）没有
- * 这个字段，而且老后端也不会发它。宁可多处理，不能把正常帧拦掉。
- */
-function belongsToActive(data: Record<string, unknown>): boolean {
-  const kind = data.engine_kind
-  if (typeof kind !== 'string' || !kind) return true
-  return kind === currentActiveKind
-}
-
-/** 窄化一帧安装进度。action 与 phase 都必须是已知值，其余一律丢弃。 */
-function readAppProgress(v: Record<string, unknown>): AppProgress | null {
-  const kind = asString(v.kind)
-  if (kind !== 'omp' && kind !== 'pi') return null
-  const action = asString(v.action)
-  if (action !== 'install' && action !== 'update' && action !== 'uninstall') return null
-  const phase = asString(v.phase)
-  if (phase !== 'start' && phase !== 'line' && phase !== 'done' && phase !== 'fail') return null
-  return {
-    kind,
-    action,
-    phase,
-    line: asString(v.line) || undefined,
-    command: asString(v.command) || undefined,
-    message: asString(v.message) || undefined,
-  }
-}
-
-const asString = (v: unknown, fallback = '') => (typeof v === 'string' ? v : fallback)
-const asNumber = (v: unknown, fallback = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback)
-const readStrings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
-
-/** 命令清单只关心界面要显示的三段：名字 / 说明 / 输入提示。 */
-function readCommands(v: unknown): SlashCommand[] {
-  if (!Array.isArray(v)) return []
-  const out: SlashCommand[] = []
-  for (const item of v) {
-    if (!item || typeof item !== 'object') continue
-    const record = item as Record<string, unknown>
-    const name = asString(record.name)
-    if (!name) continue
-    const input = record.input && typeof record.input === 'object' ? (record.input as Record<string, unknown>) : null
-    out.push({
-      name,
-      source: asString(record.source),
-      description: asString(record.description) || undefined,
-      aliases: readStrings(record.aliases),
-      input: input ? { hint: asString(input.hint) || undefined } : undefined,
-    })
-  }
-  return out
-}
-
-function readBlock(v: unknown): ChatBlock | null {
-  if (!v || typeof v !== 'object') return null
-  const record = v as Record<string, unknown>
-  const kind = asString(record.kind)
-  if (kind !== 'text' && kind !== 'thinking' && kind !== 'tool') return null
-  const status = asString(record.status)
-  return {
-    kind,
-    text: asString(record.text),
-    tool_call_id: asString(record.tool_call_id) || undefined,
-    tool_name: asString(record.tool_name) || undefined,
-    args: record.args,
-    intent: asString(record.intent) || undefined,
-    output: asString(record.output) || undefined,
-    is_error: Boolean(record.is_error),
-    status: status === 'pending' || status === 'running' || status === 'done' || status === 'error' ? status : undefined,
-    streaming: Boolean(record.streaming),
-    duration_ms: asNumber(record.duration_ms) || undefined,
-  }
-}
-
-function readBlocks(v: unknown): ChatBlock[] {
-  if (!Array.isArray(v)) return []
-  const out: ChatBlock[] = []
-  for (const item of v) {
-    const block = readBlock(item)
-    if (block) out.push(block)
-  }
-  return out
-}
-
-function readPatch(data: Record<string, unknown>): ChatPatch | null {
-  const mode = asString(data.mode)
-  if (mode !== 'delta' && mode !== 'block' && mode !== 'blocks') return null
-  const kind = asString(data.kind)
-  return {
-    run_id: asString(data.run_id),
-    mode,
-    index: asNumber(data.index),
-    kind: kind === 'text' || kind === 'thinking' || kind === 'tool' ? kind : 'text',
-    delta: asString(data.delta) || undefined,
-    block: readBlock(data.block) ?? undefined,
-    blocks: mode === 'blocks' ? readBlocks(data.blocks) : undefined,
-  }
-}
-
-function readAsk(v: unknown): AskRequest | null {
-  if (!v || typeof v !== 'object') return null
-  const record = v as Record<string, unknown>
-  const id = asString(record.id)
-  const method = asString(record.method)
-  if (!id || !method) return null
-  const questions = Array.isArray(record.questions) ? record.questions : []
-  return {
-    id,
-    method: method as AskRequest['method'],
-    title: asString(record.title) || undefined,
-    message: asString(record.message) || undefined,
-    placeholder: asString(record.placeholder) || undefined,
-    prefill: asString(record.prefill) || undefined,
-    options: readStrings(record.options),
-    timeout: asNumber(record.timeout) || undefined,
-    targetId: asString(record.targetId) || undefined,
-    questions: questions.flatMap((q) => {
-      if (!q || typeof q !== 'object') return []
-      const item = q as Record<string, unknown>
-      const options = Array.isArray(item.options) ? item.options : []
-      return [
-        {
-          id: asString(item.id),
-          question: asString(item.question),
-          header: asString(item.header) || undefined,
-          multi: Boolean(item.multi),
-          recommended: typeof item.recommended === 'number' ? item.recommended : undefined,
-          options: options.flatMap((o) => {
-            if (!o || typeof o !== 'object') return []
-            const opt = o as Record<string, unknown>
-            return [
-              {
-                label: asString(opt.label),
-                description: asString(opt.description) || undefined,
-                preview: asString(opt.preview) || undefined,
-              },
-            ]
-          }),
-        },
-      ]
-    }),
-  }
-}
-
-/** 读一帧 SSE：信封本身也可能是坏的，坏帧直接丢，不断流。 */
-function readFrame(raw: string): { seq: number; event: string; data: Record<string, unknown> } | null {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return null
-  }
-  if (!parsed || typeof parsed !== 'object') return null
-  const record = parsed as Record<string, unknown>
-  const data = record.data && typeof record.data === 'object' ? (record.data as Record<string, unknown>) : {}
-  return { seq: asNumber(record.seq), event: asString(record.event), data }
 }

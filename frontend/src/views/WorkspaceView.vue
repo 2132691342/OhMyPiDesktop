@@ -213,7 +213,14 @@ onMounted(refresh)
       <!-- 版本栏：分支 / 上游 / 领先落后 / 同步动作。
            它放在三栏之上，因为「在哪个分支」决定了下面每一栏的语境。 -->
       <div class="bar-wrap">
-        <GitBar :status="status" :busy="Boolean(git.pending.value)" @fetch="git.fetchRemote" @pull="git.pull" @push="git.push" />
+        <GitBar
+          :status="status"
+          :pending="git.pending.value"
+          @fetch="git.fetchRemote"
+          @pull="git.pull"
+          @push="git.push"
+          @add-remote="git.addRemote"
+        />
       </div>
 
       <div class="split" :class="{ 'no-files': !filesOpen }">
@@ -257,6 +264,8 @@ onMounted(refresh)
               @commit="commit"
               @create-branch="git.createBranch"
               @switch-branch="git.switchBranch"
+              @delete-branch="git.deleteBranch"
+              @merge-branch="git.mergeBranch"
             />
           </div>
 

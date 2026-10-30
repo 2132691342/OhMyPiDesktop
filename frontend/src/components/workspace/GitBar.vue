@@ -5,17 +5,21 @@
 // （有没有远端、有没有上游、允不允许强推），塞进工作区页会让那页的模板
 // 长到没法一眼看完。这里只负责「按状态决定显示什么」，
 // 具体的 git 动作由上层执行。
+//
+// loading 按动作名区分：拉取与推送各有自己的转圈，
+// 共用一个「忙」标志会让用户不知道是哪一步在跑。
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
 import type { GitStatus } from '@/types/api'
 
-const props = defineProps<{ status: GitStatus | null; busy: boolean }>()
+const props = defineProps<{ status: GitStatus | null; pending: string }>()
 
 const emit = defineEmits<{
   fetch: []
   pull: []
   push: [force: string]
+  addRemote: []
 }>()
 
 const { t } = useI18n()
@@ -35,6 +39,16 @@ const confirmText = ref('')
 const canForce = computed(
   () => forceLevel.value === 'lease' || confirmText.value === (props.status?.branch_name ?? ''),
 )
+
+/** 某个动作是否在跑：pending 是动作名（见 useGitActions）。 */
+function busy(name: string): boolean {
+  return props.pending === name
+}
+
+/** 同步类动作是否在跑（拉取 / 取回 / 推送）：它们共用远端这一把锁。 */
+function syncing(): boolean {
+  return props.pending.startsWith('pull') || props.pending.startsWith('fetch') || props.pending.startsWith('push')
+}
 
 function submitForce() {
   if (!canForce.value) return
@@ -64,11 +78,17 @@ function submitForce() {
 
     <span class="git-sp" />
 
+    <!-- 没有远端时唯一的出口：先能加一个远端，相步类按钮才有意义 -->
+    <button v-if="!hasRemote" class="omp-btn sm primary" @click="emit('addRemote')">
+      <AppIcon name="plus" :size="13" />
+      {{ t('workspace.addRemote') }}
+    </button>
+
     <button
       v-if="hasRemote"
       class="omp-btn sm ghost"
-      :class="{ 'is-loading': busy }"
-      :disabled="busy"
+      :class="{ 'is-loading': busy('fetch') }"
+      :disabled="syncing()"
       :title="t('workspace.fetch')"
       @click="emit('fetch')"
     >
@@ -79,22 +99,24 @@ function submitForce() {
     <button
       v-if="hasRemote"
       class="omp-btn sm ghost"
-      :class="{ 'is-loading': busy }"
-      :disabled="busy"
+      :class="{ 'is-loading': busy('pull') }"
+      :disabled="syncing()"
       :title="t('workspace.pull')"
       @click="emit('pull')"
     >
+      <AppIcon name="download" :size="13" />
       {{ t('workspace.pull') }}
     </button>
 
     <button
       v-if="hasRemote"
       class="omp-btn sm primary"
-      :class="{ 'is-loading': busy }"
-      :disabled="busy"
+      :class="{ 'is-loading': busy('push:none') }"
+      :disabled="syncing()"
       :title="hasUpstream ? t('workspace.push') : t('workspace.pushFirst')"
       @click="emit('push', 'none')"
     >
+      <AppIcon name="send" :size="13" />
       {{ hasUpstream ? t('workspace.push') : t('workspace.pushFirst') }}
     </button>
 
@@ -104,7 +126,7 @@ function submitForce() {
     <button
       v-if="hasRemote"
       class="omp-btn sm ghost"
-      :disabled="busy"
+      :disabled="syncing()"
       :title="t('workspace.forcePush')"
       @click="forceOpen = !forceOpen"
     >
@@ -147,16 +169,18 @@ function submitForce() {
 </template>
 
 <style scoped>
-/* 版本栏：一条横杠，把「现在在哪个分支、与远端差多少、怎么同步」说清 */
+/* 版本栏：一条横杠，把「现在在哪个分支、与远端差多少、怎么同步」说清。
+   它不是卡片：描边 + 圆角会让它跟下面的内容抢「这是一个盒子」的信号，
+   而这里只是工具条。 */
 .git-bar {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
   flex-wrap: wrap;
   padding: var(--omp-sp-2) var(--omp-sp-3);
-  border: 1px solid var(--omp-line);
   border-radius: var(--omp-r);
   background: var(--omp-surface);
+  border: 1px solid var(--omp-line);
   flex: none;
 }
 
@@ -168,11 +192,13 @@ function submitForce() {
   color: var(--omp-mute);
   min-width: 0;
 }
+
 .git-branch {
   font-family: var(--omp-font-mono);
   color: var(--omp-brand);
   font-weight: 650;
 }
+
 .git-upstream-name {
   font-family: var(--omp-font-mono);
   overflow: hidden;
@@ -180,14 +206,17 @@ function submitForce() {
   white-space: nowrap;
   max-width: 200px;
 }
+
 .git-count {
   font-family: var(--omp-font-mono);
   gap: 6px;
   font-variant-numeric: tabular-nums;
 }
+
 .is-ahead {
   color: var(--omp-ok);
 }
+
 .is-behind {
   color: var(--omp-warn);
 }
@@ -210,8 +239,6 @@ function submitForce() {
   gap: var(--omp-sp-2);
   margin-top: var(--omp-sp-1);
   padding: var(--omp-sp-3);
-  border: 1px solid var(--omp-line);
-  border-left: 2px solid var(--omp-warn);
   border-radius: var(--omp-r-sm);
   background: var(--omp-hover);
 }
@@ -230,19 +257,23 @@ function submitForce() {
   gap: var(--omp-sp-2);
   cursor: pointer;
 }
+
 .force-opt > span {
   display: flex;
   flex-direction: column;
   gap: 1px;
   min-width: 0;
 }
+
 .force-opt b {
   font-size: var(--omp-fs-xs);
   color: var(--omp-ink);
 }
+
 .force-opt b.is-danger {
   color: var(--omp-bad);
 }
+
 .force-opt em {
   font-style: normal;
   font-size: var(--omp-fs-3xs);
@@ -255,6 +286,7 @@ function submitForce() {
   flex-direction: column;
   gap: 3px;
 }
+
 .force-confirm-hint {
   font-size: var(--omp-fs-3xs);
   color: var(--omp-faint);

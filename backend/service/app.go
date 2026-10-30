@@ -68,6 +68,12 @@ type App struct {
 	countsBusyMu sync.Mutex
 	countsBusy   map[engine.Kind]bool
 
+	// modelCache 是模型清单的短 TTL 缓存。
+	//
+	// 它存在的原因是实测：引擎冷启动要 3~11 秒，而“打开模型下拉”
+	// 这种零风险操作不该付这个代价。见 modelcfg.go。
+	modelCache modelCache
+
 	Version string
 }
 

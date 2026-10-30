@@ -30,12 +30,15 @@ const props = defineProps<{
   /** 正在编辑的服务商名（空表示新建） */
   editing: string
   saving: boolean
+  /** 正在拉上游清单（true 表示按钮转圈） */
+  fetching: boolean
   apiOptions: string[]
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [open: boolean]
   save: []
+  fetchModels: []
 }>()
 
 const { t } = useI18n()
@@ -114,7 +117,22 @@ function setInput(index: number, kind: string, on: boolean): void {
 
     <div class="models-head">
       <span class="field-label">{{ t('models.modelsLabel') }}</span>
-      <button class="omp-btn text sm" @click="addModel">{{ t('models.addModel') }}</button>
+      <span class="sp" />
+      <!-- 拉上游清单：填了地址与密钥就能问出有哪些模型，
+           不用一个个手打 id。拉回来的清单会填进下方的表里。 -->
+      <button
+        class="omp-btn sm ghost"
+        :class="{ 'is-loading': props.fetching }"
+        :disabled="props.fetching || props.saving"
+        :title="t('models.fetchModelsHint')"
+        @click="emit('fetchModels')"
+      >
+        <AppIcon name="download" :size="12" />
+        {{ t('models.fetchModels') }}
+      </button>
+      <button class="omp-btn text sm" :disabled="props.fetching" @click="addModel">
+        {{ t('models.addModel') }}
+      </button>
     </div>
 
     <!-- 表头：四个字段各自的含义写在列头上，不靠占位符（输入后就消失了） -->
@@ -209,6 +227,10 @@ function setInput(index: number, kind: string, on: boolean): void {
   justify-content: space-between;
   gap: var(--omp-sp-2);
   margin: var(--omp-sp-2) 0;
+}
+
+.sp {
+  flex: 1;
 }
 
 .field-label {

@@ -26,8 +26,10 @@ import type {
   HealthData,
   LoginProvider,
   McpListData,
+  ModelEntry,
   ModelRow,
   PluginListData,
+  ProviderProbeREQ,
   ProvidersView,
   ProviderView,
   SessionDetail,
@@ -187,6 +189,12 @@ export const api = {
     post<ProvidersView>('/providers/upsert', { name, provider, ...k(engine) }),
   deleteProvider: (name: string, engine?: EngineKind) =>
     post<ProvidersView>('/providers/delete', { name, ...k(engine) }),
+  // 向上游问一次模型清单。密钥不给就用已保存的那个。
+  fetchProviderModels: (body: ProviderProbeREQ) =>
+    post<{ models: ModelEntry[]; config_path: string }>('/providers/models', body),
+  // 测一条服务商配置通不通：不通时回 ok=false 与原因原话。
+  testProvider: (body: ProviderProbeREQ) =>
+    post<{ ok: boolean; model_count: number; message: string }>('/providers/test', body),
   loginProviders: (engine?: EngineKind) =>
     get<{ providers: LoginProvider[] }>('/login/providers', k(engine)),
   startLogin: (provider: string, engine?: EngineKind) =>

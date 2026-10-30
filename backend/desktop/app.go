@@ -103,6 +103,12 @@ func Run(opts Options) error {
 		Height: winHeight,
 		// 无边框：标题栏由前端自绘，窗口位置与尺寸才与界面一致。
 		Frameless: true,
+		// 初始位置在屏幕正中。
+		//
+		// 不设时 Wails 走系统的默认位置，而那个位置在 Windows 上是「右上角」
+		//（沿用上一个窗口的级联位置，首次启动时靠屏幕右上角）。
+		// 用户每次启动都要拖一下才能用——这不是审美问题，是每次都要多做一个动作。
+		InitialPosition: application.WindowCentered,
 		// 不设 MinWidth / MinHeight。
 		//
 		// WM_GETMINMAXINFO 里的最小尺寸按窗口 DPI 换算，与上面声明的物理尺寸
@@ -236,6 +242,34 @@ func (a *App) startup(ctx context.Context) {
 // 「先建窗、再 return」那条分支——窗口建好了却仍然隐藏；紧随其后的 Focus()
 // 还会踩到尚未初始化的 WebView2 controller，直接 panic。
 // 等前端把首屏画完再显示：两个问题一起消失，顺带没有白屏。
+// centerOnPrimaryScreen 把窗口放到主屏工作区正中。
+//
+// 不用 Wails 的 Center()：它在 Windows 上走 CenterWindow，而那个实现
+// 用 GetClientRect 取尺寸、用 GetMonitorInfoForWindow 取监视器，
+// 对一个「Hidden 小尺寸建窗、随后又被 SetSize 改过」的无边框窗口，
+// 两者基准不一致（客户区 vs 窗口区），结果会偏。这里直接用主屏工作区
+// 与最终尺寸算，两个量都是我们自己定的，不会对不上。
+//
+// 屏幕信息在建窗之前是不可用的（GetPrimary 返回 nil），所以这个动作
+// 必须在 Ready() 里做；拿不到屏幕信息就退回 Wails 的 Center()。
+func (a *App) centerOnPrimaryScreen() {
+	if a.win == nil {
+		return
+	}
+	screen := a.app.Screen.GetPrimary()
+	if screen == nil || screen.WorkArea.Width <= 0 || screen.WorkArea.Height <= 0 {
+		a.win.Center()
+		return
+	}
+	// SetPosition 收的是 DIP，与 SetSize 同一套基准。
+	width, height := a.win.Size()
+	area := screen.WorkArea
+	a.win.SetPosition(
+		area.X+(area.Width-width)/2,
+		area.Y+(area.Height-height)/2,
+	)
+}
+
 func (a *App) Ready() {
 	// 前端每次热重载都会再调一次。
 	if a.revealed.Swap(true) {
@@ -252,6 +286,8 @@ func (a *App) Ready() {
 	// 建窗时高度可能被裁（Hidden 窗口判定不准屏幕归属），所以这里用**逻辑值**
 	// 再设一次——这条路径 Wails 会自己按 DPI 换算。
 	a.win.SetSize(windowLogicalWidth, windowLogicalHeight)
+	// 改完尺寸再居中：尺寸与位置必须基于同一个基准算，否则会偏。
+	a.centerOnPrimaryScreen()
 	a.showWindow()
 	pkg.Infof("app: 首屏就绪，窗口已显示")
 }

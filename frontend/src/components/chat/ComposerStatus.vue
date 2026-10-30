@@ -1,17 +1,18 @@
 <script setup lang="ts">
-// 输入区上方的状态条：引擎选择、缺引擎提示、引擎上报的状态、排队条目、
+// 输入区上方的状态条：缺引擎提示、引擎上报的状态、排队条目、
 // 重试进度、错误原话。
 //
 // 它们都在回答「现在能不能发、刚才为什么不顺」，与输入框本身是两件事。
 // 拆出来还有一个好处：这一堆都是条件渲染，混在输入区里会让那段模板反复
 // 折叠，改一个提示得先在一屏 if 里找到它。
+//
+// 引擎选择不在这里：它已经搬进输入框底栏（它决定的是「这句话发给谁」，
+// 属于输入的一部分）。
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
-import type { EngineKind } from '@/types/api'
 
 const emit = defineEmits<{
-  pickEngine: [kind: EngineKind]
   clearAttachError: []
 }>()
 
@@ -19,7 +20,7 @@ const chat = useChatStore()
 const app = useAppStore()
 const { t } = useI18n()
 
-const props = defineProps<{ pickingEngine: boolean; attachError: string }>()
+const props = defineProps<{ attachError: string }>()
 
 
 async function clearQueued(): Promise<void> {
@@ -43,28 +44,6 @@ async function dropQueued(message: string, queueName: 'steering' | 'followUp'): 
 </script>
 
 <template>
-  <!-- 引擎选择：只列探测到的引擎，只有一个时不显示（不占位置） -->
-  <div v-if="app.showEnginePicker" class="engine-strip">
-    <div class="seg" role="tablist">
-      <button
-        v-for="item in app.installed"
-        :key="item.kind"
-        class="seg-btn"
-        :class="{ active: chat.kind === item.kind }"
-        :disabled="props.pickingEngine || Boolean(chat.switching)"
-        :title="item.exe"
-        @click="emit('pickEngine', item.kind)"
-      >
-        <span class="dot" :class="item.kind === chat.kind ? 'ok' : ''" />
-        {{ item.kind }}
-      </button>
-    </div>
-    <span v-if="props.pickingEngine" class="engine-switching">
-      <span class="dot busy" />
-      {{ t('chat.switchingEngine') }}
-    </span>
-  </div>
-
   <div v-if="!app.hasEngine" class="no-engine">
     <span class="dot warn" />
     <span>{{ t('chat.noEngine') }}</span>
@@ -150,22 +129,6 @@ async function dropQueued(message: string, queueName: 'steering' | 'followUp'): 
 </template>
 
 <style scoped>
-.engine-strip {
-  max-width: var(--omp-col);
-  margin: 0 auto var(--omp-sp-2);
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-3);
-}
-
-.engine-switching {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-mute);
-}
-
 .no-engine {
   max-width: var(--omp-col);
   margin: 0 auto var(--omp-sp-2);

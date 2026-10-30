@@ -63,6 +63,9 @@ const liveTurn = computed(() => {
     model: chat.model?.id,
     streaming: chat.streaming,
     errored: Boolean(chat.promptError),
+    // 用量与耗时：收尾之后这一轮会从直播位退到历史位，
+    // 那时读数还得留着——所以它按 run id 记在 store 里，不在 turn 上。
+    usage: chat.usageOf(turn.run_id),
   }
 })
 
@@ -76,6 +79,21 @@ function scrollToBottom(smooth = false) {
   const el = scroller.value
   if (!el) return
   el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+}
+
+/**
+ * 连续钉底几次。
+ *
+ * content-visibility: auto 让远处回合先按 120px 估高，一帧之后才展开成真实高度；
+ * 只钉一次会被后续的高度变化抛在后面，表现出来是「打开就在中间」。
+ * 只在真的贴底时才钉，否则会把正在往回翻的用户拽到底。
+ */
+async function pinBottom(rounds = 3): Promise<void> {
+  for (let i = 0; i < rounds; i++) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    if (!pinned.value) return
+    scrollToBottom()
+  }
 }
 
 function onScroll() {
@@ -101,12 +119,14 @@ async function answer(response: UIResponse) {
 
 async function openSession(path: string) {
   chat.reset()
+  // 切会话就回到贴底：用户点一条历史，看的是它最后那一句。
+  pinned.value = true
   await chat.refresh(path)
   // 会话页点「继续」会带 query.session 跳过来：把地址同步成当前会话，
   // 刷新窗口时才不会又回到默认会话。
   await router.replace({ name: 'chat', query: path ? { session: path } : {} })
   await nextTick()
-  scrollToBottom()
+  await pinBottom()
 }
 
 /** 会话页跳过来时带的会话路径。 */
@@ -121,7 +141,8 @@ onMounted(async () => {
     const path = sessionFromQuery()
     await chat.refresh(path)
     await nextTick()
-    scrollToBottom()
+    pinned.value = true
+    await pinBottom()
   } catch {
     /* 引擎没起来时对话页仍是可用的空态 */
   }

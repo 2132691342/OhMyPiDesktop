@@ -51,9 +51,12 @@ type ChatState struct {
 //  2. 引擎没跑的时候不为了读历史而拉起它。读历史走会话文件，那本来就是
 //     引擎自己写的账本，比拉一个进程问它要快三个数量级（pi 起 Node 实测 3 秒）。
 func (a *App) ChatState(ctx context.Context, kind engine.Kind, sessionFile string) (*ChatState, error) {
-	if !kind.Valid() {
-		kind = a.kindOfSession(kind, sessionFile)
-	}
+	// 会话文件决定它属于哪个引擎，请求里给的 engine 只是个默认值。
+	//
+	// 这一条不能省：界面上的「当前引擎」是用户上一次的选择，而用户可能从会话列表里
+	// 点开一条另一个引擎的会话。若照旧用请求里的 kind，就会让 pi 去绑一个 omp 的
+	// 会话文件——引擎拒绝，界面只能弹一句「切不到这个会话」，而用户什么也没做错。
+	kind = a.kindOfSession(kind, sessionFile)
 	dir := a.Workspace()
 	detail, detailErr := a.sessionDetailFor(kind, sessionFile)
 	if detailErr == nil && detail.CWD != "" {
@@ -188,11 +191,10 @@ func (a *App) Send(ctx context.Context, kind engine.Kind, sessionFile string, re
 	if err != nil {
 		return "", err
 	}
-	if !kind.Valid() {
-		kind = a.kindOfSession(kind, sessionFile)
-		// 用户没指定引擎时，把选择落回设置：下一句话仍然发给同一个引擎。
-		_ = a.SetActive(kind)
-	}
+	// 会话文件属于哪个引擎就发给哪个：界面上的选择可能与会话文件不一致。
+	kind = a.kindOfSession(kind, sessionFile)
+	// 把选择落回设置：下一句话仍然发给同一个引擎。
+	_ = a.SetActive(kind)
 	dir := a.Workspace()
 	if sessionFile != "" {
 		if d, err := a.Index(a.kindOfSession(kind, sessionFile)).Detail(sessionFile); err == nil && d.CWD != "" {
@@ -226,13 +228,12 @@ func (a *App) Send(ctx context.Context, kind engine.Kind, sessionFile string, re
 
 // engineForSession 按会话解析出引擎（省略引擎参数时用）。
 func (a *App) engineForSession(kind engine.Kind, sessionFile string) (*engine.Engine, error) {
-	k := kind
-	if !k.Valid() {
-		k = a.kindOfSession(k, sessionFile)
-	}
+	// 会话文件比请求里的 engine 更权威：界面上的「当前引擎」是用户上一次的选择，
+	// 而用户可能从会话列表里点开一条属于另一个引擎的会话。
+	k := a.kindOfSession(kind, sessionFile)
 	dir := a.Workspace()
 	if sessionFile != "" {
-		if d, err := a.Index(a.kindOfSession(k, sessionFile)).Detail(sessionFile); err == nil && d.CWD != "" {
+		if d, err := a.Index(k).Detail(sessionFile); err == nil && d.CWD != "" {
 			dir = d.CWD
 		}
 	}

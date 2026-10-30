@@ -71,15 +71,6 @@ export function Quit(): $CancellablePromise<void> {
     return $Call.ByID(3880122929);
 }
 
-/**
- * Ready 由前端在首屏渲染完后调用，用来把隐藏的窗口显示出来。
- * 
- * 为什么显示窗口的时机在这里而不是装配完成时：v3 把建窗推迟到主循环的
- * pendingRun，ServiceStartup 执行时窗口还不存在。此刻调 Show() 只会走
- * 「先建窗、再 return」那条分支——窗口建好了却仍然隐藏；紧随其后的 Focus()
- * 还会踩到尚未初始化的 WebView2 controller，直接 panic。
- * 等前端把首屏画完再显示：两个问题一起消失，顺带没有白屏。
- */
 export function Ready(): $CancellablePromise<void> {
     return $Call.ByID(773274081);
 }

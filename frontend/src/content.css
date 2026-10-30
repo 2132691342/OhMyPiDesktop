@@ -231,43 +231,47 @@
 }
 
 /* ============================================================
-   思考块：整圈淡描边，运行中描边转活色
+   思考块：一行摘要，展开才长内容
+   不画整圈描边：一屏十几轮时，十几个框比内容更显眼。
    ============================================================ */
 .think {
-  border: 1px solid var(--omp-line);
-  border-radius: var(--omp-r-lg);
-  background: var(--omp-surface);
+  border-radius: var(--omp-r-sm);
   overflow: hidden;
-  transition: border-color var(--omp-dur) var(--omp-ease);
+  transition: background-color var(--omp-dur-fast) var(--omp-ease);
+}
+.think:hover {
+  background: var(--omp-hover);
 }
 .think.live {
-  border-color: var(--omp-brand-2);
+  box-shadow: inset 2px 0 0 var(--omp-brand-2);
 }
 .think-head {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
   width: 100%;
-  padding: 6px var(--omp-sp-3);
+  padding: 3px var(--omp-sp-2);
   border: none;
   background: transparent;
   color: var(--omp-mute);
   font-size: var(--omp-fs-2xs);
   font-weight: 600;
   text-align: left;
-  transition: background-color var(--omp-dur-fast) var(--omp-ease);
+  cursor: pointer;
+  transition: color var(--omp-dur-fast) var(--omp-ease);
 }
 .think-head:hover {
-  background: var(--omp-hover);
+  color: var(--omp-ink-2);
 }
 .think-body {
-  padding: 0 var(--omp-sp-3) var(--omp-sp-3);
+  padding: 0 var(--omp-sp-2) var(--omp-sp-2) var(--omp-sp-4);
   font-size: var(--omp-fs-sm);
   line-height: 1.7;
   color: var(--omp-mute);
   white-space: pre-wrap;
   border-top: 1px solid var(--omp-line);
   padding-top: var(--omp-sp-2);
+  animation: tool-unfold var(--omp-dur) var(--omp-ease);
 }
 .caret-toggle {
   margin-left: auto;
@@ -279,42 +283,41 @@
 /* ============================================================
    工具卡
    头是严格一行：状态点 / 工具名 / 摘要 / 增删 / 耗时 / 箭头。
-   工具名与耗时都 flex: none，被挤的只能是摘要——
-   少这一条时，长工具名（powershell）会被压成一字一行竖排。
+   不画盒子：一轮回答里可能有十几个工具调用，每个一个带框的盒子
+   就是十几个框，读起来像一堆卡片而不是一串操作记录。
    ============================================================ */
 .tool {
-  border: 1px solid var(--omp-line);
-  border-radius: var(--omp-r);
-  background: var(--omp-surface);
+  border-radius: var(--omp-r-sm);
   overflow: hidden;
-  transition: border-color var(--omp-dur-fast) var(--omp-ease);
+  transition: background-color var(--omp-dur-fast) var(--omp-ease);
 }
+.tool:hover {
+  background: var(--omp-hover);
+}
+/* 运行中 / 出错只给左缘竖条：整张卡染色在一屏十几个调用时会变成一堵红墙。 */
 .tool.running {
-  border-color: var(--omp-brand-line);
+  box-shadow: inset 2px 0 0 var(--omp-brand-2);
 }
 .tool.error {
-  border-color: var(--omp-bad);
+  box-shadow: inset 2px 0 0 var(--omp-bad);
+  background: var(--omp-bad-soft);
 }
 .tool-head {
   display: flex;
   align-items: center;
-  gap: var(--omp-sp-2);
+  gap: 2px;
   width: 100%;
-  padding: 5px var(--omp-sp-3);
+  padding: 0 var(--omp-sp-1) 0 0;
   border: none;
   background: transparent;
-  text-align: left;
-  color: var(--omp-ink);
-  font-size: var(--omp-fs-xs);
-  transition: background-color var(--omp-dur-fast) var(--omp-ease);
 }
 .tool-head:hover {
-  background: var(--omp-hover);
+  background: transparent;
 }
 .tool-name {
   font-family: var(--omp-font-mono);
   font-weight: 650;
-  font-size: var(--omp-fs-xs);
+  font-size: var(--omp-fs-3xs);
   color: var(--omp-ink);
 }
 .tool-intent {
@@ -332,10 +335,19 @@
 }
 .tool-body {
   border-top: 1px solid var(--omp-line);
+  margin-top: var(--omp-sp-1);
   padding: var(--omp-sp-2) var(--omp-sp-3) var(--omp-sp-3);
   display: flex;
   flex-direction: column;
   gap: var(--omp-sp-2);
+  background: var(--omp-hover);
+  animation: tool-unfold var(--omp-dur) var(--omp-ease);
+}
+@keyframes tool-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
 .tool-label {
   font-size: var(--omp-fs-3xs);

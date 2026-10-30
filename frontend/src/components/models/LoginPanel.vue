@@ -4,8 +4,12 @@
 // 只有支持界面登录的引擎才渲染这一节（pi 的登录在终端里做），
 // 判据由父组件按 Caps.login 决定——能力缺失不渲染，不渲染成灰控件。
 //
-// 登录要走浏览器完成授权，后端会把地址推给对话页；这里只负责发起。
+// 引擎会报回几十个可登录服务商。默认只展开「已登录 + 可登录」的那几条，
+// 其余收进「展开全部」——一屏铺八十行同名同形的行，用户找不到自己想找的那个，
+// 而这一节本来只是「顺手看一眼」的地方。
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AppIcon from '@/components/common/AppIcon.vue'
 import type { LoginProvider } from '@/types/api'
 
 const props = defineProps<{
@@ -19,6 +23,39 @@ const props = defineProps<{
 const emit = defineEmits<{ login: [provider: LoginProvider] }>()
 
 const { t } = useI18n()
+
+const expanded = ref(false)
+const filter = ref('')
+
+/** 折叠时最多显示几条可登录的：已登录的也全算在内。 */
+const COLLAPSED = 6
+
+/**
+ * 折叠时显示的条目：已登录的全留，可登录的只留前几条。
+ *
+ * 引擎会报回八九十条可登录服务商。全铺出来会把下面的「可用模型」
+ * 推到几屏之外，而这一节最常见的用途是「我登过谁」。
+ */
+const visible = computed(() => {
+  const q = filter.value.trim().toLowerCase()
+  if (q) {
+    return props.logins.filter(
+      (x) => x.name.toLowerCase().includes(q) || x.id.toLowerCase().includes(q),
+    )
+  }
+  // 已登录的排前面：这一节最常见的用途是「我登过谁」。
+  const sorted = [...props.logins].sort((a, b) => Number(b.authenticated) - Number(a.authenticated))
+  if (expanded.value) return sorted
+  const authed = sorted.filter((x) => x.authenticated)
+  const others = sorted.filter((x) => !x.authenticated)
+  return [...authed, ...others.slice(0, Math.max(0, COLLAPSED - authed.length))]
+})
+
+/** 折叠时被藏起来的条数。 */
+const hidden = computed(() => {
+  if (expanded.value || filter.value.trim()) return 0
+  return props.logins.length - visible.value.length
+})
 
 function tone(item: LoginProvider): string {
   if (item.authenticated) return 'ok'
@@ -40,8 +77,28 @@ function label(item: LoginProvider): string {
       </span>
     </div>
     <p class="hint">{{ t('models.loginHint') }}</p>
-    <div v-if="props.logins.length" class="login-grid">
-      <div v-for="item in props.logins" :key="item.id" class="login-row">
+
+    <div v-if="props.logins.length" class="login-tools">
+      <div class="login-filter-row">
+        <AppIcon name="search" :size="12" class="login-filter-ic" />
+        <input
+          v-model="filter"
+          class="login-filter"
+          :placeholder="t('models.loginFilter')"
+          spellcheck="false"
+        />
+        <button v-if="filter" class="login-filter-clear" :title="t('common.clear')" @click="filter = ''">
+          <AppIcon name="close" :size="11" />
+        </button>
+      </div>
+      <button v-if="hidden || expanded" class="omp-btn text sm" @click="expanded = !expanded">
+        {{ expanded ? t('models.loginCollapse') : t('models.loginExpand', { n: hidden }) }}
+      </button>
+    </div>
+
+    <div v-if="visible.length" class="login-grid">
+      <div v-for="item in visible" :key="item.id" class="login-row">
+        <span class="login-dot" :class="item.authenticated ? 'is-ok' : item.available ? '' : 'is-dim'" />
         <div class="login-main">
           <span class="login-name">{{ item.name }}</span>
           <span class="login-id mono">{{ item.id }}</span>
@@ -53,49 +110,139 @@ function label(item: LoginProvider): string {
           :disabled="!item.available || Boolean(props.loggingIn)"
           @click="emit('login', item)"
         >
-          {{ t('models.login') }}
+          {{ item.authenticated ? t('models.relogin') : t('models.login') }}
         </button>
       </div>
     </div>
-    <p v-else-if="!props.loggingIn" class="hint">{{ t('chat.engineDown') }}</p>
+    <p v-else-if="filter" class="hint">{{ t('models.loginNoMatch') }}</p>
+    <p v-else class="hint">{{ t('chat.engineDown') }}</p>
   </section>
 </template>
 
 <style scoped>
-.login-grid {
+.login-tools {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  margin-bottom: var(--omp-sp-2);
+}
+
+.login-filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-1);
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+  height: var(--omp-ctl-sm);
+  padding: 0 var(--omp-sp-2);
+  border: 1px solid var(--omp-line);
+  border-radius: var(--omp-r-sm);
+  background: var(--omp-surface);
+  transition: border-color var(--omp-dur-fast) var(--omp-ease);
+}
+
+.login-filter-row:focus-within {
+  border-color: var(--omp-brand-2);
+}
+
+.login-filter-ic {
+  flex: none;
+  color: var(--omp-faint);
+}
+
+.login-filter {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--omp-ink);
+  font-family: inherit;
+  font-size: var(--omp-fs-2xs);
+}
+
+.login-filter::placeholder {
+  color: var(--omp-faint);
+}
+
+.login-filter-clear {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 0;
+  border-radius: var(--omp-r-xs);
+  background: transparent;
+  color: var(--omp-faint);
+}
+
+.login-filter-clear:hover {
+  background: var(--omp-hover);
+  color: var(--omp-ink);
+}
+
+.login-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--omp-sp-1) var(--omp-sp-3);
 }
 
 .login-row {
   display: flex;
   align-items: center;
-  gap: var(--omp-sp-3);
-  padding: var(--omp-sp-2) var(--omp-sp-3);
+  gap: var(--omp-sp-2);
+  padding: var(--omp-sp-1) var(--omp-sp-2);
   border-radius: var(--omp-r-sm);
+  transition: background-color var(--omp-dur-fast) var(--omp-ease);
 }
 
 .login-row:hover {
   background: var(--omp-hover);
 }
 
+/* 状态灯：已登录实心绿、可登录空心中性、不可用淡灰 */
+.login-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--omp-line-strong);
+  background: transparent;
+}
+
+.login-dot.is-ok {
+  border-color: var(--omp-ok);
+  background: var(--omp-ok);
+}
+
+.login-dot.is-dim {
+  border-color: var(--omp-line);
+}
+
 .login-main {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   flex: 1;
   min-width: 0;
 }
 
 .login-name {
-  font-size: var(--omp-fs-sm);
+  font-size: var(--omp-fs-2xs);
   color: var(--omp-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .login-id {
   font-size: var(--omp-fs-3xs);
   color: var(--omp-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .count {

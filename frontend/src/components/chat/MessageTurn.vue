@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 一轮消息：角色头 + 若干块（正文 / 思考 / 工具卡）。
+// 一轮消息：角色头 + 若干块（正文 / 思考 / 工具卡）+ 轮尾读数。
 //
 // 角色头是**可选**的：同一角色连续好几轮时只出一次头。
 //
@@ -7,12 +7,17 @@
 // 每轮都顶一行「assistant」会把一次回答切成几块，
 // 读的人得自己去想「这几段其实是一件事」。消掉重复头之后，
 // 同一次回答在视觉上就是一坨。
+//
+// 轮尾是这一轮的读数：输入 / 输出 / 缓存命中 / 耗时，
+// 加一个复制按钮。它们是「这次回答花了多少」的答案，
+// 而答案不该藏在某个要点的菜单里。
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TurnBlocks from '@/components/chat/TurnBlocks.vue'
 import MarkdownBlock from '@/components/chat/MarkdownBlock.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
-import type { ChatBlock, EngineKind } from '@/types/api'
+import { usageFrom, type TurnUsage } from '@/composables/useMessageFlow'
+import type { ChatBlock, EngineKind, HistoryTurn } from '@/types/api'
 
 const props = defineProps<{
   /** 这一轮的角色 */
@@ -37,6 +42,22 @@ const props = defineProps<{
   live?: boolean
   /** 这一轮出错了 */
   errored?: boolean
+  /**
+   * 这一轮的用量与耗时（助手轮才有）。
+   *
+   * 两个来源：流式那一轮从流里取，历史那一轮从后端投影里取。
+   * 两者字段名不一样（驼峰 vs 下划线），usageFrom 两种都认。
+   */
+  usage?: TurnUsage
+  /** 历史轮自带的用量（后端投影带下来的） */
+  historyTurn?: HistoryTurn
+  /**
+   * 要不要显示用量读数。
+   *
+   * 只在最后一轮上显示：引擎每条助手消息都带一份累计用量，
+   * 而后端投影已经把一次回答里的多条助手消息并成了一轮。
+   */
+  showMetrics?: boolean
 }>()
 
 const { t } = useI18n()
@@ -76,6 +97,51 @@ async function copyTurn(): Promise<void> {
     /* 剪贴板不可用时不打扰：用户可以手动选中 */
   }
 }
+
+/**
+ * 这一轮是不是只有工具调用、没有任何文字。
+ *
+ * 只有工具的时候，轮尾的「复制」没有东西可复制——不渲染它，
+ * 一轮里就少一个点不动的按钮。
+ */
+const hasText = computed(() => plainText.value.trim().length > 0)
+
+/**
+ * 用量读数：提示词总量（命中 + 未命中 + 写入）/ 输出 / 缓存命中率 / 耗时。
+ *
+ * 缓存命中率单独标绿：它是「这一轮几乎没花钱」的那件事，
+ * 也是用户最想知道的那个数字（为什么这次这么快、这么便宜）。
+ */
+const metrics = computed(() => {
+  if (props.showMetrics === false) return []
+  const u = props.usage ?? usageFrom(props.historyTurn?.usage)
+  if (!u) return []
+  const prompt = u.input + u.cacheRead + u.cacheWrite
+  const out: { key: string; value: string; hit?: boolean }[] = []
+  if (prompt > 0) out.push({ key: '↓', value: fmtCount(prompt) })
+  if (u.output > 0) out.push({ key: '↑', value: fmtCount(u.output) })
+  if (prompt > 0) {
+    const rate = Math.round((u.cacheRead / prompt) * 100)
+    out.push({ key: 'cache', value: `${rate}%`, hit: rate > 0 })
+  }
+  if (u.costUSD > 0) out.push({ key: '$', value: u.costUSD.toFixed(u.costUSD < 0.01 ? 4 : 3) })
+  if (u.elapsedMS > 0) out.push({ key: '⏱', value: fmtMs(u.elapsedMS) })
+  return out
+})
+
+/** token 数按量级压缩：界面上要能一眼比较，不是要精确到个位。 */
+function fmtCount(n: number): string {
+  if (!n) return '0'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k`
+  return String(n)
+}
+
+/** 耗时：毫秒在 1 秒以下没有意义（用户看不出差别），秒以上带一位小数。 */
+function fmtMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`
+}
 </script>
 
 <template>
@@ -108,9 +174,16 @@ async function copyTurn(): Promise<void> {
       />
       <TurnBlocks v-else :blocks="props.blocks" :run-id="props.runId" :streaming="props.streaming" />
 
-      <!-- 轮尾动作：悬停才出现，平时不占位置 -->
-      <div v-if="!isUser" class="msg-acts">
-        <button class="msg-act" type="button" :disabled="copied" @click="copyTurn">
+      <!-- 轮尾：读数 + 复制。悬停整个回合才浮现，平时不占位置。
+           用户侧也有复制：用户要拿自己刚发的那句去别处贴，
+           不该先去输入框里选中再复制。 -->
+      <div class="msg-acts">
+        <span v-if="metrics.length" class="msg-metrics">
+          <span v-for="m in metrics" :key="m.key" class="msg-metric" :class="{ 'is-hit': m.hit }">
+            <b>{{ m.key }}</b>{{ m.value }}
+          </span>
+        </span>
+        <button v-if="hasText" class="msg-act" type="button" :disabled="copied" @click="copyTurn">
           <AppIcon :name="copied ? 'check' : 'file'" :size="11" />
           {{ copied ? t('common.copied') : t('common.copy') }}
         </button>
@@ -169,14 +242,47 @@ async function copyTurn(): Promise<void> {
 /* 轮尾动作：默认透明，悬停整个回合才浮现 */
 .msg-acts {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  height: 18px;
+  gap: var(--omp-sp-3);
+  min-height: 18px;
   opacity: 0;
   transition: opacity var(--omp-dur-fast) var(--omp-ease);
 }
 
-.msg:hover .msg-acts {
+.msg:hover .msg-acts,
+.msg-acts:has(.msg-metrics) {
   opacity: 1;
+}
+
+/* 用量读数：等宽数字 + 极淡的分隔线。
+   它是读数不是控件——不套描边胶囊、不做悬停缩放。 */
+.msg-metrics {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  padding-right: var(--omp-sp-2);
+  border-right: 1px solid var(--omp-line);
+}
+
+.msg-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-faint);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--omp-font-mono);
+}
+
+.msg-metric b {
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+/* 缓存命中率：命中就标绿——它是「这次几乎没花钱」的那件事 */
+.msg-metric.is-hit {
+  color: var(--omp-ok);
 }
 
 .msg-act {

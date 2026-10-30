@@ -150,6 +150,8 @@ func (a *App) UpsertProvider(kind engine.Kind, name string, p domain.ProviderVie
 	if !kind.Valid() {
 		kind = a.ActiveKind()
 	}
+	// 服务商变了，模型清单就变了：缓存里的那份是改之前的。
+	a.InvalidateModels(kind)
 	layout, err := a.Layout(kind)
 	if err != nil {
 		return nil, err
@@ -201,6 +203,8 @@ func (a *App) DeleteProvider(kind engine.Kind, name string) (*domain.ProvidersVi
 	if !kind.Valid() {
 		kind = a.ActiveKind()
 	}
+	// 删了服务商，它底下的模型也不再可用：缓存要失效。
+	a.InvalidateModels(kind)
 	layout, err := a.Layout(kind)
 	if err != nil {
 		return nil, err
@@ -244,5 +248,7 @@ func (a *App) Login(ctx context.Context, kind engine.Kind, provider string) erro
 		return pkg.New(pkg.CodeEngineUnsupported,
 			"pi 的登录在终端里做：pi auth", "")
 	}
+	// 登录会让一批新模型变得可用：清单缓存要失效。
+	a.InvalidateModels(kind)
 	return a.EngineFor(kind, a.Workspace()).Call(ctx, "login", engine.LoginParams(provider), nil, 600*time.Second)
 }

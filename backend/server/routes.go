@@ -78,6 +78,10 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.POST("/providers/delete", s.deleteProvider)
 	api.GET("/login/providers", s.loginProviders)
 	api.POST("/login/start", s.startLogin)
+	// 上游探测：拉模型清单 / 测连通。
+	// 两个都是只读动作（不写配置），所以不与 upsert / delete 混在一起。
+	api.POST("/providers/models", s.fetchProviderModels)
+	api.POST("/providers/test", s.testProvider)
 
 	// 技能
 	api.GET("/skills", s.skills)

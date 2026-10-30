@@ -202,6 +202,8 @@ func (a *App) detectOnce(ctx context.Context) {
 		snapshot[k] = v
 	}
 	a.mu.Unlock()
+	// 引擎换了路径或版本：它报上来的模型清单也可能不同了，缓存要失效。
+	a.InvalidateModels("")
 	// 探测要起子进程（pi 的 --help 要起一次 Node，约 2.7 秒），
 	// 而结果只会在「用户换了引擎路径或版本」时变。落盘之后，
 	// 下次启动可以直接用上次的结论，首屏不必再等这三秒。

@@ -5,8 +5,12 @@
 //  1. 默认收起输出——工具输出可能几千行，展开是用户的选择，不是默认代价。
 //  2. 差异优先于输出展示。改文件工具的输出是一句人话
 //     （"Successfully replaced 3 blocks"），真正要看的是改了哪几行。
-//  3. 头是**一行**：状态 + 工具名 + 摘要 + 增删 + 耗时。任何一段被挤压时
+//  3. 头是**一行**：状态 + 工具名 + 摘要 + 增删 + 耗时 + 动作。任何一段被挤压时
 //     截断的是摘要，不是工具名（工具名挤成竖排单字是这里最容易犯的错）。
+//
+// 为什么不是带描边的盒子：一轮回答里可能有十几个工具调用，
+// 每个一个带框的盒子就是十几个框——读起来像一堆卡片，而不是一串操作记录。
+// 这里是一行平铺的行，展开时才长出内容。
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
@@ -48,7 +52,6 @@ const args = computed(() => {
 })
 
 const headline = computed(() => props.block.intent || summarise(props.block.args))
-
 /** 一行摘要：从参数里挑最像「在做什么」的那个字段。 */
 function summarise(raw: unknown): string {
   if (!raw || typeof raw !== 'object') return typeof raw === 'string' ? raw : ''
@@ -114,33 +117,39 @@ const summaryText = computed(() => fileName.value || headline.value)
 
 <template>
   <div class="tool" :class="[status, { 'is-open': open }]">
-    <button class="tool-head" type="button" :aria-expanded="open" @click="open = !open">
-      <span class="tool-dot" :class="status" :title="label">
-        <AppIcon v-if="status === 'running'" name="refresh" :size="11" class="spin" />
-        <AppIcon v-else-if="status === 'error'" name="close" :size="11" />
-        <AppIcon v-else-if="status === 'done'" name="check" :size="11" />
-        <span v-else class="idle-dot" />
-      </span>
+    <div class="tool-head">
+      <button class="tool-toggle" type="button" :aria-expanded="open" @click="open = !open">
+        <span class="tool-dot" :class="status" :title="label">
+          <AppIcon v-if="status === 'running'" name="refresh" :size="11" class="spin" />
+          <AppIcon v-else-if="status === 'error'" name="close" :size="11" />
+          <AppIcon v-else-if="status === 'done'" name="check" :size="11" />
+          <span v-else class="idle-dot" />
+        </span>
 
-      <span class="tool-name">{{ block.tool_name || 'tool' }}</span>
+        <span class="tool-name">{{ block.tool_name || 'tool' }}</span>
 
-      <span class="tool-summary" :title="summaryText">{{ summaryText }}</span>
+        <span class="tool-summary" :title="summaryText">{{ summaryText }}</span>
 
-      <span v-if="diffLines.length" class="tool-stat">
-        <b class="is-add">+{{ diffStat.adds }}</b>
-        <b class="is-del">−{{ diffStat.dels }}</b>
-      </span>
+        <span v-if="diffLines.length" class="tool-stat">
+          <b class="is-add">+{{ diffStat.adds }}</b>
+          <b class="is-del">−{{ diffStat.dels }}</b>
+        </span>
 
-      <span v-if="duration" class="tool-time">{{ duration }}</span>
+        <span v-if="duration" class="tool-time">{{ duration }}</span>
 
-      <AppIcon name="chevron" :size="11" class="tool-chevron" :class="{ open }" />
-    </button>
+        <AppIcon name="chevron" :size="11" class="tool-chevron" :class="{ open }" />
+      </button>
 
-    <!-- 文件类工具：不必展开就能就地看现在的真实差异 -->
-    <div v-if="canPeek" class="tool-acts">
-      <button class="tool-peek" type="button" :title="block.file_path" @click.stop="openFilePeek(block.file_path ?? '', fileName)">
+      <!-- 「看改动」在头这一行里，不另起一行：
+           另起一行的话每个工具调用都占两行，一轮十几个调用就多出一屏空白。 -->
+      <button
+        v-if="canPeek"
+        class="tool-peek"
+        type="button"
+        :title="block.file_path"
+        @click="openFilePeek(block.file_path ?? '', fileName)"
+      >
         <AppIcon name="git" :size="11" />
-        {{ t('chat.peekInWorkspace') }}
       </button>
     </div>
 
@@ -172,29 +181,29 @@ const summaryText = computed(() => fileName.value || headline.value)
 
 <style scoped>
 /* 头是严格一行：除摘要以外每一段都 flex: none，被挤的只能是摘要。
-   之前工具名没有 flex: none，长名字（powershell）会被压成一字一行竖排。 */
-.tool-head {
+   头这个按钮负责打开/收起，它自己得是 flex 容器的一部分。 */
+.tool-toggle {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
-  width: 100%;
-  padding: 5px var(--omp-sp-3);
+  flex: 1;
+  min-width: 0;
+  padding: 3px var(--omp-sp-2);
   border: none;
   background: transparent;
   text-align: left;
   color: var(--omp-ink);
   font-size: var(--omp-fs-xs);
-  transition: background-color var(--omp-dur-fast) var(--omp-ease);
-}
-.tool-head:hover {
-  background: var(--omp-hover);
+  font-family: inherit;
+  cursor: pointer;
 }
 
+/* 状态点：15px 的圈。运行中转，结束变绿，出错变红；未开始是一个灰点。 */
 .tool-dot {
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   flex: none;
   border-radius: var(--omp-r-full);
   background: var(--omp-hover);
@@ -230,12 +239,7 @@ const summaryText = computed(() => fileName.value || headline.value)
 /* 工具名：等宽、不换行、不参与收缩 */
 .tool-name {
   flex: none;
-  max-width: 40%;
-  font-family: var(--omp-font-mono);
-  font-weight: 650;
-  font-size: var(--omp-fs-3xs);
-  letter-spacing: 0.01em;
-  color: var(--omp-ink);
+  max-width: 34%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -271,10 +275,6 @@ const summaryText = computed(() => fileName.value || headline.value)
 
 .tool-time {
   flex: none;
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
-  font-variant-numeric: tabular-nums;
 }
 
 .tool-chevron {
@@ -286,58 +286,31 @@ const summaryText = computed(() => fileName.value || headline.value)
   transform: rotate(90deg);
 }
 
-/* 「看改动」贴在头的右下：不展开也能点，展开时也在同一位置 */
-.tool-acts {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 var(--omp-sp-3) 3px;
-}
-
+/* 「看改动」是头这一行的最后一个动作：不另起一行。 */
 .tool-peek {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  padding: 0;
   border: none;
   border-radius: var(--omp-r-xs);
   background: transparent;
-  color: var(--omp-brand);
-  font-size: var(--omp-fs-3xs);
-  font-weight: 650;
+  color: var(--omp-faint);
+  cursor: pointer;
   transition:
     background-color var(--omp-dur-fast) var(--omp-ease),
+    color var(--omp-dur-fast) var(--omp-ease),
     transform var(--omp-dur-fast) var(--omp-ease);
 }
 .tool-peek:hover {
-  background: var(--omp-brand-soft);
+  background: var(--omp-surface);
+  color: var(--omp-brand);
   transform: scale(var(--omp-press-hover));
 }
 .tool-peek:active {
   transform: scale(var(--omp-press-active));
-}
-
-.tool-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--omp-sp-2);
-  padding: var(--omp-sp-2) var(--omp-sp-3) var(--omp-sp-3);
-  border-top: 1px solid var(--omp-line);
-  animation: tool-unfold var(--omp-dur) var(--omp-ease);
-}
-@keyframes tool-unfold {
-  from {
-    opacity: 0;
-    transform: translateY(-3px);
-  }
-}
-
-.tool-label {
-  font-size: var(--omp-fs-3xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--omp-faint);
-  margin-bottom: 3px;
 }
 
 .tool-nodiff {
@@ -347,8 +320,7 @@ const summaryText = computed(() => fileName.value || headline.value)
   line-height: 1.6;
 }
 
-/* 差异表：三列（旧行号 / 新行号 / 正文），与工作区的差异视图同一套列宽。
-   行本身的渲染在 DiffRows 里：两处共用一份，就不会有一处行号的列宽不同。 */
+/* 差异表：三列（旧行号 / 新行号 / 正文），与工作区的差异视图同一套列宽。 */
 .tool-diff {
   border: 1px solid var(--omp-line);
   border-radius: var(--omp-r-sm);

@@ -1,27 +1,19 @@
 // 对话状态：消息流、流式增量、提问卡片、队列、用量。
 //
-// 性能纪律：流式正文只追加到「当前轮的 blocks 数组」上，不重建整个消息列表。
-// 一轮长回答如果每次都整表替换，重渲染成本是 O(字数²)。
+// 消息流本身在 useMessageFlow 里：流式正文只追加到「当前轮的 blocks 数组」上，
+// 不重建整个消息列表（一轮长回答整表替换的重渲染成本是 O(字数²)）。
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from '@/api/http'
-import { dropAllCaches, dropCache } from '@/utils/md'
+import { useEngineModels } from '@/composables/useEngineModels'
+import { useRunStatus } from '@/composables/useRunStatus'
+import { useMessageFlow } from '@/composables/useMessageFlow'
+import { setActiveKind } from './app'
 import type {
-  AskRequest,
-  ChatAttachment,
-  EngineCaps,
-  EngineKind,
-  HistoryTurn,
-  ChatPatch,
-  ChatState,
-  ContextUsage,
-  ModelInfo,
-  ModelRow,
-  SessionStats,
-  SlashCommand,
-  Turn,
-  UIResponse,
+  AskRequest, ChatAttachment, ChatState, ContextUsage, EngineCaps, EngineKind,
+  HistoryTurn, ModelInfo, ModelRow, SessionStats, SlashCommand, UIResponse,
 } from '@/types/api'
+
 export const useChatStore = defineStore('chat', () => {
   const sessionFile = ref('')
   const workDir = ref('')
@@ -32,7 +24,6 @@ export const useChatStore = defineStore('chat', () => {
   const levels = ref<string[]>([])
   // 可选模型清单：引擎的 get_available_models。切换走 RPC，不是本地开关。
   const models = ref<ModelRow[]>([])
-  const modelsLoading = ref(false)
   // 切换进行中的动作名（'model' / 'thinking' / 'new' / 'compact'），
   // 按钮靠它进 loading 并锁尺寸，避免连点造成两次切换打架。
   const switching = ref('')
@@ -47,30 +38,32 @@ export const useChatStore = defineStore('chat', () => {
   // 能力表：界面按它决定显示哪些入口（不渲染灰按钮）。
   const caps = ref<EngineCaps | null>(null)
 
-  // 每个引擎一份的模型清单与思考档。
-  //
-  // 为什么要分桶：两个引擎的模型清单完全不同，而拉清单可能要起进程
-  // （omp 冷启动实测 11 秒）。不分桶的话，切一次引擎就要重拉一次——
-  // 于是「切引擎」这个高频动作每次都付一次冷启动。
-  //
-  // 分桶之后，第一次切到某个引擎要付一次，之后是瞬时的。
-  const modelCache = ref<Record<EngineKind, ModelRow[]>>({ omp: [], pi: [] })
-  const levelCache = ref<Record<EngineKind, string[]>>({ omp: [], pi: [] })
+  // 一轮对话的过程读数（状态文字 / 小组件 / 提示条 / 重试进度）。
+  const runStatus = useRunStatus()
+  const statusText = runStatus.statusText
+  const widgets = runStatus.widgets
+  const notices = runStatus.notices
+  const retry = runStatus.retry
+  const pushNotice = runStatus.pushNotice
+  const dismissNotice = runStatus.dismissNotice
+  const setStatus = runStatus.setStatus
+  const setWidget = runStatus.setWidget
 
-  // 当前轮：一次「提问 → 回答」
-  const turn = ref<Turn | null>(null)
-  // 上一次收尾的 run id。只用于「收尾后才到的权威快照要丢掉」这一条判断：
-  // 那一帧会把已经并进历史的回复再接一遍。
-  const lastFinishedRunId = ref('')
-  // 历史轮（由后端投影好的轮次，界面直接渲染）
-  const history = ref<HistoryTurn[]>([])
+  // 每个引擎一份的模型清单与思考档（分桶缓存，理由见 composable）。
+  const engineModels = useEngineModels(() => kind.value)
+  const { modelsLoading } = engineModels
+
+  // 消息流（当前轮 / 历史轮 / 增量补丁），理由见 composable。
+  const flow = useMessageFlow()
+  const turn = flow.turn
+  const lastFinishedRunId = flow.lastFinishedRunId
+  const history = flow.history
+  const applyPatch = flow.applyPatch
+  const setUsage = flow.setUsage
+  const usageOf = flow.usageOf
 
   const asks = ref<AskRequest[]>([])
   const queue = ref<{ steering: string[]; followUp: string[] }>({ steering: [], followUp: [] })
-  const statusText = ref('')
-  const widgets = ref<{ key: string; lines: string[] }[]>([])
-  const notices = ref<{ id: number; level: string; message: string }[]>([])
-  const retry = ref<{ attempt: number; max: number; delay_ms: number } | null>(null)
   const compacting = ref(false)
   const promptError = ref('')
   // 切不到请求会话的原因（引擎正忙 / 扩展拦下）。它不会自动消失：
@@ -79,7 +72,12 @@ export const useChatStore = defineStore('chat', () => {
   // 引擎通过 set_editor_text 要求回填输入框。它是一次性的，消费后置空。
   const draftOverride = ref('')
 
-  let noticeSeq = 0
+  // 界面要求打开某个选择面板（`/model`、`/thinking` 这类内置命令用）。
+  //
+  // 为什么走 store 而不是事件：命令是在 composable 里执行的，
+  // 而面板住在输入框底栏的子组件里。两者之间隔了多层，
+  // 用一个共享的意图位最省事——面板自己 watch 它。
+  const pickerRequest = ref<'' | 'model' | 'thinking'>('')
 
   const activeAsk = computed(() => asks.value[0] ?? null)
   const busy = computed(() => streaming.value || compacting.value)
@@ -101,13 +99,20 @@ export const useChatStore = defineStore('chat', () => {
     streaming.value = state.streaming
     model.value = state.model ?? null
     thinkingLevel.value = state.thinking_level ?? ''
-    if (state.kind) kind.value = state.kind
+    // 引擎以状态为准：会话文件自己带着它属于哪个引擎，比用户上一次的选择可靠。
+    // 不同步的话，从会话列表点开一条另一个引擎的会话之后，输入框上还写着旧引擎，
+    // 而消息实际走的是新引擎。
+    if (state.kind && state.kind !== kind.value) {
+      kind.value = state.kind
+      setActiveKind(state.kind)
+      models.value = engineModels.modelCache.value[state.kind] ?? []
+      levels.value = engineModels.levelsOf(state.kind)
+      caps.value = state.caps ?? caps.value
+    }
     // 思考档按引擎记账：切回上一个引擎时，它的档位立刻就位，
     // 不用等一次 RPC 回来。
-    if (state.levels?.length) {
-      levelCache.value = { ...levelCache.value, [kind.value]: state.levels }
-    }
-    levels.value = levelCache.value[kind.value] ?? []
+    engineModels.setLevels(kind.value, state.levels ?? [])
+    levels.value = engineModels.levelsOf(kind.value)
     context.value = state.context ?? null
     tokensPerSecond.value = state.tokens_per_second ?? null
     autoCompaction.value = state.auto_compaction
@@ -116,27 +121,9 @@ export const useChatStore = defineStore('chat', () => {
     profile.value = state.profile ?? ''
     if (state.caps) caps.value = state.caps
     if (state.queued) queue.value = { steering: state.queued.steering ?? [], followUp: state.queued.followUp ?? [] }
-    history.value = state.history ?? []
-  }
-
-  /** 增量应用：delta 只追加尾部，block 只替换那一块，blocks 才整表换。 */
-  function applyPatch(patch: ChatPatch) {
-    if (!turn.value || patch.run_id !== turn.value.run_id) return
-    const blocks = turn.value.blocks
-    if (patch.mode === 'blocks' && patch.blocks) {
-      turn.value.blocks = patch.blocks
-      return
-    }
-    if (patch.mode === 'delta') {
-      const block = blocks[patch.index]
-      if (block) {
-        block.text = (block.text ?? '') + (patch.delta ?? '')
-      }
-      return
-    }
-    if (patch.mode === 'block' && patch.block) {
-      blocks[patch.index] = patch.block
-    }
+    // 走 applyHistory 而不是直接赋值：服务器的历史里可能已经有正在直播的那一轮，
+    // 直接赋值会让同一段回复在历史位与直播位各画一遍。
+    flow.applyHistory(state.history ?? [])
   }
 
   async function refresh(session = sessionFile.value) {
@@ -149,47 +136,34 @@ export const useChatStore = defineStore('chat', () => {
     return state
   }
 
-  // 拉可选模型清单。失败不抛：模型清单拉不到时输入区仍应可用，
-  // 只是下拉里只剩「当前模型」一项。
-  //
-  // 按引擎分桶缓存：切引擎时立刻换成那个引擎的清单，不用等。
-  // 后端在引擎没跑时退到读配置文件，所以首次拉取也不再冷启动一个进程。
-  async function loadModels(force = false) {
+  /**
+   * 拉可选模型清单（走 composable 的分桶缓存）。
+   *
+   * 失败不抛：模型清单拉不到时输入区仍应可用，只是下拉里只剩「当前模型」一项。
+   * 请求返回时用户可能已经切走了：这时不能覆盖当前引擎的清单。
+   */
+  async function loadModels(force = false): Promise<ModelRow[]> {
     const target = kind.value
-    if (!force && modelCache.value[target].length) {
-      models.value = modelCache.value[target]
-      return models.value
-    }
-    if (modelsLoading.value) return models.value
-    modelsLoading.value = true
-    try {
-      const data = await api.models(target)
-      const rows = data.models ?? []
-      modelCache.value = { ...modelCache.value, [target]: rows }
-      // 请求返回时用户可能已经切走了：这时不能覆盖当前引擎的清单。
-      if (kind.value === target) models.value = rows
-    } catch {
-      if (kind.value === target) models.value = []
-    } finally {
-      modelsLoading.value = false
-    }
-    return models.value
+    const rows = await engineModels.loadModels(force)
+    if (kind.value === target) models.value = rows
+    return rows
   }
 
   // 换模型。失败要把显示值拨回去——否则界面上写着一个引擎并不认识的模型。
   //
-  // kind 取「点下去那一刻」的值，而不是请求返回时的 kind：
+  // 换模型。乐观更新：先动显示值，让点击立刻有反馈；失败再拨回去。
+  //
+  // 引擎取「点下去那一刻」的值，而不是请求返回时的 kind：
   // 用户在请求飞的半秒里切了引擎，回滚不能去改另一个引擎的显示值。
   async function setModel(provider: string, id: string) {
-    const target = kind.value
+    const engine = kind.value
     const prev = model.value
     switching.value = 'model'
-    // 先动显示值，让点击立刻有反馈；失败再回滚。
     model.value = { ...(prev ?? ({} as ModelInfo)), provider, id }
     try {
-      await api.setModel(target, sessionFile.value, provider, id)
+      await api.setModel(engine, sessionFile.value, provider, id)
     } catch (err) {
-      if (kind.value === target) model.value = prev
+      if (kind.value === engine) model.value = prev
       throw err
     } finally {
       switching.value = ''
@@ -198,30 +172,31 @@ export const useChatStore = defineStore('chat', () => {
 
   // 换思考档。同上：先动显示值，失败回滚。
   async function setThinking(level: string) {
-    const target = kind.value
+    const engine = kind.value
     const prev = thinkingLevel.value
     if (level === prev) return
     switching.value = 'thinking'
     thinkingLevel.value = level
     try {
-      await api.setThinking(target, sessionFile.value, level)
+      await api.setThinking(engine, sessionFile.value, level)
     } catch (err) {
-      if (kind.value === target) thinkingLevel.value = prev
+      if (kind.value === engine) thinkingLevel.value = prev
       throw err
     } finally {
       switching.value = ''
     }
   }
 
+  // 开关自动压缩。同上。
   async function setAutoCompaction(enabled: boolean) {
-    const target = kind.value
+    const engine = kind.value
     const prev = autoCompaction.value
     switching.value = 'compaction'
     autoCompaction.value = enabled
     try {
-      await api.setAutoCompaction(target, sessionFile.value, enabled)
+      await api.setAutoCompaction(engine, sessionFile.value, enabled)
     } catch (err) {
-      if (kind.value === target) autoCompaction.value = prev
+      if (kind.value === engine) autoCompaction.value = prev
       throw err
     } finally {
       switching.value = ''
@@ -253,11 +228,14 @@ export const useChatStore = defineStore('chat', () => {
     if (next === kind.value) return
     // 先把已看的消息并进历史，否则它们随 turn 一起被丢掉。
     if (turn.value) finishTurn()
+    // kept 是用户在旧引擎上已经读到的那些轮次。它必须一直留在屏幕上：
+    // 新引擎的会话是空的，把 kept 换成 state.history 等于把整段对话抹掉。
     const kept = history.value
+    const mark: HistoryTurn = { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] }
     kind.value = next
     // 立刻换到目标引擎的缓存：下拉里该出现哪个引擎的模型，一眼就该是它。
-    models.value = modelCache.value[next] ?? []
-    levels.value = levelCache.value[next] ?? []
+    models.value = engineModels.modelCache.value[next] ?? []
+    levels.value = engineModels.levelsOf(next)
     // 上下文用量与流式状态属于旧引擎：它们不属于新引擎，留着就是隔别处的读数。
     context.value = null
     tokensPerSecond.value = null
@@ -265,10 +243,8 @@ export const useChatStore = defineStore('chat', () => {
     bindErr.value = ''
     promptError.value = ''
     queue.value = { steering: [], followUp: [] }
-    // 流里插一条分隔：告诉用户“以下由 xxx 接续，前面的内容不在新会话里”。
-    // 先排上去（乐观），因为后面的 applyState 会重写历史，
-    // 届时再拼一次就重复了。
-    history.value = [...kept, { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] }]
+    // 流里插一条分隔：告诉用户「以下由 xxx 接续，前面的内容不在新会话里」。
+    history.value = [...kept, mark]
 
     // 不等后端往返。
     //
@@ -284,15 +260,12 @@ export const useChatStore = defineStore('chat', () => {
         // 请求回来时用户可能已经切走了：那就别覆盖当前引擎的状态。
         if (kind.value !== next) return
         applyState(state)
-        // applyState 用新引擎的历史覆盖了刚才那句乐观分隔：把它补回去。
-        // 补一次而不是两次，是因为这里把“已推送的那一句”当作已消费。
-        const mark: HistoryTurn = { role: 'engine-mark', blocks: [{ kind: 'text', text: next }] }
-        const hasMark = state.history?.some(
-          (h) => h.role === 'engine-mark' && h.blocks[0]?.text === next,
+        // applyState 用新引擎的历史覆盖了整列：把 kept 与分隔补回去。
+        // 补在**前面**，因为新引擎的历史属于「那之后的对话」。
+        const rest = (state.history ?? []).filter(
+          (h) => !(h.role === 'engine-mark' && h.blocks[0]?.text === next),
         )
-        if (!hasMark && kept.length) {
-          history.value = [mark, ...state.history]
-        }
+        history.value = kept.length || rest.length ? [...kept, mark, ...rest] : []
       } catch {
         /* 切引擎失败不弹提示：界面已经切过去了，用户能正常用，
            只是这一轮没拿到引擎的会话状态。 */
@@ -318,11 +291,6 @@ export const useChatStore = defineStore('chat', () => {
     return res.removed
   }
 
-  async function loadTurnFromEngine() {
-    // 快照里可能已经有一轮正在跑（切回来时），此时用引擎消息还原，交给下次 prompt 接手
-    if (!streaming.value) turn.value = null
-  }
-
   async function send(message: string, attachments: ChatAttachment[] = []) {
     promptError.value = ''
     // 新的一轮开始了：上一个已收尾的标记到这里就作废。
@@ -333,7 +301,7 @@ export const useChatStore = defineStore('chat', () => {
     const runID = await api
       .send(kind.value, sessionFile.value, message, attachments)
       .then((r) => r.run_id)
-    turn.value = { run_id: runID, user_message: message, blocks: [] }
+    flow.beginTurn(runID, message)
     streaming.value = true
     return runID
   }
@@ -368,67 +336,29 @@ export const useChatStore = defineStore('chat', () => {
     asks.value = asks.value.filter((a) => a.id !== response.id)
   }
 
-  function pushNotice(level: string, message: string) {
-    notices.value = [...notices.value, { id: ++noticeSeq, level, message }].slice(-4)
-  }
-
-  function dismissNotice(id: number) {
-    notices.value = notices.value.filter((n) => n.id !== id)
-  }
-
-  function setStatus(key: string, text: string) {
-    if (key === '' || text === '') {
-      statusText.value = ''
-      return
-    }
-    statusText.value = text
-  }
-
-  function setWidget(key: string, lines: string[]) {
-    const rest = widgets.value.filter((w) => w.key !== key)
-    widgets.value = (lines ?? []).length ? [...rest, { key, lines }] : rest
-  }
-
+  // 收尾：这一轮从流里出来，同时解除「正在回答」。
+  //
+  // 不在本地并进历史——服务器的历史才是那一轮的真身，
+  // 本地再并一遍就是同一段回复画两遍。
   function finishTurn() {
     streaming.value = false
     retry.value = null
-    if (turn.value) {
-      // 收尾后把这一轮并入历史，下一轮从干净的 blocks 开始。
-      // 用户那句也要进历史，否则刷新对账前，历史里会缺「我刚刚问的」。
-      const finished = turn.value
-      lastFinishedRunId.value = finished.run_id
-      history.value = [
-        ...history.value,
-        { role: 'user', blocks: [{ kind: 'text', text: finished.user_message }] },
-        { role: 'assistant', blocks: finished.blocks, model: finished.model },
-      ]
-      turn.value = null
-      // 这一轮的流式渲染缓存可以丢了：正文已经进历史，
-      // 之后渲染走的是静态路径。留着它只是白占一份全文。
-      dropCache(finished.run_id)
-    }
+    flow.finishTurn()
   }
 
   function reset() {
-    turn.value = null
-    lastFinishedRunId.value = ''
-    history.value = []
+    flow.reset()
     asks.value = []
     queue.value = { steering: [], followUp: [] }
-    statusText.value = ''
-    widgets.value = []
-    notices.value = []
+    runStatus.reset()
     context.value = null
     stats.value = null
     promptError.value = ''
-    // 换会话 / 新会话时把渲染缓存全清掉：旧会话的正文不该一直占着内存。
-    dropAllCaches()
   }
 
   return {
     sessionFile,
     workDir,
-    engineRunning,
     streaming,
     model,
     thinkingLevel,
@@ -440,9 +370,7 @@ export const useChatStore = defineStore('chat', () => {
     contextPercent,
     tokensPerSecond,
     autoCompaction,
-    stats,
     commands,
-    profile,
     kind,
     caps,
     turn,
@@ -460,8 +388,10 @@ export const useChatStore = defineStore('chat', () => {
     promptError,
     bindErr,
     draftOverride,
-    applyState,
+    pickerRequest,
     applyPatch,
+    setUsage,
+    usageOf,
     refresh,
     loadModels,
     setModel,
@@ -471,7 +401,6 @@ export const useChatStore = defineStore('chat', () => {
     switchEngine,
     clearQueue,
     removeQueued,
-    loadTurnFromEngine,
     send,
     stop,
     steer,

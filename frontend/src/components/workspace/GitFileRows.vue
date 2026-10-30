@@ -46,8 +46,8 @@ function baseName(file: GitFile): string {
   <div
     v-for="file in files"
     :key="file.file_path"
-    class="file-line omp-row-click"
-    :class="{ active: selected === file.file_path, conflict: file.conflict }"
+    class="file-line"
+    :class="{ 'is-active': selected === file.file_path, conflict: file.conflict }"
     :title="file.file_path"
     @click="emit('pick', file)"
   >
@@ -85,23 +85,47 @@ function baseName(file: GitFile): string {
 </template>
 
 <style scoped>
+/* 一行文件：状态码 / 文件名 / 增删 / 悬停才出现的动作。
+   整行可点，所以有悬停底色与按下缩放；选中项给淡底 + 左缘竖条。 */
 .file-line {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
   width: 100%;
-  height: calc(24px * var(--omp-vw-scale));
-  padding: 0 var(--omp-sp-2) 0 calc(var(--omp-sp-4));
-  border: none;
+  height: calc(26px * var(--omp-vw-scale));
+  padding: 0 var(--omp-sp-2) 0 var(--omp-sp-3);
+  border: 0;
   background: transparent;
   color: var(--omp-ink);
   font-size: var(--omp-fs-xs);
   text-align: left;
   border-radius: var(--omp-r-sm);
   cursor: pointer;
+  transition:
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    transform var(--omp-dur-fast) var(--omp-ease);
 }
 
+.file-line:hover {
+  background: var(--omp-hover);
+}
+
+.file-line:active {
+  transform: scale(var(--omp-press-row-active));
+  transition-duration: 60ms;
+}
+
+/* 选中态：淡底 + 左缘竖条。竖条而不是描边——
+   描边会把这一行框成一个盒子，一列文件就变成一列盒子。 */
+.file-line.is-active {
+  background: var(--omp-selected);
+  box-shadow: inset 2px 0 0 var(--omp-brand);
+}
+
+/* 冲突：左缘换警告色，并给一条淡警告底——
+   冲突是要用户动手处理的那一行，不该和普通改动长得一样。 */
 .file-line.conflict {
+  background: var(--omp-warn-soft);
   box-shadow: inset 2px 0 0 var(--omp-warn);
 }
 
@@ -139,7 +163,6 @@ function baseName(file: GitFile): string {
   font-weight: 700;
   flex: none;
 }
-
 .chg-M {
   color: var(--omp-warn);
 }

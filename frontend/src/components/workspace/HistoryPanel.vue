@@ -139,7 +139,7 @@ defineExpose({ reload: loadFileHistory })
     <template v-else>
       <div v-for="item in list" :key="item.commit_hash" class="commit-block">
         <button
-          class="commit-line omp-row-click"
+          class="commit-line"
           :class="{ open: openHash === item.commit_hash }"
           @click="open(item)"
         >
@@ -167,7 +167,7 @@ defineExpose({ reload: loadFileHistory })
               <button
                 v-for="changed in detail.changed_file"
                 :key="changed.file_path"
-                class="detail-file omp-row-click"
+                class="detail-file"
                 :class="{ active: pickedFile === changed.file_path }"
                 @click="pickFile(changed.file_path)"
               >
@@ -191,9 +191,12 @@ defineExpose({ reload: loadFileHistory })
 .history {
   display: flex;
   flex-direction: column;
-  gap: var(--omp-sp-1);
   min-height: 0;
   overflow-y: auto;
+  /* 列表本身不逐条画框线：40 条提交就是 40 个框，读起来像一堆卡片。
+     整列靠留白分组，悬停才给底色。 */
+  gap: 0;
+  padding-right: var(--omp-sp-1);
 }
 
 .file-filter {
@@ -220,22 +223,46 @@ defineExpose({ reload: loadFileHistory })
   flex-direction: column;
 }
 
+/* 一条提交：hash · 标题 · 作者时间 · 增删。整行是一个可点的对象，
+   所以给整行的悬停底色与按下缩放，但不给描边。 */
 .commit-line {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
   width: 100%;
-  padding: var(--omp-sp-2) var(--omp-sp-2);
+  padding: 5px var(--omp-sp-2);
+  border: 0;
   border-radius: var(--omp-r-sm);
+  background: transparent;
+  color: var(--omp-ink);
+  font: inherit;
   text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    transform var(--omp-dur-fast) var(--omp-ease);
+}
+
+/* 相邻两条之间一条极淡的分隔：比每块套框安静，又不至于糊成一片 */
+.commit-block + .commit-block .commit-line {
+  box-shadow: inset 0 1px 0 var(--omp-line);
 }
 
 .commit-line:hover {
   background: var(--omp-hover);
+  box-shadow: none;
 }
 
+.commit-line:active {
+  transform: scale(var(--omp-press-row-active));
+  transition-duration: 60ms;
+}
+
+/* 展开的那一条：淡强调底 + 左缘主色竖条。
+   竖条而不是整圈描边：描边会把这一行框成一个盒子，列表就散了。 */
 .commit-line.open {
   background: var(--omp-selected);
+  box-shadow: inset 2px 0 0 var(--omp-brand);
 }
 
 .hash {
@@ -252,6 +279,13 @@ defineExpose({ reload: loadFileHistory })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 提交时间与作者：次级读数，与标题拉开一级灰度 */
+.readout {
+  flex: none;
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-faint);
 }
 
 .num {
@@ -272,13 +306,24 @@ defineExpose({ reload: loadFileHistory })
   font-weight: 500;
 }
 
+/* 详情区：与列表同底色，只靠缩进与间距分开。
+   不再套一层描边：下面已经有一份差异视图（它自带圆角描边），
+   再加上去就是三层框叠在一起，而这三层表达的是同一件事。 */
 .commit-detail {
   display: flex;
   flex-direction: column;
   gap: var(--omp-sp-2);
-  padding: var(--omp-sp-2) 0 var(--omp-sp-4) var(--omp-sp-4);
-  border-left: 2px solid var(--omp-brand-3);
-  margin-left: var(--omp-sp-2);
+  margin: var(--omp-sp-1) 0 var(--omp-sp-3) var(--omp-sp-2);
+  padding: var(--omp-sp-2) 0 var(--omp-sp-2) var(--omp-sp-3);
+  border-left: 1px solid var(--omp-line);
+  animation: detail-unfold var(--omp-dur) var(--omp-ease);
+}
+
+@keyframes detail-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 .commit-body {
@@ -313,17 +358,25 @@ defineExpose({ reload: loadFileHistory })
   gap: var(--omp-sp-2);
   width: 100%;
   padding: 3px var(--omp-sp-2);
+  border: 0;
   border-radius: var(--omp-r-xs);
+  background: transparent;
+  color: var(--omp-ink-2);
+  font: inherit;
   text-align: left;
-  transition: background var(--omp-dur-fast) var(--omp-ease);
+  cursor: pointer;
+  transition:
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    color var(--omp-dur-fast) var(--omp-ease);
 }
 
 .detail-file:hover {
-  background: var(--omp-hover);
+  background: var(--omp-surface);
 }
 
 .detail-file.active {
-  background: var(--omp-selected);
+  background: var(--omp-brand-soft);
+  color: var(--omp-brand);
 }
 
 .path {

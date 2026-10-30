@@ -1,25 +1,90 @@
 package service
 
-// 模型清单的降级来源：不拉起引擎，直接读配置。
+// 模型清单的缓存：让「打开模型下拉」与「切引擎」都不必等引擎冷启动。
 //
-// 为什么需要它：引擎的 get_available_models 是运行时状态（按凭据过滤过），
+// 为什么需要它：引擎的 get_available_models 是运行时状态，
 // 而拿到它必须先拉起一个引擎进程——omp 冷启动实测 11 秒，pi 起一次 Node 3 秒。
-// 于是「打开对话页看一眼模型下拉」这种零风险操作，代价是等一个进程冷启动。
+// 「打开对话页看一眼模型下拉」这种零风险操作，代价却是等一个进程冷启动。
 //
-// 降级策略：引擎没在跑的时候读它自己的配置文件。
-// 代价是拿不到内置目录（引擎自带的那份模型表）与凭据过滤，
-// 所以降级结果要标出来，界面据此说明「这是配置里配的，不是引擎当前可用的」。
+// 缓存的是「上一次问到的清单」，不是「当前能用的清单」：
+// 用户换了服务商配置或登录了新的账号，缓存就过期了。
+// 所以它有 TTL，而且「保存服务商 / 登录成功 / 重新检测」会主动失效它。
 //
 // 一条事实一个落点：配置怎么读归 env/ompcfg 与 env/picfg，
 // 这里只把它们的结构归一成同一份视图。
 
 import (
 	"context"
+	"sync"
+	"time"
 
 	"OhMyPiDesktop/backend/engine"
 	"OhMyPiDesktop/backend/env/ompcfg"
 	"OhMyPiDesktop/backend/env/picfg"
 )
+
+// modelCacheTTL 是模型清单的保鲜期。
+//
+// 短到能跟上「刚换完服务商就打开下拉」，长到能把首屏的多次请求合成一次。
+// 与 countsTTL 同量级：它们都是「变化比查看慢」的事实。
+const modelCacheTTL = 30 * time.Second
+
+// modelCache 是按引擎分桶的模型清单缓存。
+//
+// 按引擎分桶而不是一张表：两个引擎的清单完全不同，而一次查询只问一个引擎。
+type modelCache struct {
+	mu   sync.Mutex
+	rows map[engine.Kind]modelCacheEntry
+}
+
+// modelCacheEntry 是缓存里的一条：清单与它被问到的时刻。
+type modelCacheEntry struct {
+	rows []ModelRow
+	at   time.Time
+}
+
+// hit 判断这条缓存是不是还能用。
+func (e modelCacheEntry) hit() bool {
+	return !e.at.IsZero() && time.Since(e.at) < modelCacheTTL
+}
+
+// cachedModels 返回命中缓存的清单；没命中返回 nil。
+//
+// 返回 nil 与返回空切片的区别很重要：空切片是「问了，确实没有模型」，
+// nil 是「没问过」——后者不能当答案交出去。
+func (m *modelCache) cachedModels(kind engine.Kind) ([]ModelRow, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entry, ok := m.rows[kind]
+	if !ok || !entry.hit() {
+		return nil, false
+	}
+	return entry.rows, true
+}
+
+// storeModels 写下一份清单。
+func (m *modelCache) storeModels(kind engine.Kind, rows []ModelRow) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.rows == nil {
+		m.rows = map[engine.Kind]modelCacheEntry{}
+	}
+	m.rows[kind] = modelCacheEntry{rows: rows, at: time.Now()}
+}
+
+// invalidate 丢掉某引擎的缓存（配置变了）。
+func (m *modelCache) invalidate(kind engine.Kind) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.rows, kind)
+}
+
+// invalidateAll 丢掉全部缓存。
+func (m *modelCache) invalidateAll() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.rows = map[engine.Kind]modelCacheEntry{}
+}
 
 // ModelsFromConfig 从配置文件里读出模型清单。
 //
@@ -79,9 +144,18 @@ func (a *App) modelsFromConfigOf(kind engine.Kind) []ModelRow {
 
 // AvailableModels 是「模型清单」的统一出口。
 //
-// 引擎在跑就用引擎的（它知道自己有哪些凭据、哪些模型真的能调）；
-// 引擎没跑就用配置的（不为了看个下拉去起一个进程）。
+// 三档来源，从快到准：
+//  1. 缓存命中：直接交上次问到的清单（零等待）。
+//  2. 引擎在跑：问引擎（它知道自己有哪些凭据、哪些模型真的能调）。
+//  3. 引擎没跑：读配置文件（不为了看个下拉去起一个进程）。
+//
+// 第 1 档是「上次问到的」，不是「此刻真的能调」——所以它有 TTL，
+// 而且配置一变就主动失效。宁可让用户看到一份略旧的清单，
+// 也不要为了一个下拉等十秒。
 func (a *App) AvailableModels(ctx context.Context, kind engine.Kind) ([]ModelRow, error) {
+	if rows, ok := a.modelCache.cachedModels(kind); ok {
+		return rows, nil
+	}
 	e := a.EngineFor(kind, a.Workspace())
 	if e.Live() {
 		list, err := e.AvailableModels(ctx)
@@ -94,9 +168,24 @@ func (a *App) AvailableModels(ctx context.Context, kind engine.Kind) ([]ModelRow
 					Reasoning: m.Reasoning, Input: m.Input,
 				})
 			}
+			a.modelCache.storeModels(kind, out)
 			return out, nil
 		}
 	}
 	// 引擎没跑或问不出来：退到配置文件。
-	return a.ModelsFromConfig(kind), nil
+	rows := a.ModelsFromConfig(kind)
+	a.modelCache.storeModels(kind, rows)
+	return rows, nil
+}
+
+// InvalidateModels 丢掉模型清单缓存。
+//
+// 在「配置变了」之后调用：保存 / 删除服务商、登录成功、重新探测引擎。
+// 不失效的话，用户会看到一份改了之前的清单，而且要等 30 秒才更新。
+func (a *App) InvalidateModels(kind engine.Kind) {
+	if kind.Valid() {
+		a.modelCache.invalidate(kind)
+		return
+	}
+	a.modelCache.invalidateAll()
 }

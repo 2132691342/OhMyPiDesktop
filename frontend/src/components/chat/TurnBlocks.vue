@@ -41,10 +41,13 @@ function isLiveTail(index: number, block: ChatBlock): boolean {
 </template>
 
 <style scoped>
+/* 一轮里的块间距。
+   工具卡是平铺的一行，不需要它自己的空气；
+   正文与工具卡之间要留一点，否则工具行看起来像正文的一部分。 */
 .turn-blocks {
   display: flex;
   flex-direction: column;
-  gap: var(--omp-sp-3);
+  gap: var(--omp-sp-2);
 }
 
 .waiting {

@@ -1,6 +1,9 @@
 <script setup lang="ts">
-// 模型页：服务商（models.yml，可写）/ 引擎眼下的模型（只读）/ 登录（OAuth）。
+// 模型页：服务商（可写）/ 引擎眼下的模型（只读）/ 登录（OAuth）。
 // 三块的分界线就是「我们能不能改」：能从界面改的，和只能读的，不该混在一张表里。
+//
+// 服务商的编辑草稿与上游探测在 useProviderForm 里：它们自成一块，
+// 这一页只管「读哪些数据」与「把各块摆在哪」。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
@@ -11,10 +14,11 @@ import LoginPanel from '@/components/models/LoginPanel.vue'
 import ProviderList from '@/components/models/ProviderList.vue'
 import EngineScopeBar from '@/components/common/EngineScopeBar.vue'
 import { useEngineScope } from '@/composables/useEngineScope'
+import { useProviderForm } from '@/composables/useProviderForm'
 import { api } from '@/api/http'
 import { useToasts } from '@/composables/useToasts'
 import { useAppStore } from '@/stores/app'
-import type { EngineKind, LoginProvider, ModelEntry, ModelRow, ProviderView } from '@/types/api'
+import type { EngineKind, LoginProvider, ModelRow, ProviderView } from '@/types/api'
 
 const { t } = useI18n()
 const toasts = useToasts()
@@ -37,21 +41,10 @@ const loadingModels = ref(false)
 const loadingLogins = ref(false)
 const engineMissing = ref(false)
 
-const dialogOpen = ref(false)
-const saving = ref(false)
 const loggingIn = ref('')
-
-// 表单是「一份可编辑副本」，脏数据不往 providers 里写，保存成功才用返回值整体替换
-const form = ref<{ name: string; base_url: string; api: string; api_key: string; models: ModelEntry[] }>({
-  name: '',
-  base_url: '',
-  api: 'openai-completions',
-  api_key: '',
-  models: [],
-})
-const editing = ref('')
-// 正在编辑的那一行属于哪个引擎（"全部"作用域下新建时取当前作用域）。
-const editingKind = ref<EngineKind>('omp')
+// 正在跑的上游探测：'test:<服务商>' / 'fetch:<服务商>'。
+// 分开记是因为两个按钮各自转圈，而共用一个标志会让人不知道是哪一步在跑。
+const probing = ref('')
 
 const apiOptions = [
   'openai-completions',
@@ -109,56 +102,73 @@ async function loadLogins() {
   }
 }
 
-function openCreate() {
-  editing.value = ''
-  editingKind.value = writeKind.value
-  form.value = { name: '', base_url: '', api: 'openai-completions', api_key: '', models: [] }
-  dialogOpen.value = true
+/** 重拉三块：保存服务商之后配置变了，三块都要跟上。 */
+async function reloadAll(): Promise<void> {
+  await Promise.all([loadProviders(), loadModels(), loadLogins()])
 }
 
-function openEdit(view: ProviderView) {
-  editing.value = view.provider_name
-  // 记住这一行属于哪个引擎：编辑同名服务商时不能写到另一个引擎的文件里。
-  editingKind.value = (view.engine_kind || writeKind.value) as EngineKind
-  form.value = {
-    name: view.provider_name,
-    base_url: view.base_url,
-    api: view.api || 'openai-completions',
-    // 打码后的密钥不回填：用户没改就提交空串，后端会保留原值
-    api_key: '',
-    models: (view.models ?? []).map((m) => ({ ...m })),
-  }
-  dialogOpen.value = true
-}
+// 编辑草稿：表单内容与「打开 / 保存 / 拉模型」。
+const form = useProviderForm(reloadAll, () => writeKind.value)
 
-// 模型表里的就地编辑（加 / 删 / 改能力勾选）随 ProviderDialog 搬走了：
-// 它们只在弹窗打开期间存在，不该由这一页持有。
-async function save() {
-  const name = form.value.name.trim()
-  if (!name) return
-  saving.value = true
+/**
+ * 测一条服务商配置通不通。
+ *
+ * 判据是「上游的模型清单能不能问出来」——它一次验证了地址、协议与密钥，
+ * 而这三样是配错时最容易混在一起的。
+ */
+async function testProvider(view: ProviderView): Promise<void> {
+  if (probing.value) return
+  probing.value = `test:${view.provider_name}`
   try {
-    const payload: Partial<ProviderView> & { models?: ModelEntry[] } = {
-      base_url: form.value.base_url.trim(),
-      api: form.value.api,
-      api_key: form.value.api_key.trim(),
-      models: form.value.models.filter((m) => m.model_id.trim()),
+    const res = await api.testProvider({
+      engine_kind: view.engine_kind,
+      provider_name: view.provider_name,
+    })
+    if (res.ok) {
+      toasts.push('ok', t('models.testOk', { n: res.model_count }))
+    } else {
+      toasts.push('error', res.message || t('models.testFail'))
     }
-    // 写入必须落到一个具体引擎：编辑已有行时用它自己的 engine_kind，
-    // 新建时用当前作用域（「全部」时退回 omp）。
-    const target = editing.value ? editingKind.value : writeKind.value
-    await api.upsertProvider(name, payload, target)
-    dialogOpen.value = false
-    toasts.push('ok', t('common.saved'))
-    await Promise.all([loadProviders(), loadModels()])
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   } finally {
-    saving.value = false
+    probing.value = ''
   }
 }
 
-async function remove(view: ProviderView) {
+/**
+ * 拉上游的模型清单并填进编辑弹窗。
+ *
+ * 为什么开弹窗而不是直接写配置：拉回来的只有 id，
+ * 上下文窗口与最大输出这些字段还得人填（或用默认值）。
+ * 直接写会把「用户刚拉下来的清单」当成「用户确认过的配置」。
+ */
+async function fetchModels(view: ProviderView): Promise<void> {
+  if (probing.value) return
+  probing.value = `fetch:${view.provider_name}`
+  try {
+    const res = await api.fetchProviderModels({
+      engine_kind: view.engine_kind,
+      provider_name: view.provider_name,
+    })
+    const rows = res.models ?? []
+    if (!rows.length) {
+      toasts.push('info', t('models.fetchedEmpty'))
+      return
+    }
+    // 打开编辑弹窗并把拉回来的 id 填进去：
+    // 已有的模型不重复添加（用户可能已经手动改过能力勾选）。
+    form.openEdit(view)
+    const added = form.appendModels(rows)
+    toasts.push('ok', added ? t('models.fetched', { n: added }) : t('models.fetchedEmpty'))
+  } catch (err) {
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  } finally {
+    probing.value = ''
+  }
+}
+
+async function remove(view: ProviderView): Promise<void> {
   try {
     await ElMessageBox.confirm(t('models.deleteConfirm', { name: view.provider_name }), t('models.deleteTitle'), {
       confirmButtonText: t('common.delete'),
@@ -173,13 +183,13 @@ async function remove(view: ProviderView) {
     const target = (view.engine_kind || writeKind.value) as EngineKind
     await api.deleteProvider(view.provider_name, target)
     toasts.push('ok', t('common.saved'))
-    await Promise.all([loadProviders(), loadModels()])
+    await reloadAll()
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   }
 }
 
-async function login(provider: LoginProvider) {
+async function login(provider: LoginProvider): Promise<void> {
   loggingIn.value = provider.id
   try {
     await api.startLogin(provider.id, 'omp')
@@ -195,19 +205,15 @@ async function login(provider: LoginProvider) {
 
 const authenticated = computed(() => logins.value.filter((p) => p.authenticated).length)
 
-async function reload() {
-  await Promise.all([loadProviders(), loadModels(), loadLogins()])
-}
-
 watch(scope, () => {
   providers.value = []
   models.value = []
   logins.value = []
-  void reload()
+  void reloadAll()
 })
 
 onMounted(() => {
-  void reload()
+  void reloadAll()
 })
 </script>
 
@@ -220,10 +226,15 @@ onMounted(() => {
       </div>
       <div class="head-actions">
         <EngineScopeBar :scope="scope" :installed="installedKinds" @pick="setScope" />
-        <button class="omp-btn icon ghost" :class="{ 'is-loading': loadingProviders }" :title="t('common.refresh')" @click="loadProviders">
+        <button
+          class="omp-btn icon ghost"
+          :class="{ 'is-loading': loadingProviders }"
+          :title="t('common.refresh')"
+          @click="loadProviders"
+        >
           <AppIcon name="refresh" :size="15" />
         </button>
-        <button class="omp-btn primary" @click="openCreate">
+        <button class="omp-btn primary" @click="form.openCreate()">
           <AppIcon name="plus" :size="14" />
           {{ t('models.addProvider') }}
         </button>
@@ -236,9 +247,12 @@ onMounted(() => {
         :providers="providers"
         :loading="loadingProviders"
         :config-path="configPath"
-        @create="openCreate"
-        @edit="openEdit"
+        :pending="probing"
+        @create="form.openCreate()"
+        @edit="form.openEdit"
         @remove="remove"
+        @test="testProvider"
+        @fetch-models="fetchModels"
       />
 
       <!-- 登录：只有支持界面登录的引擎才渲染（pi 的登录在终端里做） -->
@@ -256,12 +270,14 @@ onMounted(() => {
 
     <!-- 服务商编辑 -->
     <ProviderDialog
-      v-model="dialogOpen"
-      :form="form"
-      :editing="editing"
-      :saving="saving"
+      v-model="form.dialogOpen.value"
+      :form="form.form.value"
+      :editing="form.editing.value"
+      :saving="form.saving.value"
+      :fetching="form.fetching.value"
       :api-options="apiOptions"
-      @save="save"
+      @save="form.save"
+      @fetch-models="form.fetchModels"
     />
   </div>
 </template>
@@ -274,12 +290,14 @@ onMounted(() => {
   min-height: 0;
 }
 
+/* 页头：标题与说明在左，动作在右。说明文字限宽——
+   一整行 1400px 的灰色说明句没人读。 */
 .page-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--omp-sp-4);
-  padding: var(--omp-sp-5) var(--omp-sp-6) var(--omp-sp-4);
+  padding: var(--omp-sp-4) var(--omp-sp-6);
   border-bottom: 1px solid var(--omp-line);
   flex: none;
 }
@@ -293,16 +311,18 @@ onMounted(() => {
 }
 
 .page-sub {
-  margin: 4px 0 0;
-  max-width: 680px;
-  font-size: var(--omp-fs-sm);
-  line-height: 1.65;
+  margin: 2px 0 0;
+  max-width: var(--omp-w-desc);
+  font-size: var(--omp-fs-2xs);
+  line-height: 1.55;
   color: var(--omp-mute);
 }
 
 .head-actions {
   display: flex;
+  align-items: center;
   gap: var(--omp-sp-2);
+  flex: none;
 }
 
 .page-body {

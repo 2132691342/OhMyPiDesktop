@@ -32,6 +32,14 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const listEl = ref<HTMLElement | null>(null)
+/** @ 菜单的浏览器：它的键盘导航在它内部实现，这一层只把按键转下去。 */
+const mentionRef = ref<{ move: (d: number) => void; pickCurrent: () => boolean } | null>(null)
+
+defineExpose({
+  /** 键盘导航转给 @ 浏览器：列表在它那里，下标也在那里。 */
+  move: (delta: number) => mentionRef.value?.move(delta),
+  pickCurrent: () => mentionRef.value?.pickCurrent() ?? false,
+})
 
 // 键盘移动之后要把高亮项带进可视区。
 // index 变化由父组件触发（按 ↑↓），这里只负责让它真的看得见。
@@ -86,6 +94,8 @@ function tagClass(source: MenuItem['source']): string {
        弹面板用 pointerdown 保焦：按钮按下的一瞬间就 preventDefault。 -->
   <div class="pop menu-pop" @pointerdown="keepFocus">
     <div v-if="props.kind === 'slash'" class="pop-list">
+      <!-- 没有匹配项时也要给一句话：菜单默默消失看起来像按了没反应 -->
+      <p v-if="!props.items.length" class="pop-hint pop-empty">{{ t('chat.slashNoMatch') }}</p>
       <button
         v-for="(item, index) in props.items"
         :key="item.source + item.key"
@@ -109,7 +119,7 @@ function tagClass(source: MenuItem['source']): string {
 
     <!-- MentionBrowser 的 pick 带两个参数（相对路径 + 展示名），
          模板里的 $event 只能接到第一个，所以走一个具名处理函数。 -->
-    <MentionBrowser v-else @pick="onMentionPick" />
+    <MentionBrowser v-else ref="mentionRef" @pick="onMentionPick" />
   </div>
 </template>
 
@@ -219,6 +229,15 @@ function tagClass(source: MenuItem['source']): string {
   font-size: var(--omp-fs-3xs);
   color: var(--omp-faint);
   font-family: var(--omp-font-mono);
+}
+
+/* 「没有匹配」与底部的提示句不同：它居中，不带那条分隔线 */
+.pop-empty {
+  margin: 0;
+  padding: var(--omp-sp-4) var(--omp-sp-3);
+  border-top: 0;
+  text-align: center;
+  font-family: var(--omp-font-sans);
 }
 
 /* @ 菜单有自己的头部与搜索框，不需要 pop-list 那层包裹 */

@@ -4,6 +4,10 @@
 // 挂 loading → 成功后重拉状态与差异 → 失败把引擎（git）的原话给用户。
 // 散着写会让某个动作忘了重拉，界面就停在旧状态上却看不出原因。
 //
+// 每个动作都必须给**成功**提示，不能只报错：
+// 「拉取」点下去没动静时，用户分不清是「拉完了但没有新提交」还是「压根没点中」。
+// 一条成功提示把这两件事区分开。
+//
 // 不可逆的动作（丢弃改动、强推、中止合并）各自先问一次确认。
 // 确认放在这里而不是调用方：判据是「这个动作有没有可能毁掉别人的东西」，
 // 与谁点它无关。
@@ -52,13 +56,27 @@ export function useGitActions(
   const toasts = useToasts()
   const pending = ref('')
 
-  async function act(name: string, fn: () => Promise<GitStatus | void>): Promise<void> {
+  /**
+   * 跑一个 git 写动作，并给出一句结果提示。
+   *
+   * done 是成功话术；为空表示这个动作成功也不必打扰用户
+   * （例如批量暂存：列表自己变了，用户看得见）。
+   *
+   * 成功也要说话：拉取这类动作没有可见副作用时，「点下去没动静」与
+   * 「压根没点中」在界面上长得一模一样。
+   */
+  async function act(
+    name: string,
+    fn: () => Promise<GitStatus | void>,
+    done = '',
+  ): Promise<void> {
     pending.value = name
     try {
       await fn()
       // 动作自己的返回值不直接写进 status：它只是这一次的响应，
       // 而界面上还有分支、历史、差异要看——统一重拉才不会只更新一半。
       await reload()
+      if (done) toasts.push('ok', done)
     } catch (err) {
       toasts.push('error', err instanceof Error ? err.message : String(err))
     } finally {
@@ -73,15 +91,27 @@ export function useGitActions(
   }
 
   async function stageAll(files: GitFile[]): Promise<void> {
-    await act('stage', () => api.gitStage(files.map((f) => f.file_path)))
+    await act(
+      'stage',
+      () => api.gitStage(files.map((f) => f.file_path)),
+      t('workspace.stagedAll', { n: files.length }),
+    )
   }
 
   async function stage(file: GitFile): Promise<void> {
-    await act(`stage:${file.file_path}`, () => api.gitStage([file.file_path]))
+    await act(
+      `stage:${file.file_path}`,
+      () => api.gitStage([file.file_path]),
+      t('workspace.stagedOne', { path: file.file_path }),
+    )
   }
 
   async function unstage(file: GitFile): Promise<void> {
-    await act(`unstage:${file.file_path}`, () => api.gitUnstage([file.file_path]))
+    await act(
+      `unstage:${file.file_path}`,
+      () => api.gitUnstage([file.file_path]),
+      t('workspace.unstagedOne', { path: file.file_path }),
+    )
   }
 
   async function discard(file: GitFile): Promise<void> {
@@ -92,16 +122,28 @@ export function useGitActions(
       t('common.cancel'),
     )
     if (!ok) return
-    await act(`discard:${file.file_path}`, () => api.gitDiscard([file.file_path]))
+    await act(
+      `discard:${file.file_path}`,
+      () => api.gitDiscard([file.file_path]),
+      t('workspace.discarded', { path: file.file_path }),
+    )
   }
 
   async function resolveConflicts(files: GitFile[]): Promise<void> {
-    await act('resolve', () => api.gitResolve(files.map((f) => f.file_path)))
+    await act(
+      'resolve',
+      () => api.gitResolve(files.map((f) => f.file_path)),
+      t('workspace.resolved', { n: files.length }),
+    )
   }
 
   /** 标记单个文件已解决（冲突时逐个处理比一批更常见）。 */
   async function resolve(file: GitFile): Promise<void> {
-    await act(`resolve:${file.file_path}`, () => api.gitResolve([file.file_path]))
+    await act(
+      `resolve:${file.file_path}`,
+      () => api.gitResolve([file.file_path]),
+      t('workspace.resolvedOne', { path: file.file_path }),
+    )
   }
 
   async function stateAction(action: 'continue' | 'abort'): Promise<void> {
@@ -114,15 +156,19 @@ export function useGitActions(
       )
       if (!ok) return
     }
-    await act(`state:${action}`, () => api.gitState(action))
+    await act(
+      `state:${action}`,
+      () => api.gitState(action),
+      action === 'abort' ? t('workspace.aborted') : t('workspace.continued'),
+    )
   }
 
   async function initRepo(): Promise<void> {
-    await act('init', () => api.gitInit('main'))
+    await act('init', () => api.gitInit('main'), t('workspace.initDone'))
   }
 
   async function switchBranch(name: string): Promise<void> {
-    await act(`switch:${name}`, () => api.gitSwitchBranch(name))
+    await act(`switch:${name}`, () => api.gitSwitchBranch(name), t('workspace.switchedBranch', { name }))
   }
 
   async function createBranch(): Promise<void> {
@@ -136,7 +182,7 @@ export function useGitActions(
     } catch {
       return // 用户取消
     }
-    await act('branch', () => api.gitCreateBranch(name))
+    await act(`branch`, () => api.gitCreateBranch(name), t('workspace.createdBranch', { name }))
   }
 
   /**
@@ -160,18 +206,68 @@ export function useGitActions(
         return
       }
     }
-    await act(`push:${force}`, () =>
-      api.gitPush(soleRemote(), branch, force, !status()?.upstream_ref, confirm),
+    await act(
+      `push:${force}`,
+      () => api.gitPush(soleRemote(), branch, force, !status()?.upstream_ref, confirm),
+      t('workspace.pushed', { branch }),
     )
   }
 
   async function pull(): Promise<void> {
     const branch = status()?.branch_name ?? ''
-    await act('pull', () => api.gitPull(soleRemote(), branch, false))
+    // 拉完说清「有没有新东西」：git pull 成功但无事发生时，
+    // 不说一声会被当成失败——用户看不出区别。
+    const before = status()?.behind ?? 0
+    await act(
+      'pull',
+      () => api.gitPull(soleRemote(), branch, false),
+      before > 0
+        ? t('workspace.pulledN', { branch, n: before })
+        : t('workspace.pulledUpToDate', { branch }),
+    )
   }
 
   async function fetchRemote(): Promise<void> {
-    await act('fetch', () => api.gitFetch(soleRemote()))
+    await act('fetch', () => api.gitFetch(soleRemote()), t('workspace.fetched'))
+  }
+
+  /**
+   * 删除分支。
+   *
+   * 只删本地分支，且必须先确认：删掉的分支名要靠 reflog 才能找回来，
+   * 而这是界面上最容易误点的一个动作。
+   */
+  async function deleteBranch(name: string): Promise<void> {
+    const ok = await confirmDanger(
+      t('workspace.deleteBranchConfirm', { name }),
+      t('workspace.deleteBranch'),
+      t('common.delete'),
+      t('common.cancel'),
+    )
+    if (!ok) return
+    await act(`delete:${name}`, () => api.gitDeleteBranch(name), t('workspace.deletedBranch', { name }))
+  }
+
+  /** 合并一个分支进当前分支。 */
+  async function mergeBranch(name: string): Promise<void> {
+    await act(`merge:${name}`, () => api.gitMerge(name, false), t('workspace.merged', { name }))
+  }
+
+  /** 添加远端地址。没有远端时同步类按钮全部不渲染，这里是唯一的出口。 */
+  async function addRemote(): Promise<void> {
+    let url = ''
+    try {
+      const result = await ElMessageBox.prompt(t('workspace.remoteUrl'), t('workspace.addRemote'), {
+        confirmButtonText: t('common.save'),
+        cancelButtonText: t('common.cancel'),
+        inputPlaceholder: 'https://github.com/user/repo.git',
+      })
+      url = result.value.trim()
+    } catch {
+      return
+    }
+    if (!url) return
+    await act('remote', () => api.gitAddRemote('origin', url), t('workspace.remoteAdded'))
   }
 
   return {
@@ -186,6 +282,9 @@ export function useGitActions(
     initRepo,
     switchBranch,
     createBranch,
+    deleteBranch,
+    mergeBranch,
+    addRemote,
     push,
     pull,
     fetchRemote,

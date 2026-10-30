@@ -22,6 +22,8 @@ const emit = defineEmits<{
   commit: [message: string]
   createBranch: []
   switchBranch: [name: string]
+  deleteBranch: [name: string]
+  mergeBranch: [name: string]
 }>()
 
 const { t } = useI18n()
@@ -79,13 +81,23 @@ defineExpose({ reset })
       class="branch-line omp-row-click"
       :class="{ active: branch.current }"
       :disabled="branch.current || Boolean(props.pending)"
+      :title="branch.current ? t('workspace.currentBranch') : t('workspace.switchHere')"
       @click="emit('switchBranch', branch.branch_name)"
     >
       <AppIcon name="branch" :size="12" />
-      <span>{{ branch.branch_name }}</span>
+      <span class="branch-name">{{ branch.branch_name }}</span>
       <span v-if="branch.remote_name" class="tag">{{ branch.remote_name }}</span>
       <span v-if="branch.ahead || branch.behind" class="readout">
         ↑{{ branch.ahead }} ↓{{ branch.behind }}
+      </span>
+      <!-- 行内动作：悬停才出现。一列分支每行都挂两个按钮就是一片按钮墙。 -->
+      <span v-if="!branch.current" class="branch-acts">
+        <button class="act" :disabled="Boolean(props.pending)" @click.stop="emit('mergeBranch', branch.branch_name)">
+          {{ t('workspace.merge') }}
+        </button>
+        <button class="act danger" :disabled="Boolean(props.pending)" @click.stop="emit('deleteBranch', branch.branch_name)">
+          {{ t('common.delete') }}
+        </button>
       </span>
     </button>
   </div>
@@ -147,6 +159,51 @@ defineExpose({ reset })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.branch-name {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 行内动作：默认不占视觉重量，悬停才出现 */
+.branch-acts {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--omp-dur-fast) var(--omp-ease);
+}
+
+.branch-line:hover .branch-acts,
+.branch-line:focus-within .branch-acts {
+  opacity: 1;
+}
+
+.act {
+  padding: 0 5px;
+  height: calc(18px * var(--omp-vw-scale));
+  border: none;
+  border-radius: var(--omp-r-xs);
+  background: transparent;
+  color: var(--omp-mute);
+  font-size: var(--omp-fs-3xs);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color var(--omp-dur-fast) var(--omp-ease);
+}
+
+.act:hover:not(:disabled) {
+  color: var(--omp-brand);
+}
+
+.act.danger:hover:not(:disabled) {
+  color: var(--omp-bad);
+}
+
+.act:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .branch-line.active {

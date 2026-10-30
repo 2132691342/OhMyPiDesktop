@@ -1,14 +1,16 @@
 <script setup lang="ts">
 // 对话页的页头与授权链接条。
 //
-// 页头回答「现在在跟谁说话、上下文用了多少」；
+// 页头回答「现在在跟谁说话」；
 // 授权链接条回答「引擎要我去浏览器点一下，地址在这儿」。
+//
+// 工作区、模型、上下文水位不在页头：它们是这一条消息的参数，
+// 已经搬进输入框底栏。页头只留“当前是哪个引擎 + 一句摘要”。
 //
 // 两者都是「读状态 + 渲染」，不持有自己的状态，所以放在一个文件里：
 // 它们占的是同一块位置（页头下方），而且都只在对话页出现。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import ContextMeter from '@/components/chat/ContextMeter.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -56,9 +58,6 @@ async function openLink(url: string): Promise<void> {
       <span v-if="modelLine" class="chat-sub">{{ modelLine }}</span>
     </div>
     <div class="chat-head-right">
-      <button class="omp-btn icon ghost" :title="app.workspace" @click="app.chooseWorkspace()">
-        <AppIcon name="folder" :size="15" />
-      </button>
       <button
         class="omp-btn icon ghost"
         :class="{ 'is-loading': chat.compacting }"
@@ -68,7 +67,6 @@ async function openLink(url: string): Promise<void> {
       >
         <AppIcon name="refresh" :size="15" />
       </button>
-      <ContextMeter />
     </div>
   </header>
 

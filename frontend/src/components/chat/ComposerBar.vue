@@ -1,12 +1,23 @@
 <script setup lang="ts">
-// 输入区的工具条：新建 / 附加 / 模型 / 思考档 / 排队 / 自动压缩 / 停止 / 发送。
+// 输入框底栏：两行。
 //
-// 为什么单独一个文件：它是一排并列的控件，每个都有自己的 loading 与禁用判据，
-// 全塞进输入区会让那个文件既管键盘又管六个下拉的可用性。
-// 这里只负责「渲染 + 把点击交上去」，不做任何决策。
+//  第一行是「这句话的参数」：工作目录 → 引擎 → 模型 → 思考档 …… 上下文水位；
+//  第二行是动作：新建 / 附件 / 自动压缩 / 排队 …… 停止 / 发送。
+//
+// 为什么拆成两行而不是一行自适应换行：一行时窗口稍窄就把水位挤到下一行、
+// 把发送按钮推到中间，位置每天都不一样。两行之后左对齐的一列恒在左边，
+// 动作恒在右边，用户不需要每次重新找按钮。
+//
+// 底栏的读数（上下文水位）不套描边胶囊：它只读，有盒子又没动作等于请用户
+// 去点一个点不动的东西。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
+import ContextMeter from '@/components/chat/ContextMeter.vue'
+import EngineChip from '@/components/chat/EngineChip.vue'
+import ModelPicker from '@/components/chat/ModelPicker.vue'
+import ThinkingChip from '@/components/chat/ThinkingChip.vue'
+import WorkspaceChip from '@/components/chat/WorkspaceChip.vue'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 
@@ -27,8 +38,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   newChat: []
   browseFiles: []
-  pickModel: [provider: string, id: string]
-  pickThinking: [level: string]
   queue: []
   toggleCompact: [enabled: boolean]
   stop: []
@@ -39,214 +48,136 @@ const chat = useChatStore()
 const app = useAppStore()
 const { t } = useI18n()
 
-/** 任一动作在进行中：切模型 / 切思考档 / 新建 / 压缩。 */
+/** 任一动作在进行中：新建 / 压缩。 */
 const busy = computed(() => Boolean(chat.switching))
 </script>
 
 <template>
   <div class="composer-bar">
-    <button
-      class="omp-btn icon ghost"
-      :class="{ 'is-loading': chat.switching === 'new' }"
-      :disabled="busy"
-      :title="t('chat.newChat')"
-      @click="emit('newChat')"
-    >
-      <AppIcon name="plus" :size="15" />
-    </button>
+    <!-- 第一行：参数。水位贴在行末，它属于这一行的读数 -->
+    <div class="bar-row">
+      <WorkspaceChip />
+      <EngineChip />
+      <ModelPicker />
+      <ThinkingChip />
+      <span class="bar-sp" />
+      <ContextMeter />
+    </div>
 
-    <button
-      class="omp-btn icon ghost"
-      :title="props.imagesAllowed ? t('chat.attachPick') : t('chat.attachNoImageModel')"
-      :disabled="!app.hasEngine || !props.imagesAllowed"
-      @click="emit('browseFiles')"
-    >
-      <AppIcon name="file" :size="14" />
-    </button>
+    <!-- 第二行：动作 -->
+    <div class="bar-row bar-actions">
+      <button
+        class="omp-btn icon ghost"
+        :class="{ 'is-loading': chat.switching === 'new' }"
+        :disabled="busy"
+        :title="t('chat.newChat')"
+        @click="emit('newChat')"
+      >
+        <AppIcon name="plus" :size="15" />
+      </button>
 
-    <el-dropdown trigger="click" max-height="360px" :disabled="!chat.models.length && !chat.modelsLoading">
+      <button
+        class="omp-btn icon ghost"
+        :title="props.imagesAllowed ? t('chat.attachPick') : t('chat.attachNoImageModel')"
+        :disabled="!app.hasEngine || !props.imagesAllowed"
+        @click="emit('browseFiles')"
+      >
+        <AppIcon name="file" :size="14" />
+      </button>
+
       <button
         class="omp-btn sm ghost"
-        :class="{ 'is-loading': chat.switching === 'model' || chat.modelsLoading }"
-        :disabled="!chat.model || busy"
-        :title="chat.modelsLoading ? t('chat.modelsLoading') : t('chat.pickModel')"
+        :class="{ on: chat.autoCompaction, 'is-loading': chat.switching === 'compaction' }"
+        :disabled="chat.busy || busy || !app.hasEngine"
+        :title="t('chat.autoCompact')"
+        @click="emit('toggleCompact', !chat.autoCompaction)"
       >
-        <AppIcon name="cpu" :size="13" />
-        <span class="model-label">{{ chat.model?.id || t('common.unknown') }}</span>
+        <AppIcon name="refresh" :size="13" />
+        {{ t('chat.autoCompact') }}
       </button>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item
-            v-for="m in chat.models"
-            :key="`${m.provider}/${m.id}`"
-            @click="emit('pickModel', m.provider, m.id)"
-          >
-            <span class="drop-row">
-              <span class="drop-main">
-                <span class="drop-id">{{ m.id }}</span>
-                <span class="drop-prov">{{ m.provider }}</span>
-              </span>
-              <!-- 能力标记：推理与图片是选模型时真的会看的两个属性，
-                   不展示的话用户只能先选了再排错 -->
-              <span class="drop-caps">
-                <span v-if="m.reasoning" class="cap" :title="t('models.reasoning')">R</span>
-                <span v-if="m.input?.includes('image')" class="cap" :title="t('models.inputImage')">IMG</span>
-                <span
-                  v-if="m.provider === chat.model?.provider && m.id === chat.model?.id"
-                  class="tag brand"
-                >
-                  {{ t('chat.current') }}
-                </span>
-              </span>
-            </span>
-          </el-dropdown-item>
-          <el-dropdown-item v-if="!chat.models.length" disabled>
-            {{ chat.modelsLoading ? t('chat.modelsLoading') : t('chat.noModels') }}
-          </el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
 
-    <el-dropdown trigger="click" max-height="320px" :disabled="!chat.levels.length">
+      <span v-if="props.count" class="composer-hint">{{ props.count }}</span>
+      <span class="bar-sp" />
+
       <button
+        v-if="chat.streaming"
         class="omp-btn sm ghost"
-        :class="{ 'is-loading': chat.switching === 'thinking' }"
-        :disabled="!chat.levels.length || busy"
+        :class="{ 'is-loading': props.queueing }"
+        :disabled="!props.canSend || props.queueing"
+        :title="t('chat.queueHint')"
+        @click="emit('queue')"
       >
-        <AppIcon name="spark" :size="13" />
-        <span class="model-label">{{ chat.thinkingLevel || t('chat.thinkingDefault') }}</span>
+        <AppIcon name="clock" :size="13" />
+        {{ t('chat.queue') }}
       </button>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item v-for="level in chat.levels" :key="level" @click="emit('pickThinking', level)">
-            <span class="drop-row">
-              <span>{{ level }}</span>
-              <span v-if="level === chat.thinkingLevel" class="tag brand">{{ t('chat.current') }}</span>
-            </span>
-          </el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
 
-    <button
-      v-if="chat.streaming"
-      class="omp-btn sm ghost"
-      :class="{ 'is-loading': props.queueing }"
-      :disabled="!props.canSend || props.queueing"
-      :title="t('chat.queueHint')"
-      @click="emit('queue')"
-    >
-      <AppIcon name="clock" :size="13" />
-      {{ t('chat.queue') }}
-    </button>
+      <button
+        v-if="chat.streaming"
+        class="omp-btn sm"
+        :class="{ 'is-loading': props.stopping }"
+        :disabled="props.stopping"
+        :title="t('chat.stop')"
+        @click="emit('stop')"
+      >
+        <AppIcon name="stop" :size="13" />
+        {{ t('chat.stop') }}
+      </button>
 
-    <button
-      class="omp-btn sm ghost"
-      :class="{ on: chat.autoCompaction, 'is-loading': chat.switching === 'compaction' }"
-      :disabled="chat.busy || busy || !app.hasEngine"
-      :title="t('chat.autoCompact')"
-      @click="emit('toggleCompact', !chat.autoCompaction)"
-    >
-      <AppIcon name="refresh" :size="13" />
-      {{ t('chat.autoCompact') }}
-    </button>
-
-    <button
-      v-if="chat.streaming"
-      class="omp-btn sm"
-      :class="{ 'is-loading': props.stopping }"
-      :disabled="props.stopping"
-      :title="t('chat.stop')"
-      @click="emit('stop')"
-    >
-      <AppIcon name="stop" :size="13" />
-      {{ t('chat.stop') }}
-    </button>
-
-    <span class="composer-hint">{{ props.count ? String(props.count) : '' }}</span>
-    <button
-      class="omp-btn primary sm"
-      :class="{ 'is-loading': props.sending || props.busyCmd !== '' }"
-      :disabled="!props.canSend || !app.hasEngine"
-      @click="emit('submit')"
-    >
-      <AppIcon name="send" :size="13" />
-      {{ chat.streaming ? t('chat.sendSteer') : t('chat.send') }}
-    </button>
+      <button
+        class="omp-btn primary sm"
+        :class="{ 'is-loading': props.sending || props.busyCmd !== '' }"
+        :disabled="!props.canSend || !app.hasEngine"
+        @click="emit('submit')"
+      >
+        <AppIcon name="send" :size="13" />
+        {{ chat.streaming ? t('chat.sendSteer') : t('chat.send') }}
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .composer-bar {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--omp-sp-2);
-}
-
-.composer-hint {
-  flex: 1;
-  text-align: right;
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
-  font-family: var(--omp-font-mono);
-}
-
-.model-label {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--omp-font-mono);
-}
-
-.drop-id {
-  font-family: var(--omp-font-mono);
-}
-
-.drop-main {
-  display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--omp-sp-1);
   min-width: 0;
 }
 
-.drop-caps {
+/* 一行：不换行，超出的部分交给各自的省略号。
+   换行会让「发送」按钮的位置随内容长短漂移。 */
+.bar-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--omp-sp-2);
+  min-width: 0;
+}
+
+/* 芯片不参与收缩：它们自己管截断，被父级压窄时反而会把图标挤掉 */
+.bar-row > * {
   flex: none;
 }
 
-/* 能力标记：两个字母的窄条，比图标省位置且不需要额外解释 */
-.cap {
-  padding: 0 4px;
-  border-radius: var(--omp-r-xs);
-  border: 1px solid var(--omp-line);
-  color: var(--omp-mute);
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  line-height: 1.5;
+.bar-actions {
+  padding-top: var(--omp-sp-1);
 }
 
-.drop-prov {
+.bar-sp {
+  flex: 1;
+  min-width: var(--omp-sp-1);
+}
+
+.composer-hint {
   font-size: var(--omp-fs-3xs);
   color: var(--omp-faint);
   font-family: var(--omp-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-.drop-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--omp-sp-4);
-  min-width: 120px;
-}
-
-/* 窄窗口（800×600）下工具条挤不下：模型名与思考档只留图标。 */
-@container app (max-width: 820px) {
-  .model-label {
-    display: none;
-  }
+/* 自动压缩是个开关：开着的时候给它一点强调，否则「开着」和「关着」看起来一样 */
+.omp-btn.on {
+  color: var(--omp-brand);
+  border-color: var(--omp-brand-line);
+  background: var(--omp-brand-soft);
 }
 </style>

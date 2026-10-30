@@ -165,6 +165,8 @@ function groupStat(files: GitFile[]): { adds: number; dels: number } {
   gap: var(--omp-sp-3);
 }
 
+/* 分组标题：暂存 / 工作区。它们是标签，不画线——
+   下面已经有目录组了，再加一条线就是两层框。 */
 .group-head {
   display: flex;
   align-items: center;
@@ -205,21 +207,26 @@ function groupStat(files: GitFile[]): { adds: number; dels: number } {
   margin-left: auto;
 }
 
-/* 目录头：可点的横条，带这一组的增删合计 */
+/* 目录头：可点的横条，带这一组的增删合计。
+   它是分组标题，不是条目：平时不加底色，只在悬停时给一点提示。 */
 .dir-head {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
   width: 100%;
-  padding: 2px var(--omp-sp-2);
+  padding: 3px var(--omp-sp-2);
   border: 0;
   background: transparent;
-  color: var(--omp-mute);
+  color: var(--omp-ink-2);
   font: inherit;
-  font-size: var(--omp-fs-3xs);
+  font-size: var(--omp-fs-2xs);
+  font-weight: 600;
   text-align: left;
   border-radius: var(--omp-r-sm);
   cursor: pointer;
+  transition:
+    background-color var(--omp-dur-fast) var(--omp-ease),
+    color var(--omp-dur-fast) var(--omp-ease);
 }
 
 .dir-head:hover {
@@ -245,7 +252,6 @@ function groupStat(files: GitFile[]): { adds: number; dels: number } {
   white-space: nowrap;
   font-family: var(--omp-font-mono);
 }
-
 .dir-stat {
   display: flex;
   gap: var(--omp-sp-2);

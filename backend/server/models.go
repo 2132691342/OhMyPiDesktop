@@ -7,6 +7,7 @@ package server
 
 import (
 	"OhMyPiDesktop/backend/domain"
+	"OhMyPiDesktop/backend/service"
 	"github.com/gin-gonic/gin"
 	"strconv"
 )
@@ -147,5 +148,30 @@ func (s *Server) startLogin(c *gin.Context) {
 			return nil, err
 		}
 		return gin.H{"ok": true}, nil
+	})
+}
+
+// fetchProviderModels 向上游问一次模型清单。
+func (s *Server) fetchProviderModels(c *gin.Context) {
+	var body service.ProviderModelsREQ
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(ctx *gin.Context) (any, error) {
+		return s.svc.FetchProviderModels(ctx, body)
+	})
+}
+
+// testProvider 测一条服务商配置通不通。
+//
+// 不通时回 200 + ok=false：这是一个「结果」而不是一次「请求失败」，
+// 而前端要展示的是这句话（而不是一个错误码）。
+func (s *Server) testProvider(c *gin.Context) {
+	var body service.ProviderTestREQ
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(ctx *gin.Context) (any, error) {
+		return s.svc.TestProvider(ctx, body)
 	})
 }

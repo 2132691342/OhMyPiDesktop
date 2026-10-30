@@ -222,6 +222,70 @@ func TestBuildPromptEmptyRejected(t *testing.T) {
 	}
 }
 
+// 历史投影：一次回答里的多条助手消息必须并成一轮。
+//
+// 不并的后果是静默的：界面上一次回答会出现两行角色头、两行用量，
+// 而直播那一轮也会因为块结构对不上历史而被重复渲染一遍。
+func TestProjectHistoryMergesAssistantMessages(t *testing.T) {
+	msgs := rawMessages(t,
+		`{"role":"user","content":[{"type":"text","text":"读一下 go.mod"}],"timestamp":1000}`,
+		`{"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"read"}],`+
+			`"usage":{"input":100,"output":5},"timestamp":4000}`,
+		`{"role":"toolResult","toolCallId":"c1","toolName":"read","content":[{"type":"text","text":"module X"}],"timestamp":4100}`,
+		`{"role":"assistant","content":[{"type":"text","text":"读完了"}],`+
+			`"usage":{"input":150,"output":9},"timestamp":5000}`,
+	)
+	turns := ProjectHistory(msgs)
+	if len(turns) != 2 {
+		t.Fatalf("一次提问应投影成两轮（user + assistant），得到 %d 轮", len(turns))
+	}
+	if turns[1].Role != "assistant" || len(turns[1].Blocks) != 2 {
+		t.Fatalf("助手轮应含工具块与正文块，得到 %+v", turns[1].Blocks)
+	}
+	if turns[1].Blocks[0].Output != "module X" {
+		t.Fatalf("工具结果没回填到工具块：%q", turns[1].Blocks[0].Output)
+	}
+	if turns[1].Blocks[1].Text != "读完了" {
+		t.Fatalf("正文块丢失：%+v", turns[1].Blocks[1])
+	}
+	// 用量取最后一次（引擎报的是累计值），耗时为「提问到答案」的毫秒差。
+	if u := turns[1].Usage; u == nil || u.InputTokens != 150 || u.OutputTokens != 9 {
+		t.Fatalf("用量应取最后一条助手消息：%+v", u)
+	} else if u.ElapsedMS != 4000 {
+		t.Fatalf("耗时应是末条时间戳减提问时刻：%d", u.ElapsedMS)
+	}
+}
+
+// 每一次提问都要断开合并：两条 user 之间的助手消息不能并成一坨。
+func TestProjectHistoryBreaksOnNewQuestion(t *testing.T) {
+	msgs := rawMessages(t,
+		`{"role":"user","content":[{"type":"text","text":"第一问"}]}`,
+		`{"role":"assistant","content":[{"type":"text","text":"第一答"}]}`,
+		`{"role":"user","content":[{"type":"text","text":"第二问"}]}`,
+		`{"role":"assistant","content":[{"type":"text","text":"第二答"}]}`,
+	)
+	turns := ProjectHistory(msgs)
+	if len(turns) != 4 {
+		t.Fatalf("两问两答应是四轮，得到 %d", len(turns))
+	}
+	if turns[1].Blocks[0].Text != "第一答" || turns[3].Blocks[0].Text != "第二答" {
+		t.Fatalf("两轮回答被混在一起：%+v", turns)
+	}
+}
+
+// rawMessages 把 JSON 文本转成投影层的入参形态。
+func rawMessages(t *testing.T, items ...string) []json.RawMessage {
+	t.Helper()
+	out := make([]json.RawMessage, 0, len(items))
+	for _, item := range items {
+		if !json.Valid([]byte(item)) {
+			t.Fatalf("测试数据不是合法 JSON：%s", item)
+		}
+		out = append(out, json.RawMessage(item))
+	}
+	return out
+}
+
 // 非图片字节且不带 mime 时认不出类型，必须被 reject。
 func TestDecodeImageRejectsInvalid(t *testing.T) {
 	if _, err := decodeImage(domain.ChatAttachmentREQ{

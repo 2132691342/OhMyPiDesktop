@@ -21,7 +21,6 @@ import { useAttachments, baseName, toWorkspaceRelative } from '@/composables/use
 import { useComposerMenu } from '@/composables/useComposerMenu'
 import { useComposerActions } from '@/composables/useComposerActions'
 import { pickFiles } from '@/api/wails'
-import type { EngineKind } from '@/types/api'
 import type { MenuItem } from '@/composables/useComposerMenu'
 
 const chat = useChatStore()
@@ -29,8 +28,10 @@ const app = useAppStore()
 const { t } = useI18n()
 
 const draft = ref('')
-const pickingEngine = ref(false)
 const textarea = ref<HTMLTextAreaElement | null>(null)
+/** @ 菜单的浏览器：它的键盘导航（↑↓ / 回车）在这个组件里实现。 */
+const mentionRef = ref<{ move: (d: number) => void; pickCurrent: () => boolean } | null>(null)
+
 const sending = ref(false)
 const queueing = ref(false)
 const stopping = ref(false)
@@ -133,10 +134,29 @@ function onKeydown(event: KeyboardEvent): void {
     }
   }
 
-  if (mentionOpen.value && event.key === 'Escape') {
-    event.preventDefault()
-    composerMenu.close()
-    return
+  if (mentionOpen.value) {
+    // @ 菜单的键盘导航在 MentionBrowser 内部（它才知道有哪些条目）。
+    // 父层只转发按键：列表在子组件里，指针在下标算在子组件里。
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      mentionRef.value?.move(1)
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      mentionRef.value?.move(-1)
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      mentionRef.value?.pickCurrent()
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      composerMenu.close()
+      return
+    }
   }
 
   // 运行中按 Esc = 停止；只在输入框为空时响应，免得误按清掉上下文
@@ -218,18 +238,6 @@ async function stopTurn(): Promise<void> {
 
 const actions = useComposerActions()
 
-// 切引擎的 loading 单独挂在这一层：用户点的是状态条上的那颗按钮，
-// 而 setEngine 现在只写本地 + 后台落盘，所以这里几乎不会看到转圈。
-async function pickEngine(kind: EngineKind): Promise<void> {
-  if (kind === chat.kind) return
-  pickingEngine.value = true
-  try {
-    await actions.pickEngine(kind)
-  } finally {
-    pickingEngine.value = false
-  }
-}
-
 const hint = computed(() => {
   if (!app.hasEngine) return t('chat.noEngine')
   if (chat.streaming) return t('chat.placeholderBusy')
@@ -254,12 +262,7 @@ defineExpose({ focus })
 
 <template>
   <div class="composer">
-    <ComposerStatus
-      :picking-engine="pickingEngine"
-      :attach-error="attachError"
-      @pick-engine="pickEngine"
-      @clear-attach-error="attachError = ''"
-    />
+    <ComposerStatus :attach-error="attachError" @clear-attach-error="attachError = ''" />
 
     <!-- 菜单的定位上下文：菜单贴着输入框上沿往上弹，必须相对「输入框那一块」定位。 -->
     <div class="composer-inner">
@@ -294,8 +297,6 @@ defineExpose({ focus })
           :count="draft.length"
           @new-chat="actions.startNewChat"
           @browse-files="browseFiles"
-          @pick-model="actions.pickModel"
-          @pick-thinking="actions.pickThinking"
           @queue="queue"
           @toggle-compact="actions.pickAutoCompaction"
           @stop="stopTurn"
@@ -317,6 +318,7 @@ defineExpose({ focus })
         kind="mention"
         :items="[]"
         :index="0"
+        ref="mentionRef"
         @pick-file="onPickFile"
         @close="composerMenu.close()"
       />

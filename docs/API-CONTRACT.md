@@ -138,6 +138,29 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | POST | `/chat/remove-queued` | 移除单条排队 `{engine, session, message, queue}` → `{removed}`（仅 `caps.queue_edit`） |
 | POST | `/chat/compact` | 压缩上下文 `{engine, session, instructions?}` |
 
+### 历史轮的形状
+
+`chat/state` 的 `history` 是后端投影好的轮次，界面直接渲染：
+
+```json
+{"role": "assistant", "model": "10router/cbcn/hy4-preview",
+ "blocks": [{"kind": "tool", "tool_call_id": "c1", "tool_name": "read",
+              "output": "module X", "status": "done", "duration_ms": 5},
+            {"kind": "text", "text": "读完了"}],
+ "usage": {"input_tokens": 150, "output_tokens": 9,
+           "cache_read_tokens": 0, "cache_write_tokens": 0,
+           "cost_usd": 0.0031, "elapsed_ms": 4000}}
+```
+
+**同一题的多条助手消息并成一轮**：引擎会把一次回答拆成「工具调用前一条、
+工具调用后一条」，每条各带一份用量与时间戳。投影合并它们——
+用量取最后一条（引擎报的是累计值），`elapsed_ms` 是「提问时刻到末条时刻」的差。
+不合并的后果是静默的：界面上一次回答会出现两次助手徽章、两行读数，
+而直播那一轮也会因为块结构对不上历史而被重复渲染一遍。
+
+**工具结果回填到工具块上**，不单独成轮：`toolResult` 按 `toolCallId` 找回它
+对应的那一块，把 `output` / `is_error` / `duration_ms` / `diff` 填进去。
+
 ### 附件
 
 三个发送类接口共用同一份 `attachments` 形状：
@@ -197,6 +220,30 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | POST | `/providers/delete` | 删一个服务商 `{engine, name}` |
 | GET | `/login/providers?engine=` | 可登录服务商与登录态（**仅 omp**） |
 | POST | `/login/start` | 发起 OAuth `{engine, provider}`（**仅 omp**） |
+| POST | `/providers/models` | 向上游问一次模型清单（只读，不写配置） |
+| POST | `/providers/test` | 测一条服务商配置通不通（只读） |
+
+上游探测的两个端点共享一份入参：
+
+```json
+{
+  "engine_kind": "omp",
+  "provider_name": "router",
+  "base_url": "https://api.example.com/v1",
+  "api": "openai-completions",
+  "api_key": "sk-…",
+  "auth": "api-key"
+}
+```
+
+除了 `provider_name` 之外的字段全是可选：不填的项由后端从**已保存的服务商配置**里取。
+密钥尤其如此——界面拿到的是掩码，原值只在后端的配置里，
+不从那里取密钥就必然 401。
+
+`/providers/models` 回 `{models: [{model_id, model_name}], config_path}`；
+`/providers/test` 回 `{ok, model_count, message}`——
+不通时仍然回 200（那是一个「结果」而不是一次「请求失败」），
+`message` 是给用户看的原因原话。
 
 > omp 写 `models.yml`（YAML 节点编辑，保留注释与未知键）；
 > pi 写 `models.json`（JSONC 读取，只覆盖我们掌管的 provider 键）。

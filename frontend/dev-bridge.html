@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- 开发直连页：把后端端口与令牌写进 localStorage，然后跳回应用。
+     正式运行时前端从 Wails 绑定拿端点，这个页面只服务「用浏览器调试」这条路径
+     （tools/shot.mjs 之类需要注入端点的脚本也会用它）。 -->
+<html>
+  <head><meta charset="utf-8" /><title>dev bridge</title></head>
+  <body>
+    <script>
+      const q = new URLSearchParams(location.search)
+      localStorage.setItem('omp.dev.port', q.get('port') || '')
+      localStorage.setItem('omp.dev.token', q.get('token') || 'dev')
+      location.replace('/' + (location.hash || '#/chat'))
+    </script>
+  </body>
+</html>

@@ -4,6 +4,9 @@
 // 为什么不是模糊搜索整个工作区：索引全部文件名要在前端维护一份文件表，
 // 而工作区可能几十万个文件。逐级浏览用的是后端已有的 /files 接口，
 // 与「工作区」页看到的是同一份目录，不会出现「这里搜得到、那里打不开」。
+//
+// 键盘导航自己实现：↑↓ 移动高亮、回车选中。父组件把按键转给这里，
+// 因为菜单列表在这一层（父层只是个壳）。
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/http'
@@ -22,6 +25,8 @@ const entries = ref<FileEntry[]>([])
 const filter = ref('')
 const loading = ref(false)
 const failed = ref('')
+// 当前高亮的下标。-1 表示还没高亮（列表为空或正在加载）。
+const index = ref(-1)
 
 /** 面包屑：根 + 每一级。点任意一级跳过去。 */
 const crumbs = computed(() => {
@@ -49,6 +54,7 @@ async function load(path: string): Promise<void> {
   failed.value = ''
   dirPath.value = path
   filter.value = ''
+  index.value = -1
   try {
     const list = await api.files(path)
     if (mine !== seq) return
@@ -76,10 +82,48 @@ function up(): void {
   void load(idx > 0 ? dirPath.value.slice(0, idx) : '')
 }
 
+/**
+ * 把第 i 项带进可视区。
+ *
+ * 用容器自己的 scrollTop 算，而不是 scrollIntoView：
+ * 后者会滚动所有可滚动的祖先，于是「菜单里按一下 ↓」把整个聊天区一起挪走。
+ */
+function ensureVisible(i: number): void {
+  const box = listEl.value
+  if (!box) return
+  const el = box.querySelector<HTMLElement>(`[data-idx="${i}"]`)
+  if (!el) return
+  const top = el.offsetTop - box.offsetTop
+  const bottom = top + el.offsetHeight
+  if (top < box.scrollTop) box.scrollTop = top
+  else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight
+}
+
+const listEl = ref<HTMLElement | null>(null)
+
+/** 上下移动高亮。到底部后回到顶部（循环）。 */
+function move(delta: number): boolean {
+  const total = shown.value.length
+  if (!total) return false
+  index.value = (index.value + delta + total) % total
+  void Promise.resolve().then(() => ensureVisible(index.value))
+  return true
+}
+
+/** 选中当前高亮项。 */
+function pickCurrent(): boolean {
+  const entry = shown.value[index.value]
+  if (!entry) return false
+  open(entry)
+  return true
+}
+
+const listElRef = listEl
+
 onMounted(() => void load(''))
 
 // 暴露给父组件的重载入口（@ 菜单再次打开时刷新当前目录）。
-defineExpose({ reload: () => load(dirPath.value) })
+defineExpose({ reload: () => load(dirPath.value), move, pickCurrent, listEl: listElRef })
 </script>
 
 <template>
@@ -106,17 +150,20 @@ defineExpose({ reload: () => load(dirPath.value) })
       class="omp-input mention-filter"
       :placeholder="t('chat.mentionFilter')"
       spellcheck="false"
+      @input="index = -1"
     />
 
-    <div class="mention-body">
+    <div ref="listEl" class="mention-body">
       <p v-if="loading" class="mention-note">{{ t('common.loading') }}</p>
       <p v-else-if="failed" class="mention-note bad">{{ failed }}</p>
       <p v-else-if="!shown.length" class="mention-note">{{ t('chat.mentionEmpty') }}</p>
       <button
-        v-for="entry in shown"
+        v-for="(entry, i) in shown"
         :key="entry.entry_name"
+        :data-idx="i"
         class="mention-row"
-        :class="{ dir: entry.dir }"
+        :class="{ dir: entry.dir, 'is-hi': i === index }"
+        @mouseenter="index = i"
         @click="open(entry)"
       >
         <AppIcon :name="entry.dir ? 'folder' : 'file'" :size="13" />
@@ -210,8 +257,9 @@ defineExpose({ reload: () => load(dirPath.value) })
   cursor: pointer;
 }
 
-.mention-row:hover {
-  background: var(--omp-hover);
+.mention-row:hover,
+.mention-row.is-hi {
+  background: var(--omp-brand-soft);
   color: var(--omp-brand);
 }
 

@@ -58,11 +58,13 @@ export function useBuiltinCommands() {
         return t('chat.slashCompactDone')
 
       case 'model':
-        // 模型下拉就在工具条上：把目光引过去比再开一个弹层少一步。
-        return t('chat.slashPickModel')
+        // 模型面板就在输入框底栏上：直接叫它打开，比再弹一层少一步。
+        chat.pickerRequest = 'model'
+        return ''
 
       case 'thinking':
-        return t('chat.slashPickThinking')
+        chat.pickerRequest = 'thinking'
+        return ''
 
       case 'copy':
         return copyLastAnswer()

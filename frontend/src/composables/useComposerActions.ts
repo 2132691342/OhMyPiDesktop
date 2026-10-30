@@ -8,8 +8,6 @@
 // 由调用方（输入区）持有更合适——它同时还要管发送与排队两个 loading。
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '@/stores/chat'
-import { useAppStore } from '@/stores/app'
-import type { EngineKind } from '@/types/api'
 
 /**
  * 统一收口「调用失败」：把原话写进 promptError。
@@ -19,7 +17,6 @@ import type { EngineKind } from '@/types/api'
  */
 export function useComposerActions() {
   const chat = useChatStore()
-  const app = useAppStore()
   const { t } = useI18n()
 
   async function guard(fn: () => Promise<void>): Promise<void> {
@@ -37,26 +34,6 @@ export function useComposerActions() {
     })
   }
 
-  // 切引擎：只换「这句话发给谁」。不切目录、不切会话。
-  //
-  // setEngine 已经不阻塞在往返上（本地先切、后台落盘），
-  // 所以这条路径现在是一次瞬时的状态变更，不再需要按钮扛三秒转圈。
-  async function pickEngine(kind: EngineKind): Promise<void> {
-    if (kind === chat.kind) return
-    await guard(async () => {
-      await app.setEngine(kind)
-      chat.pushNotice('info', t('chat.engineSwitched', { engine: kind }))
-    })
-  }
-
-  async function pickModel(provider: string, id: string): Promise<void> {
-    await guard(() => chat.setModel(provider, id))
-  }
-
-  async function pickThinking(level: string): Promise<void> {
-    await guard(() => chat.setThinking(level))
-  }
-
   async function pickAutoCompaction(enabled: boolean): Promise<void> {
     await guard(async () => {
       await chat.setAutoCompaction(enabled)
@@ -64,5 +41,5 @@ export function useComposerActions() {
     })
   }
 
-  return { startNewChat, pickEngine, pickModel, pickThinking, pickAutoCompaction }
+  return { startNewChat, pickAutoCompaction }
 }

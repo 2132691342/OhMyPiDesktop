@@ -419,6 +419,20 @@ export interface HistoryTurn {
   role: 'user' | 'assistant' | 'tool' | 'engine-mark'
   blocks: ChatBlock[]
   model?: string
+  /** 这一条助手消息的用量；界面在每条回复下摆读数 */
+  usage?: TurnUsage
+}
+
+/** 一条回复的用量读数。 */
+export interface TurnUsage {
+  /** 输入 token（不含缓存命中与写入） */
+  input_tokens: number
+  /** 输出 token */
+  output_tokens: number
+  /** 缓存命中的 token */
+  cache_read_tokens: number
+  /** 写入缓存的 token */
+  cache_write_tokens: number
 }
 
 export interface ChatState {
@@ -516,6 +530,22 @@ export interface ProviderView {
 export interface ProvidersView {
   providers: ProviderView[]
   config_path: string
+}
+
+/**
+ * 向上游探测的入参。
+ *
+ * 字段全可选：不填的项由后端从已保存的服务商配置里取。
+ * 密钥尤其如此——界面上拿到的是掩码，原值只在后端的配置里。
+ */
+export interface ProviderProbeREQ {
+  engine_kind?: EngineKind
+  /** 服务商名：给了就从配置里取地址、协议与密钥 */
+  provider_name?: string
+  base_url?: string
+  api?: string
+  api_key?: string
+  auth?: string
 }
 
 export interface LoginProvider {
