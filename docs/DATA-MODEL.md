@@ -59,6 +59,7 @@
 |---|---|---|
 | 界面设置 | `%LOCALAPPDATA%\OhMyPiDesktop\settings.json` | 主题 / 语言 / 字号 / 减少动效 / 上次工作目录 / **当前引擎** / 各引擎显式路径 |
 | 日志 | `%LOCALAPPDATA%\OhMyPiDesktop\logs\desktop-<日期>.log` | 按天切；同时进环形缓冲（最近 500 行）供设置页「日志」读取 |
+| HTML 导出暂存 | `%LOCALAPPDATA%\OhMyPiDesktop\exports\session-<毫秒>.html` | 引擎按此路径写导出文件，服务读完内容即删；读失败保留并把路径写进错误 detail |
 | WebView2 缓存 | `%LOCALAPPDATA%\OhMyPiDesktop\webview\` | 浏览器缓存。放在这里是为了卸载时能一次清干净 |
 
 **设置就是一个 JSON 对象**：

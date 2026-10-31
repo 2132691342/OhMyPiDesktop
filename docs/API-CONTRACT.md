@@ -140,6 +140,8 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | POST | `/messages/unhide` | 撤销一次隐藏 `{session, hid}`。撤没有的不报错 |
 | POST | `/chat/answer` | 回答提问 `{engine, session, request}` |
 | POST | `/chat/new` | 在当前目录开新会话 `{engine}` |
+| POST | `/chat/clone` | 复制当前会话当前位置为新会话并切过去 `{engine}`。仅 `caps.session_clone` 的引擎（pi）提供；omp 请求会报引擎侧错误 |
+| POST | `/chat/export-html` | 导出当前会话为单文件 HTML `{engine, session}` → `{file_name, content}`。引擎写进数据目录暂存位，服务读回内容即删。仅 `caps.export_html`（pi）提供 |
 | POST | `/chat/model` | 换模型 `{engine, session, provider, model}` |
 | POST | `/chat/thinking` | 换思考档 `{engine, session, level}` |
 | POST | `/chat/autocompact` | 自动压缩开关 `{engine, session, enabled}` |
@@ -268,6 +270,8 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | GET | `/plugins?engine=` | 已装插件清单，读引擎自己的登记文件（见下方说明） |
 | POST | `/plugins/install` | 装 `{engine, source}`，代跑引擎 CLI |
 | POST | `/plugins/uninstall` | 卸 `{engine, source}`，代跑引擎 CLI |
+| POST | `/plugins/toggle` | 启停 `{engine, plugin_name, enabled}`，代跑 omp CLI 的 enable/disable。仅 `caps.plugin_toggle`（omp）提供；改的是锁文件，运行中引擎要重启才生效 |
+| POST | `/plugins/upgrade` | 升级 `{engine, plugin_source}`，代跑 omp CLI 的 upgrade。仅 `caps.plugin_upgrade`（omp）提供 |
 
 > **插件的「列」读文件，「装 / 卸」跑 CLI。**
 > 列：pi 读 `~/.pi/agent/settings.json` 的 `packages` 数组；
@@ -311,6 +315,7 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/files?path=` | 列目录（单层，500 条上限，目录在前） |
+| GET | `/files/search?query=&limit=` | 全工作区按文件名搜索（大小写不敏感子串；跳过 `.git` / `node_modules` / 构建产物目录）。命中默认 50 条封顶，`truncated` 为真表示结果不止这些 |
 | GET | `/files/read?path=` | 单文件预览（512 KB 上限，二进制只给标记） |
 | GET | `/git/status?path=` | 版本状态；不是仓库或没装 git 时 `available/is_repo` 为假并给 `reason` |
 | GET | `/git/diff?path=` | 差异行；`path` 为空表示整个工作区 |
@@ -488,7 +493,7 @@ pi 给的是标准 unified diff（`details.patch`）与一份自己的编号差�
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`13`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+当前：`15`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
 只增可选字段不需要。
 
 新增端点本身不需要升版本（前端没调它就不受影响）；

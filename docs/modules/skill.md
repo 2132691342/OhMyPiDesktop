@@ -159,18 +159,26 @@ Node 子进程（约 3 秒）。清单与 CLI 的关系是：
 登记清单与包目录可能不一致（换机器、手删目录、包管理器只删了目录）。
 这时 `Installed=false`，界面给「重装」而不是「卸载」。
 
-### 插件装卸
+### 插件装卸与启停
 
 ```
-omp: omp plugin install <spec>
-     omp plugin uninstall <name>
+omp: omp plugin install <spec> / uninstall <name> / enable|disable <name> / upgrade <name>
 pi : pi install <spec> / pi remove <name>
 ```
 
-**长任务**：安装可能要几十秒。按钮进 loading（锁尺寸），命令的合并输出随响应返回，
-完成或失败都刷新列表。装卸有**固定上限**：安装 10 分钟、卸载 3 分钟
-（`runText` 的 timeout 参数），叠加请求自己的 context 取消——卡死的 CLI 不能
-永久占位，用户取消也要立即生效。
+**命令拼装收口在 `engine.PluginArgs`**（与引擎级装 / 卸命令同住 `dist.go` 的分发事实）：
+pi 没有启停与升级子命令，拼装返回 nil，service 直接回「不支持」，不发命令。
+启停与升级是 omp 专属能力（`Caps.PluginToggle` / `Caps.PluginUpgrade`），
+前端按能力位渲染行内开关与升级按钮。
+
+**启停改的是 omp 的锁文件**（`omp-plugins.lock.json` 的 `plugins.<包名>.enabled`，
+没有记录就是启用），运行中的引擎不热加载——界面在成功后提示重启引擎生效。
+清单读取（`env.ReadPluginEntries`）同样认这个锁文件，开关的显示与真实状态一致。
+
+**长任务**：安装 / 升级可能要几十秒到几分钟。按钮进 loading（锁尺寸），
+命令的合并输出随响应返回，完成或失败都刷新列表。各动作有**固定上限**
+（安装 / 升级 10 分钟、卸载 3 分钟、启停 2 分钟，`runText` 的 timeout 参数），
+叠加请求自己的 context 取消——卡死的 CLI 不能永久占位，用户取消也要立即生效。
 
 ## 约束
 
@@ -182,7 +190,8 @@ pi : pi install <spec> / pi remove <name>
 | 新建不覆盖已存在 | 覆盖等于无声毁掉用户写的技能 |
 | 插件装卸走引擎 CLI | 我们不解析 `node_modules`，不造第二套真相 |
 | 不写受管技能目录 | 那是 auto-learn 的领地 |
-| 插件装卸有固定上限（装 10 分钟 / 卸 3 分钟） | 卡死的 CLI 不能永久占位；请求取消仍然立即生效 |
+| 插件动作有固定上限（装 / 升 10 分钟、卸 3 分钟、启停 2 分钟） | 卡死的 CLI 不能永久占位；请求取消仍然立即生效 |
+| 插件启停不即时生效，界面提示重启 | 引擎不热加载锁文件；替用户杀进程越界了 |
 
 ## 取舍
 

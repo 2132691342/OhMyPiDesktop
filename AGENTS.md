@@ -202,9 +202,11 @@ json tag 同步用 snake_case（`branch_name`）。
   分片重组丢弃残缺、实例回收有界、探测单飞。复用已有 helper（如 `fakeDialect` / `writeSession`），
   不在各测试文件里重新定义
 - **一个测试文件只讲一个主题**，超过 500 行就按主题拆开（`engine` 包拆成
-  `engine_test.go` / `translate_test.go` / `supervisor_test.go`，
-  `service` 包拆成 `service_test.go` / `engines_test.go` / `history_test.go`）。
-  拆分的理由和源码一样：文件一长，「这条用例在测什么」就要翻半天
+  `engine_test.go`（判种 / 渠道 / 能力 / 分片）/ `translate_test.go`（协议翻译）/
+  `supervisor_test.go`（进程监督），`service` 包拆成 `service_test.go`（探测）/
+  `engines_test.go`（健康快照）/ `history_test.go`（历史投影与隐藏账）/
+  `sessions_test.go`（删除与搜索））。拆分的理由和源码一样：文件一长，
+  「这条用例在测什么」就要翻半天
 - 后端：`go test ./backend/... -count=1`
 - 前端：`vue-tsc --noEmit` 是硬门禁；没有 UI 单测（成本高、断言脆）
 - 改了协议翻译或会话投影，必须先跑冒烟：真起一个引擎进程跑一轮

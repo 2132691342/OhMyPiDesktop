@@ -86,6 +86,8 @@ pi ：主动发一次 get_state（25s 上限）→ 有回包就证明读循环�
 | 压缩上下文 | `compact` | 共有 |
 | 自动压缩开关 | `set_auto_compaction` | 共有 |
 | fork / 树 | `fork` / `get_tree` | pi 的 `fork` 的 `entryId` 必填 |
+| 复制会话 | `clone` | **仅 pi**（从当前位置复制为新会话并切换）；omp 的 clone 只有 TUI 实现 |
+| HTML 导出 | `export_html` | **仅 pi**（`{outputPath}`，响应 `{path}`）；路径必传——省略时引擎把文件写到自己的工作目录 |
 | 命令清单 | `get_available_commands`（omp）/ `get_commands`（pi） | **名字不同** |
 
 仅 omp 的：`negotiate_protocol`、`open_session`、`branch`、`handoff`、

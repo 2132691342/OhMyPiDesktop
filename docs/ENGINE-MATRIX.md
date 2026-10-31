@@ -47,8 +47,30 @@
 | `live_steer_count` | ✅ | — | 不读 `queue_update.liveSteered` |
 | `skill_toggle` | ✅ | — | 技能行不显示开关（pi 走另一条路，见 §6） |
 | `extensions` | ✅ | ✅ | 插件页可管理 |
-| `export_html` | ✅ | ✅ | 会话可导出（界面导出为 Markdown，不调引擎的 HTML 导出） |
+| `export_html` | — | ✅ | 输入区「导出 HTML」（`export_html` RPC，单文件自包含）；omp 没有这条 RPC，只有 Markdown 导出 |
 | `slash_commands` | ✅ | — | pi 只能主动拉 `get_commands`，不订阅推送帧 |
+| `session_clone` | — | ✅ | 输入区 `/clone`（复制当前会话开新分支）；omp 的 clone 只有 TUI 实现，RPC 没有 `clone` 方法 |
+| `plugin_toggle` | ✅ | — | 插件行内启停开关（代跑 `plugin enable/disable`）；改锁文件，运行中引擎要重启才生效 |
+| `plugin_upgrade` | ✅ | — | 插件行「升级」按钮（代跑 `plugin upgrade <名字>`）；pi 的 CLI 没有这条子命令 |
+
+## 2b. 斜杠命令清单：三个来源与一条边界
+
+输入区的 `/` 菜单由三部分合成，缺哪个都会被当成「不全」：
+
+| 来源 | 内容 | 选中后 |
+|---|---|---|
+| 界面内置（`useBuiltinCommands.ts`） | 新建 / 换模型 / 思考档 / 压缩 / 复制 / 导出 Markdown / 导出 HTML（按 `export_html` 显隐）/ 刷新 / clone（按 `session_clone` 显隐） | 界面自己执行，不走引擎 |
+| 引擎上报（`ChatState.Commands` + `engine:commands` 推送） | omp：全部带 `handle` 的内置命令 + 技能 + 扩展 + MCP prompt；pi：扩展命令 + prompt 模板 + `skill:名字` | 填回输入框，由引擎执行 |
+| 技能命令（pi 的上报形态） | `skill:名字`，显示名去掉前缀并标注「技能」 | 同上 |
+
+**边界：TUI 专属的内置命令不进菜单。** pi 的 24 条内置命令（`/tree` `/fork` `/share`…）
+与 omp 约 41 条只有 `handleTui` 的命令，在 RPC 模式下不会被引擎执行——
+以 `/xxx` 提交会被**原样当成正文发给模型**。两引擎的 RPC 只执行各自上报的那部分，
+所以「菜单里没有它」不是遗漏，是它真的跑不了。与这些命令等价的功能
+（切会话、登录、设置）在界面里各有自己的页面入口。
+
+@ 引用同理：两个引擎的 `@` 都只是文件路径补全（没有 @agent / @skill 之类目标），
+界面的 `MentionBrowser` 用「逐级浏览 + 后端限界搜索（`/files/search`）」覆盖同一语义。
 
 ## 3. 事件差分表（只列不一致的）
 
@@ -173,7 +195,9 @@ Node（约 3.5 秒）。所以探测结果缓存一分钟，两个引擎并发�
 | pi 的排队条目只能整批清空 | 只能 `clear_queue`，不能移除单条 | omp 反过来：只有 `remove_queued_message`，没有 `clear_queue` |
 | pi 的命令清单只能拉取 | 引擎不推送更新 | omp 推 `available_commands_update` |
 | omp 的 profile 切换要重启进程 | 设置里可填 profile，但换 profile 要重开进程 | profile 隔离了设置、凭据、会话、缓存 |
-| 会话导出 | 界面导出为 Markdown（`/session/export`，前端拼内容），不调引擎的 HTML 导出 | 引擎的 HTML 导出频率低，未接入 |
+| omp 的插件启停不即时生效 | CLI 改的是锁文件，运行中的引擎要重启（插件页有重启按钮）才重新加载 | 引擎没有文件 watcher，也不该由我们去杀进程 |
+| omp 的插件清单只认 npm 依赖 | marketplace 装的插件（`installed_plugins.json`）不在界面列表里，启停/升级只对清单里的行有效 | 登记清单是 `plugins/package.json`；marketplace 行要等清单接入后再说 |
+| pi 的订阅类登录（Claude/Gemini） | 界面做不了，要去 CLI `pi login` | 登录是 TUI 交互，RPC 驱动不了；API-key 类服务商在模型页全能管 |
 
 ## 9. 不做的三件事（明确写死）
 
