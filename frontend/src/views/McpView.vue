@@ -1,13 +1,7 @@
 <script setup lang="ts">
 // MCP 页：增删启停 MCP 服务器。
-//
-// 两个引擎共用 mcp.json 的 mcpServers 形状，所以这一份代码管两边；
-// 差别只有「停用一个服务器落在哪个键上」（omp 用顶层名单，pi 写条目），
-// 那是后端的事，界面只发「启 / 停」。
-//
-// 写文件而不是转发 CLI：界面能表达的参数面比引擎 CLI 的小得多，
-// 转发意味着每出一个新参数就要改前端；而写文件只改我们掌管的那几个键，
-// 用户手配的 headers / auth / oauth 原样保留。
+// 两引擎共用 mcp.json 的 mcpServers 形状，一份代码管两边；停用落在哪个键是后端的事。
+// 写文件不转发 CLI：只改我们掌管的键，用户手配的 headers / auth 原样保留。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'

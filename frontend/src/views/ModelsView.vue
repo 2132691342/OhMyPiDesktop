@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // 模型页：服务商（可写）/ 引擎眼下的模型（只读）/ 登录（OAuth）。
-// 三块的分界线就是「我们能不能改」：能从界面改的，和只能读的，不该混在一张表里。
-//
-// 服务商的编辑草稿与上游探测在 useProviderForm 里：它们自成一块，
-// 这一页只管「读哪些数据」与「把各块摆在哪」。
+// 三块的分界线是「能不能改」，可写的与只读的不混一张表；
+// 编辑草稿与上游探测在 useProviderForm，这一页只管读哪些数据、各块摆哪。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'

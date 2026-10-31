@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // 一条技能：名字、来源、说明、目录，加启停 / 查看 / 删除。
-//
 // 启停开关只在引擎真有这个能力时渲染（不渲染成灰开关）：
-// omp 认 frontmatter 的 enabled，pi 认 disable-model-invocation，两者语义不同，
-// 界面上如实分开；判据由父组件按 Caps 与引擎种类给。
+// omp 认 enabled、pi 认 disable-model-invocation，语义不同，判据在父组件。
 import { useI18n } from 'vue-i18n'
 import type { SkillRow } from '@/types/api'
 

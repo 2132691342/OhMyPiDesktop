@@ -1,8 +1,6 @@
 // 子代理状态（仅 omp）：roster、进度、transcript 游标。
-//
-// 两条数据源并用：get_subagents 是对账用的权威快照，subagent_progress 是高频增量。
-// 只靠推送会漏（终态帧之后该 id 就从引擎 roster 消失），
-// 只靠拉取会卡（进度需要秒级更新）。
+// 两条数据源并用：get_subagents 权威快照对账，subagent_progress 高频增量——
+// 只靠推送会漏（终态后 id 从 roster 消失），只靠拉取会卡（进度要秒级）。
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api } from '@/api/http'

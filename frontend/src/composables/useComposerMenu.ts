@@ -1,9 +1,9 @@
 // 输入区的两个弹出菜单：`/` 命令 与 `@` 文件引用，同一时刻只开一个。
-//
-// 拆出来的理由：菜单的开关时机（输入里有没有 @ / 是否以 / 开头）与输入区
-// 的发送逻辑无关。放在一起会让「什么时候弹菜单」和「回车干什么」纠缠不清。
+// 拆出来是因为菜单的开关时机与输入区的发送逻辑无关，
+// 放一起会让「什么时候弹菜单」和「回车干什么」纠缠不清。
 import { computed, ref, watch } from 'vue'
 import type { ComputedRef, Ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useChatStore } from '@/stores/chat'
 import { useBuiltinCommands, type BuiltinKey } from '@/composables/useBuiltinCommands'
 import type { SlashCommand } from '@/types/api'
@@ -18,6 +18,8 @@ export interface MenuItem {
   desc: string
   /** 来源决定选中后做什么 */
   source: 'builtin' | 'engine'
+  /** 选中后真正填进输入框的命令词；缺省用 name（显示名与命令词不同的只有技能命令） */
+  fill?: string
 }
 
 type MenuKind = 'slash' | 'mention' | null
@@ -34,6 +36,7 @@ export function useComposerMenu(
 ) {
   const chat = useChatStore()
   const builtins = useBuiltinCommands()
+  const { t } = useI18n()
 
   const menu = ref<MenuKind>(null)
   const menuIndex = ref(0)
@@ -73,15 +76,25 @@ export function useComposerMenu(
   /** 合并后的命令表：内置在前、引擎在后，按输入过滤。 */
   const slashItems: ComputedRef<MenuItem[]> = computed(() => {
     const query = draft.value.slice(1).toLowerCase()
-    const merged: MenuItem[] = [
-      ...builtins.items().map((b) => ({ ...b, source: 'builtin' as const })),
-      ...chat.commands.map((c: SlashCommand) => ({
-        key: c.name,
-        name: c.name,
-        desc: c.description || c.input?.hint || '',
-        source: 'engine' as const,
-      })),
-    ]
+    const builtinItems = builtins.items().map((b) => ({ ...b, source: 'builtin' as const }))
+    // 引擎也会报出与内置同名的命令（如 omp 的 compact / export）：
+    // 同一个动作出现两次只会让人犹豫点哪个。内置的语义更明确，留它。
+    const builtinKeys = new Set<string>(builtinItems.map((b) => b.key))
+    const engineItems: MenuItem[] = chat.commands
+      .filter((c: SlashCommand) => !builtinKeys.has(c.name))
+      .map((c: SlashCommand) => {
+        // pi 把技能报成 skill:名字：显示名去掉前缀，选中时仍填完整命令。
+        const isSkill = c.name.startsWith('skill:')
+        const base = c.description || c.input?.hint || ''
+        return {
+          key: c.name,
+          name: isSkill ? c.name.slice('skill:'.length) : c.name,
+          fill: c.name,
+          desc: isSkill ? (base ? `${t('chat.slashSkillTag')} · ${base}` : t('chat.slashSkillTag')) : base,
+          source: 'engine' as const,
+        }
+      })
+    const merged: MenuItem[] = [...builtinItems, ...engineItems]
     if (!query) return merged
     return merged.filter((item) => item.name.toLowerCase().includes(query))
   })
@@ -108,7 +121,7 @@ export function useComposerMenu(
   function applyItem(item: MenuItem): void {
     menu.value = null
     if (item.source === 'engine') {
-      pickPrompt(item.name)
+      pickPrompt(item.fill ?? item.name)
       return
     }
     void runBuiltin(item.key)

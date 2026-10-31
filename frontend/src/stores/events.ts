@@ -1,12 +1,6 @@
 // SSE 事件路由：把一帧事件分派到对应的 store。
-//
-// 单独一个文件的原因：这张表是「后端发了什么 → 界面怎么反应」的完整对照，
-// 二十多个事件挤在 store 里会让那个文件一半是状态管理一半是分派表。
-// 拆出来之后，加一个后端新事件只改这一张表。
-//
-// 路由表依赖三样东西（chat / agents / 应用自身的几个动作），
-// 它们由调用方以接口的形式传进来——这样本文件不 import 任何 store，
-// 也就不会与 store 形成循环依赖。
+// 「后端发了什么 → 界面怎么反应」的完整对照，加一个新事件只改这张表。
+// 依赖由调用方以接口传入，本文件不 import 任何 store，避免循环依赖。
 import { asNumber, asString, readAppProgress, readAsk, readBlocks, readCommands, readPatch, readStrings } from '@/utils/sse'
 import type { AppProgressLog, TurnUsagePayload } from '@/utils/sse'
 import { useChatStore } from './chat'
@@ -83,10 +77,8 @@ export function routeFrame(
   const { chat, agents } = deps
 
   // 两个引擎、多个工作目录共用一条 SSE。聊天与子代理帧只属于某一个引擎，
-  // 不属于当前引擎的要丢掉——否则切走之后旧实例仍在推的正文会跳进新会话。
-  //
-  // 引擎状态、安装进度、会话标题是全局的，**不能**过滤，
-  // 否则切过去看到的是旧状态。所以过滤只做在聊天类命名空间上。
+  // 不属于当前引擎的要丢掉——否则旧实例仍在推的正文会跳进新会话。
+  // 引擎状态、安装进度、会话标题是全局的，不能过滤——过滤只做在聊天类命名空间。
   if (isChatScoped(event) && !belongsToActive(data, activeKind)) return
 
   switch (event) {
@@ -154,12 +146,9 @@ export function routeFrame(
     case 'chat:turn': {
       const runID = asString(data.run_id)
       const blocks = readBlocks(data.blocks)
-      // 已经收过尾的那一轮，之后的权威快照丢掉。
-      //
-      // 引擎在 chat:done 之后还会补一帧整表快照，而那时这一轮已被并进历史——
-      // 再接受一次，界面尾部会多出一条重复的回复。
-      // 判据是「这一轮是不是已经结束过」而不是「当前没在流式」：
-      // 断流重连时 streaming 可能还是 false，但那是一轮真的在跑的快照。
+      // 已经收过尾的那一轮，之后的权威快照丢掉：chat:done 后引擎还会补一帧
+      // 整表快照，再接受一次界面尾部就多一条重复回复。
+      // 判据是「结束过」不是「没在流式」：断流重连时 streaming=false 也可能是真在跑。
       if (!chat.streaming && runID && runID === chat.lastFinishedRunId) return
       // 已经在服务器历史里的那一轮也不再画一次：
       // 引擎在 chat:turn_end 之后会补这一帧，而那时历史可能已经有它了。

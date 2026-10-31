@@ -1,8 +1,6 @@
 <script setup lang="ts">
 // 外观：主题、字号缩放、减弱动效。
-//
-// 三项都是「立刻生效」的本地偏好：改完由 store 直接写进 CSS 变量，
-// 不需要重拉任何后端数据。
+// 三项都立刻生效：改完由 store 直接写进 CSS 变量，不重拉后端数据。
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 

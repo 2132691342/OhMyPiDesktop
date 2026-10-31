@@ -1,8 +1,6 @@
 <script setup lang="ts">
 // 文件面板：工作区目录树 + 单文件预览。
-//
-// 只读。写文件是助手的事（它用引擎自己的工具），界面不该有第二个写入口——
-// 有第二个写入口，就有一天「谁改的这一行」说不清。
+// 只读：写文件是助手的事，界面有第二个写入口，「谁改的这一行」就说不清了。
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

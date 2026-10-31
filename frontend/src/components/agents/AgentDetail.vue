@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // 子代理详情的读数区：阶段、进度条、六个读数、正文尾部。
-//
-// 实时数据由一个外部 ticker 驱动（父组件每秒拉一次），而**进度条不该跟着跳**：
-// 每 900ms 从 12% 跳到 13% 会被读成「卡住了」。所以这里只呈现已到货的值。
+// 数据由外部 ticker 每秒拉一次，进度条只呈现已到货的值——
+// 每 900ms 从 12% 跳到 13% 会被读成「卡住了」。
 import type { AgentRow } from '@/types/api'
 
 const props = defineProps<{

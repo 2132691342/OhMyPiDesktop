@@ -139,11 +139,9 @@ export const useAppStore = defineStore('app', () => {
     document.documentElement.style.setProperty('--omp-fs-scale', String(safe))
   }
 
-  // 会话列表跟当前引擎走：两个引擎的会话文件不是能互换接着聊的东西，
-  // 混在一张表里会让人以为点开就能继续。
-  //
-  // 两份缓存在这里：切引擎时先把目标引擎的列表摆上（不等往返），
-  // 后台再补一份新的。否则切完的那一两秒里，列表里全是另一个引擎的会话。
+  // 会话列表跟当前引擎走：两个引擎的会话文件不能互换接着聊，
+  // 混一张表会让人以为点开就能继续。按引擎各缓存一份，
+  // 切引擎时先摆上目标引擎的列表（不等往返），后台再补新的。
   const sessionCache = ref<Record<EngineKind, SessionRow[]>>({ omp: [], pi: [] })
 
   async function refreshSessions() {
@@ -177,11 +175,8 @@ export const useAppStore = defineStore('app', () => {
   async function refreshEngines() {
     const next = await api.engineStatus()
     engines.value = next
-    // 记住这一份结论的探测时刻。
-    //
-    // 它是「要不要再拉一次」的判据：事件帧可能丢（探测早于 SSE 连接时），
-    // 而 detecting 只在自己这一份数据里打转。比对时间戳是唯一不依赖
-    // 那一帧的兜底。
+    // 记住这一份结论的探测时刻：它是「要不要再拉一次」的判据。
+    // 事件帧可能丢（探测早于 SSE 连接时），比对时间戳是唯一不依赖帧的兜底。
     lastDetectedAt.value = next.detected_at ?? 0
   }
 
@@ -233,9 +228,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // 切当前引擎：写设置 + 换对话通道。切引擎不切目录、不切会话。
-  //
-  // 先切本地、再落盘：「当前引擎」在界面这一侧是本地状态
-  // （后端只在下一句话发出去时读它），点下去的那一下不该等一次写设置的往返。
+  // 先切本地再落盘：后端只在下一句话发出去时才读它，点击不该等写设置的往返。
   async function setEngine(kind: EngineKind) {
     if (kind === active.value) return
     active.value = kind

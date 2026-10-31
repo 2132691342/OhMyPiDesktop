@@ -17,6 +17,13 @@ func (s *Server) files(c *gin.Context) {
 	s.run(c, func(*gin.Context) (any, error) { return s.svc.Files(rel) })
 }
 
+// fileSearch 全工作区按文件名搜索（@ 引用的模糊补全）。
+func (s *Server) fileSearch(c *gin.Context) {
+	query := c.Query("query")
+	limit, _ := strconvAtoi(c.Query("limit"))
+	s.run(c, func(*gin.Context) (any, error) { return s.svc.SearchFiles(query, limit) })
+}
+
 func (s *Server) fileRead(c *gin.Context) {
 	rel := c.Query("path")
 	s.run(c, func(*gin.Context) (any, error) { return s.svc.ReadFile(rel) })

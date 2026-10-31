@@ -112,57 +112,57 @@ func TestSessionSnapshotEquivalence(t *testing.T) {
 	}
 }
 
-// 读不出来的私有条目一律跳过，不能报错也不能漏掉有用会话。
-//
-// 两个引擎各有十几种私有条目类型，引擎加一种新类型时界面不该整个崩掉。
-func TestSkipUnknownEntriesDoesNotError(t *testing.T) {
-	dir := t.TempDir()
-	writeSession(t, dir, "a.jsonl", []string{
-		`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
-		`{"type":"totally_unknown_thing","payload":{"x":1}}`,
-		`{"type":"message","message":{"role":"user","content":"hi","timestamp":1}}`,
-		`{"type":"another_private_type","foo":"bar"}`,
-		`{"type":"message","message":{"role":"assistant","content":"ok","timestamp":2}}`,
+// 缺数据的兜底语义一条钉全。读的是引擎私有格式：引擎加一种条目、缺一段元数据，
+// 界面不能崩、不能串账、也不能一屏十几行全是「未命名会话」。
+func TestSessionFallbacks(t *testing.T) {
+	t.Run("未知条目跳过不报错", func(t *testing.T) {
+		// 两个引擎各有十几种私有条目类型，引擎加一种新类型时界面不该整个崩掉。
+		dir := t.TempDir()
+		writeSession(t, dir, "a.jsonl", []string{
+			`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
+			`{"type":"totally_unknown_thing","payload":{"x":1}}`,
+			`{"type":"message","message":{"role":"user","content":"hi","timestamp":1}}`,
+			`{"type":"another_private_type","foo":"bar"}`,
+			`{"type":"message","message":{"role":"assistant","content":"ok","timestamp":2}}`,
+		})
+		d, err := NewIndex(dir, engine.KindPi).Detail(filepath.Join(dir, "a", "a.jsonl"))
+		if err != nil || d == nil {
+			t.Fatal(err)
+		}
+		if len(d.Items) != 2 {
+			t.Fatalf("未知条目应被跳过，剩下 %d 条，期望 2", len(d.Items))
+		}
 	})
-	d, err := NewIndex(dir, engine.KindPi).Detail(filepath.Join(dir, "a", "a.jsonl"))
-	if err != nil || d == nil {
-		t.Fatal(err)
-	}
-	if len(d.Items) != 2 {
-		t.Fatalf("未知条目应被跳过，剩下 %d 条，期望 2", len(d.Items))
-	}
-}
 
-// 没有 usage 行的会话，费用默认 0，且不能从别的会话累加。
-func TestUsageDefaultsWhenAbsent(t *testing.T) {
-	dir := t.TempDir()
-	writeSession(t, dir, "a.jsonl", []string{
-		`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
-		`{"type":"message","message":{"role":"user","content":"hi","timestamp":1}}`,
+	t.Run("无 usage 归零不串账", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSession(t, dir, "a.jsonl", []string{
+			`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
+			`{"type":"message","message":{"role":"user","content":"hi","timestamp":1}}`,
+		})
+		d, err := NewIndex(dir, engine.KindPi).Detail(filepath.Join(dir, "a", "a.jsonl"))
+		if err != nil || d == nil || d.Tokens != 0 || d.Cost != 0 {
+			t.Fatalf("无 usage 应为 0/0，得到 %+v err=%v", d, err)
+		}
 	})
-	d, err := NewIndex(dir, engine.KindPi).Detail(filepath.Join(dir, "a", "a.jsonl"))
-	if err != nil || d == nil || d.Tokens != 0 || d.Cost != 0 {
-		t.Fatalf("无 usage 应为 0/0，得到 %+v err=%v", d, err)
-	}
-}
 
-// 没有标题条目的会话：拿第一句话当标题。
-// 两个引擎默认都不写 title / session_info，于是整个列表全是「会话 · 模型名」——
-// 一屏十几行同一个字符串，用户认不出哪条是哪个。这一条钉住那条兜底。
-func TestTitleFallsBackToFirstUserMessage(t *testing.T) {
-	dir := t.TempDir()
-	writeSession(t, dir, "a.jsonl", []string{
-		`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
-		`{"type":"message","message":{"role":"user","content":[{"type":"text","text":"帮我把这个页面的按钮五态补齐\n第二行不算标题"}],"timestamp":1}}`,
-		`{"type":"message","message":{"role":"assistant","content":"ok","timestamp":2}}`,
+	t.Run("标题取第一句话", func(t *testing.T) {
+		// 两个引擎默认都不写 title / session_info，整个列表全是「会话 · 模型名」——
+		// 一屏十几行同一个字符串，用户认不出哪条是哪个。
+		dir := t.TempDir()
+		writeSession(t, dir, "a.jsonl", []string{
+			`{"type":"session","session_id":"s","version":"2.0.0","cwd":"/r","model":"p/m"}`,
+			`{"type":"message","message":{"role":"user","content":[{"type":"text","text":"帮我把这个页面的按钮五态补齐\n第二行不算标题"}],"timestamp":1}}`,
+			`{"type":"message","message":{"role":"assistant","content":"ok","timestamp":2}}`,
+		})
+		list, err := NewIndex(dir, engine.KindPi).List("")
+		if err != nil || len(list) != 1 {
+			t.Fatalf("List: %v %+v", err, list)
+		}
+		if list[0].Title != "帮我把这个页面的按钮五态补齐 第二行不算标题" {
+			t.Fatalf("标题应取第一句话并压成一行，得到 %q", list[0].Title)
+		}
 	})
-	list, err := NewIndex(dir, engine.KindPi).List("")
-	if err != nil || len(list) != 1 {
-		t.Fatalf("List: %v %+v", err, list)
-	}
-	if list[0].Title != "帮我把这个页面的按钮五态补齐 第二行不算标题" {
-		t.Fatalf("标题应取第一句话并压成一行，得到 %q", list[0].Title)
-	}
 }
 
 // 缓存必须有界：用户的会话会一直累积（本机实测 90 个，重度用户几千个），

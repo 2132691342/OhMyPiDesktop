@@ -1,8 +1,5 @@
 // 应用偏好：开机自启、恢复上次会话、数据目录、引擎配置原文。
-//
-// 为什么不塞进 app store：那个 store 已经在管 SSE 连接与事件分流，
-// 再放「注册表里是什么」这类只有设置页关心的事，会让它继续长。
-// 这里的状态只有一个消费方（设置页与启动恢复），单独一处更好读。
+// 不塞进 app store：那里在管 SSE 与事件分流，这里的状态只有设置页一个消费方。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '@/api/http'

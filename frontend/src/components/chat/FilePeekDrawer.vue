@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // 差异抽屉：从工具卡点进来，看这个文件在工作区里的真实差异。
-//
-// 为什么是「真实差异」而不是引擎给的那份：引擎给的是它当时的改动，
-// 真实差异是现在工作区的状态——用户可能又改过了，也可能已经提交了。
-// 两者对不上的时候，真实差异才是用户要的。
+// 不用引擎给的那份：那是它当时的改动，用户可能又改过或已提交——
+// 对不上的时候，真实差异才是用户要的。
 import { computed, ref, watch } from 'vue'
 import DiffView from '@/components/workspace/DiffView.vue'
 import { api } from '@/api/http'

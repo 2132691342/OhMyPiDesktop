@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // 一个受控的 CodeMirror 6 编辑器：只读 / 可编辑两种模式，语法高亮按语言给。
-//
-// 为什么自己做而不是用现成包装：只需要「一段文本 + 一种语言 + 只读开关」，
-// 包装组件会把它们的主题、工具栏、状态栏一起带进来，而这个界面里那些都得听令牌的。
+// 自己包而不是用现成包装：只要「文本 + 语言 + 只读开关」，
+// 现成包装会把主题、工具栏、状态栏一起带进来，而这里那些都得听令牌的。
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorState, Compartment, type Extension } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'

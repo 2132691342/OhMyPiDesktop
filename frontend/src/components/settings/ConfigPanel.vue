@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // 引擎配置原文：只看不改。
-//
-// 设置页不写引擎配置——那边有节点级接口（模型页改 models，MCP 页改 mcp.json），
-// 两处各写一个入口必然出现「这里改了、那里没跟着变」。这里只把引擎自己
-// 落在磁盘上的那份原文显示出来，供对照与排错。
+// 设置页不写引擎配置——节点级接口各管各的键（模型页 models、MCP 页 mcp.json），
+// 多一个写入口必有「这里改了、那里没跟着变」；这里只供对照与排错。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CodeEditor from '@/components/common/CodeEditor.vue'

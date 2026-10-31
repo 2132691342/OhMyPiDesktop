@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // 会话列表：对话页的窄栏与会话页的主栏共用。
-// 数据来自磁盘上的会话文件，所以终端里聊过的会话这里也看得到。
-//
-// 列表按时间分组（今天 / 最近 7 天 / 更早）：找会话的动作几乎总是
-// 「刚才聊的那个」，分组让这个动作一次就能命中，不用在一串相对时间里扫。
+// 数据来自磁盘上的会话文件，终端里聊过的这里也看得到。
+// 按时间分组（今天 / 7 天 / 更早）：找会话几乎总是「刚才那个」，分组一次命中。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
@@ -30,7 +28,7 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{ open: [path: string]; changed: []; newChat: [] }>()
+const emit = defineEmits<{ open: [path: string]; changed: [path?: string]; newChat: [] }>()
 
 const app = useAppStore()
 const chat = useChatStore()
@@ -107,9 +105,10 @@ async function remove(row: SessionRow) {
   }
   try {
     await api.deleteSession(row.path, kind.value)
-    toasts.push('ok', t('common.saved'))
+    toasts.push('ok', t('sessions.deleted'))
     await load()
-    emit('changed')
+    // 带上被删的路径：对话页据此判断「删的是不是正看着的这个」。
+    emit('changed', row.path)
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
   }
@@ -123,8 +122,9 @@ async function rename(row: SessionRow) {
       cancelButtonText: t('common.cancel'),
     })
     await api.renameSession(row.path, result.value, kind.value)
+    toasts.push('ok', t('common.saved'))
     await load()
-    emit('changed')
+    emit('changed', row.path)
   } catch {
     /* 取消或失败：取消不该弹错 */
   }
@@ -201,8 +201,15 @@ defineExpose({ load })
           </div>
           <div v-if="!compact" class="row-path">{{ row.cwd }}</div>
           <div class="row-actions">
-            <button class="omp-btn text sm" @click.stop="rename(row)">{{ t('sessions.rename') }}</button>
-            <button class="omp-btn text sm danger" @click.stop="remove(row)">{{ t('common.delete') }}</button>
+            <!-- 窄栏用图标：文字按钮会把一行的宽度吃光；会话页主栏仍用文字 -->
+            <button class="omp-btn text sm" :title="t('sessions.rename')" @click.stop="rename(row)">
+              <AppIcon v-if="compact" name="edit" :size="13" />
+              <template v-else>{{ t('sessions.rename') }}</template>
+            </button>
+            <button class="omp-btn text sm danger" :title="t('common.delete')" @click.stop="remove(row)">
+              <AppIcon v-if="compact" name="trash" :size="13" />
+              <template v-else>{{ t('common.delete') }}</template>
+            </button>
           </div>
         </div>
       </template>
@@ -333,8 +340,9 @@ defineExpose({ load })
   display: flex;
 }
 
-.compact .row-path,
-.compact .row-actions {
+/* 窄栏只藏路径：改名与删除收成两个小图标，悬停才出现——
+   管理动作在对话页同样要够得着，藏掉它们等于只能去会话页删会话。 */
+.compact .row-path {
   display: none !important;
 }
 

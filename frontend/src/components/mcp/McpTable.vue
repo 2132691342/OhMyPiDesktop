@@ -1,13 +1,7 @@
 <script setup lang="ts">
 // MCP 服务器表：名字、传输方式、目标、作用域、状态，加启停 / 编辑 / 删除。
-//
-// 状态那一列有四种取值，来源不同、下一步也不同：
-//   connected  探测通了          —— 就这样
-//   failed     探测失败          —— 看引擎日志
-//   <其他>     引擎自己报的原文  —— 原样显示，不猜
-//   disabled   被关了            —— 打开就行
-//   configured 配了但没探测      —— 点「检测」才知道通不通
-// 所以状态判据留在这里，父组件只给数据与探针开关。
+// 状态列取值来源不同、下一步也不同（通了就这样 / 失败看日志 / 原文不猜 /
+// disabled 打开就行 / configured 点「检测」）——判据留这里，父组件只给数据与探针开关。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

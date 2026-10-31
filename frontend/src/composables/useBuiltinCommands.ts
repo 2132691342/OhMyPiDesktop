@@ -1,22 +1,30 @@
-// 输入区的内置斜杠命令：界面自己就能做完的动作。
-//
-// 与「引擎命令」分开是因为它们的性质不同：
-//   - 内置命令由界面执行，点了立刻发生什么很明确；
-//   - 引擎命令只是往输入框里填一段文字，真正生效靠引擎那一轮处理。
-//
-// 只列「点了真的会发生什么」的条目。终端里那些只活在 TUI 上的命令
-// （/tree /share /bug）不列——这里的界面没有对应的东西可展示。
+// 输入区的内置斜杠命令：界面自己就能做完的动作，与引擎命令分开——
+// 前者由界面执行，后者只是往输入框填文字，生效靠引擎那一轮。
+// 只列「点了真的会发生什么」的条目；只活在终端 TUI 上的命令不列。
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { api } from '@/api/http'
+import type { EngineCaps } from '@/types/api'
 
 /** 内置命令的键。新增一条要同时加 i18n 文案与 run 分支。 */
-export type BuiltinKey = 'new' | 'model' | 'thinking' | 'compact' | 'copy' | 'export' | 'reload'
+export type BuiltinKey =
+  | 'new'
+  | 'model'
+  | 'thinking'
+  | 'compact'
+  | 'copy'
+  | 'export'
+  | 'exporthtml'
+  | 'reload'
+  | 'clone'
 
 interface BuiltinDef {
   key: BuiltinKey
   nameKey: string
   descKey: string
+  /** 有能力位要求的命令：引擎不支持就不进菜单，绝不渲染灰项。 */
+  cap?: keyof EngineCaps
 }
 
 const DEFS: BuiltinDef[] = [
@@ -26,7 +34,9 @@ const DEFS: BuiltinDef[] = [
   { key: 'compact', nameKey: 'chat.slashCompact', descKey: 'chat.slashCompactDesc' },
   { key: 'copy', nameKey: 'chat.slashCopy', descKey: 'chat.slashCopyDesc' },
   { key: 'export', nameKey: 'chat.slashExport', descKey: 'chat.slashExportDesc' },
+  { key: 'exporthtml', nameKey: 'chat.slashExportHTML', descKey: 'chat.slashExportHTMLDesc', cap: 'export_html' },
   { key: 'reload', nameKey: 'chat.slashReload', descKey: 'chat.slashReloadDesc' },
+  { key: 'clone', nameKey: 'chat.slashClone', descKey: 'chat.slashCloneDesc', cap: 'session_clone' },
 ]
 
 /**
@@ -40,9 +50,14 @@ export function useBuiltinCommands() {
   const app = useAppStore()
   const { t } = useI18n()
 
-  /** 菜单里要显示的内置命令（已翻译）。 */
+  /** 菜单里要显示的内置命令（已翻译，按引擎能力位过滤）。 */
   function items(): { key: BuiltinKey; name: string; desc: string }[] {
-    return DEFS.map((d) => ({ key: d.key, name: t(d.nameKey), desc: t(d.descKey) }))
+    const caps = chat.caps
+    return DEFS.filter((d) => !d.cap || caps?.[d.cap]).map((d) => ({
+      key: d.key,
+      name: t(d.nameKey),
+      desc: t(d.descKey),
+    }))
   }
 
   /** 执行一条内置命令。返回成功提示话术（空串表示不需要提示）。 */
@@ -51,6 +66,10 @@ export function useBuiltinCommands() {
       case 'new':
         await chat.newChat()
         return t('chat.newChatStarted')
+
+      case 'clone':
+        await chat.cloneChat()
+        return t('chat.slashCloneDone')
 
       case 'compact':
         if (!chat.sessionFile) return t('chat.slashNeedSession')
@@ -71,6 +90,9 @@ export function useBuiltinCommands() {
 
       case 'export':
         return exportMarkdown()
+
+      case 'exporthtml':
+        return exportHTML()
 
       case 'reload':
         await app.reloadAll()
@@ -121,6 +143,23 @@ export function useBuiltinCommands() {
     link.click()
     URL.revokeObjectURL(url)
     return t('chat.slashExportDone')
+  }
+
+  /**
+   * 引擎导出的单文件 HTML（pi 的 export_html RPC）：样式、代码高亮全部内联，
+   * 比前端拼的 Markdown 更接近终端里的原貌。文件名由后端按会话名给。
+   */
+  async function exportHTML(): Promise<string> {
+    if (!chat.sessionFile) return t('chat.slashNeedSession')
+    const res = await api.exportSessionHTML(chat.sessionFile)
+    const blob = new Blob([res.content], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = res.file_name
+    link.click()
+    URL.revokeObjectURL(url)
+    return t('chat.slashExportHTMLDone')
   }
 
   return { items, run }

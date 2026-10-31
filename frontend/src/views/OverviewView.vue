@@ -1,14 +1,7 @@
 <script setup lang="ts">
 // 概览页：一屏回答「两个引擎各自什么状态、最近花了多少、有什么可继续的」。
-//
-// 它是首屏而不是对话页：进应用先看一眼全局，比直接掉进上次的会话更符合
-// 「我要开始干活」的心理——而继续干活的那条路（最近会话）就摆在同一屏上。
-//
-// 本文件只做编排：拉数据、算三个合计、把渲染分给三个子组件
-// （引擎健康卡 / 用量图 / 读数行）。
-//
-// 数字全部来自引擎自己的落盘数据（会话文件、配置清单、进程事实），
-// 不另存一份账本。
+// 是首屏：先看一眼全局再继续干活（最近会话就摆在同一屏）。
+// 只做编排；数字全部来自引擎自己的落盘数据，不另存账本。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -34,10 +27,8 @@ const rows = ref<SessionRow[]>([])
 const engines = computed(() => health.value?.engines ?? [])
 const recent = computed(() => rows.value.slice(0, 6))
 // 「能不能把数字当结论看」：探测完成且没有后台补验才算就绪。
-//
-// 之前只看 detecting，而 detecting 只描述「探测那一条链路」；
-// 计数、最新版这些后台补验仍在跑时，界面已经摆出一串 0。
-// 0 是一个断言，而那时它只是「还没数完」。
+// 只看 detecting 不够——计数、最新版仍在后台补验时界面已摆出一串 0，
+// 而 0 是断言，那时它只是「还没数完」。
 const ready = computed(() => Boolean(health.value?.ready))
 const detecting = computed(() => !ready.value || Boolean(health.value?.detecting))
 
@@ -111,13 +102,9 @@ async function openSession(path: string) {
   }
 }
 
-// 探测是后台跑的：首屏拿到的可能还是「不知道装没装」。
-// 探测完成时后端会推 engine:detected，全局 store 据此刷新引擎清单，
-// 于是 app.detecting 从 true 变 false——这一刻把这一屏的 health 重新拉一次。
-//
-// 盯的是 store 那个标志而不是本页的 health.detecting：
-// 后者只在本页 load() 时才变，而 load() 只由这个 watch 触发——
-// 盯自己就成了等自己。
+// 探测是后台跑的：完成时后端推 engine:detected，app.detecting 翻转为
+// false 的这一刻重拉本屏 health。盯 store 的标志而不是本页 health.detecting——
+// 后者只在 load() 时变，而 load() 只由这个 watch 触发，盯自己就是等自己。
 watch(
   () => app.detecting,
   (value, prev) => {
@@ -125,11 +112,8 @@ watch(
   },
 )
 
-// detected_at 是第二道兜底。
-//
-// 上面那条只认 app.detecting 的真假翻转，而那一翻转依赖 engine:detected
-// 这一帧真的到达。Bootstrap 自己会触发一轮探测，那一轮可能跑完在 SSE
-// 连接建立之前——帧发在没有订阅者的总线上被丢弃，于是 detecting 永远不变。
+// detected_at 是第二道兜底：detecting 的翻转依赖 engine:detected 帧真的到达，
+// 而 Bootstrap 那轮探测可能跑完在 SSE 建立之前，帧发在无订阅者的总线上被丢弃。
 // 时间戳是存在后端的事实，不依赖任何一帧有没有送到。
 watch(
   () => app.lastDetectedAt,

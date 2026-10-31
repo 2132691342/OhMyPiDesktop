@@ -30,6 +30,9 @@ func Caps() engine.Caps {
 		Extensions:     true,
 		ExportHTML:     true,
 		SlashCommands:  false, // pi 不主动推，只能拉
+		SessionClone:   true,  // clone RPC：复制当前会话位置开新分支
+		PluginToggle:   false, // pi 的 CLI 没有 plugin enable/disable
+		PluginUpgrade:  false, // pi 的 CLI 没有 plugin upgrade
 	}
 }
 

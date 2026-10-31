@@ -87,108 +87,104 @@ func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRec
 	return rec
 }
 
-// 令牌闸门四个状态都不能错：无令牌 403、头令牌 200、查询令牌 200、health 免令牌。
-func TestTokenGate(t *testing.T) {
-	_, h := testServer(t)
+// 安全门一条钉全：令牌闸门、来源拦截、方法限制。
+// 闸门一旦失效，任何本机进程都能读用户的会话、改他的设置——每一格都不能错。
+func TestSecurityGate(t *testing.T) {
+	t.Run("令牌闸门", func(t *testing.T) {
+		_, h := testServer(t)
 
-	// 无令牌
-	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("无令牌的请求状态 = %d，期望 403", rec.Code)
-	}
+		// 无令牌 403
+		req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("无令牌的请求状态 = %d，期望 403", rec.Code)
+		}
 
-	// 头令牌
-	req = loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
-	req.Header.Set("X-Desktop-Token", "secret-token")
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("头令牌状态 = %d，期望 200；body=%s", rec.Code, rec.Body.String())
-	}
-	// 200 的响应也必须是统一外壳
-	var envelope struct {
-		Code string          `json:"code"`
-		Data json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
-		t.Fatalf("响应不是统一外壳: %v", err)
-	}
-	if envelope.Code != "0" {
-		t.Errorf("code = %q，期望 0", envelope.Code)
-	}
+		// 头令牌 200，且 200 的响应必须是统一外壳
+		req = loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
+		req.Header.Set("X-Desktop-Token", "secret-token")
+		rec = httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("头令牌状态 = %d，期望 200；body=%s", rec.Code, rec.Body.String())
+		}
+		var envelope struct {
+			Code string          `json:"code"`
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+			t.Fatalf("响应不是统一外壳: %v", err)
+		}
+		if envelope.Code != "0" {
+			t.Errorf("code = %q，期望 0", envelope.Code)
+		}
 
-	// 查询令牌
-	rec = get(t, h, "/api/v1/settings?token=secret-token")
-	if rec.Code != http.StatusOK {
-		t.Errorf("查询令牌状态 = %d，期望 200", rec.Code)
-	}
+		// 查询令牌 200（SSE 靠它带令牌）
+		if rec := get(t, h, "/api/v1/settings?token=secret-token"); rec.Code != http.StatusOK {
+			t.Errorf("查询令牌状态 = %d，期望 200", rec.Code)
+		}
 
-	// 健康探测
-	rec = get(t, h, "/api/v1/health")
-	if rec.Code != http.StatusOK {
-		t.Errorf("health 状态 = %d，期望 200", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "ok") {
-		t.Errorf("health body = %s", rec.Body.String())
-	}
-}
+		// health 免令牌
+		rec = get(t, h, "/api/v1/health")
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "ok") {
+			t.Errorf("health = %d %s", rec.Code, rec.Body.String())
+		}
+	})
 
-// 只允许 GET / POST：不留 DELETE 路由就没有「顺手加删除接口」的入口。
-func TestRejectsOtherMethods(t *testing.T) {
-	_, h := testServer(t)
-	for _, method := range []string{http.MethodDelete, http.MethodPut, http.MethodPatch} {
-		req := loopback(httptest.NewRequest(method, "/api/v1/settings", nil))
+	t.Run("非本机来源一律拒绝", func(t *testing.T) {
+		_, h := testServer(t)
+		req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
+		req.RemoteAddr = "192.0.2.10:5000"
 		req.Header.Set("X-Desktop-Token", "secret-token")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
-		if rec.Code != http.StatusMethodNotAllowed {
-			t.Errorf("%s 的状态 = %d，期望 405", method, rec.Code)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("外部来源状态 = %d，期望 403", rec.Code)
 		}
-	}
-}
+		if !strings.Contains(rec.Body.String(), "7003") {
+			t.Errorf("应回报来源被拒的错误码: %s", rec.Body.String())
+		}
+	})
 
-// HTTP 恒回 200，错误在 body 的 code 里；message 要能直接显示给用户。
-func TestErrorUsesEnvelope(t *testing.T) {
-	_, h := testServer(t)
-	rec := post(t, h, "/api/v1/settings/workspace", `{"path":"Z:\\definitely\\missing\\dir"}`)
+	t.Run("只允许 GET 与 POST", func(t *testing.T) {
+		// 不留 DELETE 路由就没有「顺手加删除接口」的入口。
+		_, h := testServer(t)
+		for _, method := range []string{http.MethodDelete, http.MethodPut, http.MethodPatch} {
+			req := loopback(httptest.NewRequest(method, "/api/v1/settings", nil))
+			req.Header.Set("X-Desktop-Token", "secret-token")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Errorf("%s 的状态 = %d，期望 405", method, rec.Code)
+			}
+		}
+	})
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("状态 = %d，期望 200（错误在 code 里）", rec.Code)
-	}
-	var envelope struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
-		t.Fatal(err)
-	}
-	if envelope.Code == "0" {
-		t.Fatalf("不存在的目录不该成功: %s", rec.Body.String())
-	}
-	if envelope.Message == "" {
-		t.Error("错误必须给人的那句话")
-	}
-	if !strings.Contains(envelope.Message, "Z:") {
-		t.Errorf("错误里该带上路径，便于用户核对: %q", envelope.Message)
-	}
-}
-
-// 来源闸门：非本机地址一律拒绝，哪怕令牌正确。
-func TestRejectsNonLoopback(t *testing.T) {
-	_, h := testServer(t)
-	req := loopback(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
-	req.RemoteAddr = "192.0.2.10:5000"
-	req.Header.Set("X-Desktop-Token", "secret-token")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("外部来源状态 = %d，期望 403", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "7003") {
-		t.Errorf("应回报来源被拒的错误码: %s", rec.Body.String())
-	}
+	t.Run("错误走统一外壳", func(t *testing.T) {
+		// HTTP 恒回 200，错误在 body 的 code 里；message 要能直接显示给用户。
+		_, h := testServer(t)
+		rec := post(t, h, "/api/v1/settings/workspace", `{"path":"Z:\\definitely\\missing\\dir"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("状态 = %d，期望 200（错误在 code 里）", rec.Code)
+		}
+		var envelope struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Code == "0" {
+			t.Fatalf("不存在的目录不该成功: %s", rec.Body.String())
+		}
+		if envelope.Message == "" {
+			t.Error("错误必须给人的那句话")
+		}
+		if !strings.Contains(envelope.Message, "Z:") {
+			t.Errorf("错误里该带上路径，便于用户核对: %q", envelope.Message)
+		}
+	})
 }
 
 // 应用页契约：两引擎各一行、字段齐全、动作开关与「命令存在」一致、

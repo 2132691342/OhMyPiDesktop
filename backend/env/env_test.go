@@ -14,64 +14,67 @@ import (
 
 // ---------------- 官方安装器的落点 ----------------
 
-// omp 的落点顺序：PI_INSTALL_DIR → %LOCALAPPDATA%\omp → ~\.omp\bin。
-func TestInstallCandidatesOMP(t *testing.T) {
-	local := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("LOCALAPPDATA", local)
-	t.Setenv("PI_INSTALL_DIR", "")
-	t.Setenv("USERPROFILE", home)
-	t.Setenv("HOME", home)
+// 安装候选一条钉全（两个引擎的落盘布局）：探测按序尝试这些路径，
+// 排错了会把别的引擎的安装认成自己的，或漏掉托管布局里的最新版。
+func TestInstallCandidates(t *testing.T) {
+	t.Run("omp 的两个落点与覆盖点", func(t *testing.T) {
+		// 落点顺序：PI_INSTALL_DIR → %LOCALAPPDATA%\omp → ~\.omp\bin。
+		local := t.TempDir()
+		home := t.TempDir()
+		t.Setenv("LOCALAPPDATA", local)
+		t.Setenv("PI_INSTALL_DIR", "")
+		t.Setenv("USERPROFILE", home)
+		t.Setenv("HOME", home)
 
-	got := InstallCandidates(engine.KindOMP)
-	want := []string{
-		filepath.Join(local, "omp", "omp.exe"),
-		filepath.Join(home, ".omp", "bin", "omp.exe"),
-	}
-	if len(got) != len(want) {
-		t.Fatalf("候选数 %d，期望 %d：%v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("第 %d 个候选 %q，期望 %q", i, got[i], want[i])
+		got := InstallCandidates(engine.KindOMP)
+		want := []string{
+			filepath.Join(local, "omp", "omp.exe"),
+			filepath.Join(home, ".omp", "bin", "omp.exe"),
 		}
-	}
+		if len(got) != len(want) {
+			t.Fatalf("候选数 %d，期望 %d：%v", len(got), len(want), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("第 %d 个候选 %q，期望 %q", i, got[i], want[i])
+			}
+		}
 
-	// PI_INSTALL_DIR 是 omp 安装器自己的覆盖点，必须排在最前。
-	custom := filepath.Join(t.TempDir(), "omp")
-	t.Setenv("PI_INSTALL_DIR", custom)
-	if first := InstallCandidates(engine.KindOMP)[0]; first != filepath.Join(custom, "omp.exe") {
-		t.Errorf("PI_INSTALL_DIR 应排第一，得到 %q", first)
-	}
-}
+		// PI_INSTALL_DIR 是 omp 安装器自己的覆盖点，必须排在最前。
+		custom := filepath.Join(t.TempDir(), "omp")
+		t.Setenv("PI_INSTALL_DIR", custom)
+		if first := InstallCandidates(engine.KindOMP)[0]; first != filepath.Join(custom, "omp.exe") {
+			t.Errorf("PI_INSTALL_DIR 应排第一，得到 %q", first)
+		}
+	})
 
-// pi 的托管布局：current-version 指向哪个 release 就要探哪个，
-// 指不到时回退到目录里版本号最大的那个。
-func TestInstallCandidatesPiManaged(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("PI_MANAGED_INSTALL_ROOT", root)
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	t.Run("pi 的托管布局", func(t *testing.T) {
+		// current-version 指向哪个 release 就要探哪个，指不到时回退到目录里版本号最大的那个。
+		root := t.TempDir()
+		t.Setenv("PI_MANAGED_INSTALL_ROOT", root)
+		t.Setenv("LOCALAPPDATA", t.TempDir())
 
-	for _, version := range []string{"1.3.0", "1.4.0"} {
-		if err := os.MkdirAll(filepath.Join(root, "releases", version, "node_modules", ".bin"), 0o755); err != nil {
+		for _, version := range []string{"1.3.0", "1.4.0"} {
+			if err := os.MkdirAll(filepath.Join(root, "releases", version, "node_modules", ".bin"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// 有 current-version：它说的那个排第一，回退项排第二。
+		if err := os.WriteFile(filepath.Join(root, "current-version"), []byte("1.3.0\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-	}
-
-	// 有 current-version：它说的那个排第一，回退项排第二。
-	if err := os.WriteFile(filepath.Join(root, "current-version"), []byte("1.3.0\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got := InstallCandidates(engine.KindPi)
-	if len(got) < 2 {
-		t.Fatalf("应给出 current-version 与回退两项，实际 %v", got)
-	}
-	if want := filepath.Join(root, "releases", "1.3.0", "node_modules", ".bin", "pi.cmd"); got[0] != want {
-		t.Errorf("current-version 应排第一：%q，期望 %q", got[0], want)
-	}
-	if want := filepath.Join(root, "releases", "1.4.0", "node_modules", ".bin", "pi.cmd"); got[1] != want {
-		t.Errorf("回退项应是最大版本：%q，期望 %q", got[1], want)
-	}
+		got := InstallCandidates(engine.KindPi)
+		if len(got) < 2 {
+			t.Fatalf("应给出 current-version 与回退两项，实际 %v", got)
+		}
+		if want := filepath.Join(root, "releases", "1.3.0", "node_modules", ".bin", "pi.cmd"); got[0] != want {
+			t.Errorf("current-version 应排第一：%q，期望 %q", got[0], want)
+		}
+		if want := filepath.Join(root, "releases", "1.4.0", "node_modules", ".bin", "pi.cmd"); got[1] != want {
+			t.Errorf("回退项应是最大版本：%q，期望 %q", got[1], want)
+		}
+	})
 }
 
 // ---------------- 插件登记清单 ----------------
@@ -156,9 +159,48 @@ func TestReadPluginEntries(t *testing.T) {
 		if e.Source != e.Name {
 			t.Errorf("omp source 应为裸名: %+v", e)
 		}
+		if !e.Enabled {
+			t.Errorf("没有锁文件时应全部按启用: %+v", e)
+		}
 	}
 	if !names["a"] || !names["@s/b"] {
 		t.Errorf("omp 条目: %v", names)
+	}
+
+	// 锁文件里的启用位：锁文件只记「被关掉的」，没有记录就是启用。
+	if err := os.WriteFile(filepath.Join(dir, "omp-plugins.lock.json"), []byte(`{"plugins":{"a":{"enabled":false},"@s/b":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ompEntries, _, err = ReadPluginEntries("omp", Layout{Plugins: dir})
+	if err != nil {
+		t.Fatalf("omp Read(锁文件): %v", err)
+	}
+	for _, e := range ompEntries {
+		switch e.Name {
+		case "a":
+			if e.Enabled {
+				t.Errorf("a 被锁文件停用了，应显示停用")
+			}
+		case "@s/b":
+			// enabled 缺字段与 true 同义
+			if !e.Enabled {
+				t.Errorf("@s/b 缺 enabled 字段应按启用")
+			}
+		}
+	}
+
+	// 锁文件坏了不拖垮清单：读不懂时全部按启用。
+	if err := os.WriteFile(filepath.Join(dir, "omp-plugins.lock.json"), []byte(`{oops`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ompEntries, _, err = ReadPluginEntries("omp", Layout{Plugins: dir})
+	if err != nil {
+		t.Fatalf("锁文件坏了不该报错: %v", err)
+	}
+	for _, e := range ompEntries {
+		if !e.Enabled {
+			t.Errorf("锁文件损坏时应全部按启用: %+v", e)
+		}
 	}
 
 	// 文件不存在不是错误：干净机器上那份文件根本不存在，

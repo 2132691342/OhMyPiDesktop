@@ -1,10 +1,7 @@
 <script setup lang="ts">
 // 用量两图：按天的花费折线 + 按模型的 token 排行。
-//
-// 单独一个组件是因为它带着 echarts 的实例生命周期（init / setOption /
-// resize / dispose），而那些实例必须挂在**这一个**组件上：
-// 放在父组件里会让「概览页的数据」和「两个图表的画布」纠缠在一起，
-// 且父组件卸载时容易漏掉 dispose（echarts 实例会泄漏）。
+// 单独一个组件：echarts 实例生命周期（init / setOption / resize / dispose）
+// 必须挂在画布自己的组件上，放在父组件里容易漏掉 dispose（实例泄漏）。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts/core'

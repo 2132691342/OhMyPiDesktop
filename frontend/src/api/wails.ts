@@ -1,8 +1,6 @@
 // Wails 绑定层：拿本地服务地址与令牌、系统对话框、窗口控制。
-//
-// v3 的绑定由 `wails3 generate bindings` 静态生成（见 frontend/bindings/），
-// 这里只做两件事：把生成的调用包成 Promise，以及保留「纯浏览器调后端」的兜底。
-// 业务一律走 HTTP，所以这个文件保持很小。
+// v3 的绑定由 `wails3 generate bindings` 静态生成，这里只把调用包成 Promise，
+// 并保留「纯浏览器调后端」的兜底；业务一律走 HTTP，所以保持很小。
 import * as App from '@wails/OhMyPiDesktop/backend/desktop/app'
 import type { Endpoint } from '@wails/OhMyPiDesktop/backend/desktop/models'
 

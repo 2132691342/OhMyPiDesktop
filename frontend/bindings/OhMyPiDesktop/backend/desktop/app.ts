@@ -3,8 +3,7 @@
 
 /**
  * App 是 Wails 绑定面：只暴露系统能力，业务全走本地 HTTP。
- * 
- * 为什么不把 gin 的 handler 嵌进来：嵌入会把它们的导出方法一起绑成
+ * 不把 gin 的 handler 嵌进来：嵌入会把它们的导出方法一起绑成
  * 前端永远调不通的 JS 方法（签名带 *gin.Context）。
  * @module
  */
@@ -28,10 +27,8 @@ export function ApplyCloseDecision(action: string, remember: boolean): $Cancella
 
 /**
  * Endpoint 返回本地服务地址。
- * 
- * 它会**等到服务真的在监听**再返回。前端在 WebView 加载完就调这个方法，
- * 而服务器是异步起的——不在这里等，前端必然拿到一个「端口还是 0」的瞬间，
- * 然后把「后端没有启动起来」当成永久失败。
+ * 它会**等到服务真的在监听**再返回：前端在 WebView 加载完就调这个方法，而服务器是
+ * 异步起的——不在这里等，前端必然拿到一个「端口还是 0」的瞬间，把「后端没有启动起来」当成永久失败。
  */
 export function Endpoint(): $CancellablePromise<$models.Endpoint> {
     return $Call.ByID(1793690431);
@@ -46,8 +43,7 @@ export function OpenExternal(url: string): $CancellablePromise<void> {
 
 /**
  * PickFiles 打开文件选择框，可多选。返回绝对路径列表。
- * 
- * 对话框在应用层调（与 PickFolder 同理），因为只有这里能拿到系统原生对话框。
+ * 对话框在应用层调（与 PickFolder 同理），只有这里能拿到系统原生对话框；
  * 取消时返回空列表，不是错误。
  */
 export function PickFiles(title: string): $CancellablePromise<string[] | null> {
@@ -56,7 +52,6 @@ export function PickFiles(title: string): $CancellablePromise<string[] | null> {
 
 /**
  * PickFolder 打开系统目录选择框。
- * 
  * v3 的对话框是「配置 → 弹一次」：结果从 PromptForSingleSelection 拿，
  * 取消时返回空串而不是错误（空串就是用户没选，不是失败）。
  */
@@ -73,12 +68,8 @@ export function Quit(): $CancellablePromise<void> {
 
 /**
  * Ready 由前端在首屏渲染完后调用，用来把隐藏的窗口显示出来。
- * 
- * 为什么显示窗口的时机在这里而不是装配完成时：v3 把建窗推迟到主循环的
- * pendingRun，ServiceStartup 执行时窗口还不存在。此刻调 Show() 只会走
- * 「先建窗、再 return」那条分支——窗口建好了却仍然隐藏；紧随其后的 Focus()
- * 还会踩到尚未初始化的 WebView2 controller，直接 panic。
- * 等前端把首屏画完再显示：两个问题一起消失，顺带没有白屏。
+ * 不能在装配完成时显示：v3 把建窗推迟到主循环 pendingRun，ServiceStartup 执行时
+ * 窗口还不存在，Show() 只会建窗仍隐藏，随后的 Focus() 会踩到未初始化的 WebView2 controller 而 panic。
  */
 export function Ready(): $CancellablePromise<void> {
     return $Call.ByID(773274081);

@@ -16,9 +16,8 @@ const app = useAppStore()
 const { t } = useI18n()
 
 // 首次按关闭时问一句：收进托盘还是退出。
-//
-// 为什么在界面里问而不是在窗口层：窗口层没有可用的通知手段（窗口已经要藏了），
-// 而托盘气泡这个版本的 Wails 不支持。界面里问一次，并把选择记住。
+// 在界面里问而不是窗口层：窗口层没有可用通知手段（窗口已要藏），
+// 托盘气泡这个版本的 Wails 不支持。问一次并记住选择。
 async function askClose(): Promise<'tray' | 'quit' | ''> {
   try {
     await ElMessageBox.confirm(t('app.closePromptBody'), t('app.closePromptTitle'), {

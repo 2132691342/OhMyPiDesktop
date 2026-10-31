@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // 技能页：按来源分组的清单 + 启停 + 正文抽屉 + 新建。
-// 两个引擎的发现规则不同（omp 有 managed 目录与 enabled 开关，pi 用
-// disable-model-invocation），界面同构、来源标签各自填充。
-// 切换先动界面再发请求：慢一个来回的开关手感是坏的，失败再回滚。
+// 两引擎发现规则不同（omp 认 managed 目录与 enabled，pi 认 disable-model-invocation），
+// 界面同构；切换先动界面再发请求，失败回滚。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'

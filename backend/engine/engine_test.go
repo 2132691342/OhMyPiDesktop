@@ -51,46 +51,90 @@ func TestMatchKind(t *testing.T) {
 	}
 }
 
-// 渠道判错的后果很具体：判成 npm 会给出一条错误的卸载命令，
-// 判不出来才会只给手动路径。所以每一档落点都要认准。
-func TestDetectChannel(t *testing.T) {
-	home := `C:\Users\me`
-	local := `C:\Users\me\AppData\Local`
-	cases := []struct {
-		name, kind, exe string
-		want            Channel
-	}{
-		{"npm 全局", string(KindPi), `C:\nvm\node_global\node_modules\@earendil-works\pi-coding-agent\dist\cli.js`, ChannelNPM},
-		{"pnpm 全局", string(KindPi), `C:\Users\me\AppData\Local\pnpm\node_modules\.pnpm\@earendil-works+pi\dist\cli.js`, ChannelPNPM},
-		{"bun 全局", string(KindPi), `C:\Users\me\.bun\install\global\node_modules\@earendil-works\pi-coding-agent\dist\cli.js`, ChannelBun},
-		{"omp 官方安装器", string(KindOMP), `C:\Users\me\AppData\Local\omp\omp.exe`, ChannelOMPInstaller},
-		{"别处的 omp 不是安装器", string(KindOMP), `D:\tools\omp\omp.exe`, ChannelUnknown},
-		{"空路径", string(KindOMP), "", ChannelUnknown},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+// 渠道事实一条钉全：判错的后果很具体——判成 npm 会给出一条错误的卸载命令，
+// 判不出来才会只给手动路径。渠道判定、卸载命令与能力位的一致性、插件子命令
+// 的拼装都在这一条里，因为它们同属「发出去的命令对不对」。
+func TestChannelFacts(t *testing.T) {
+	t.Run("渠道判定", func(t *testing.T) {
+		home := `C:\Users\me`
+		local := `C:\Users\me\AppData\Local`
+		cases := []struct {
+			name, kind, exe string
+			want            Channel
+		}{
+			{"npm 全局", string(KindPi), `C:\nvm\node_global\node_modules\@earendil-works\pi-coding-agent\dist\cli.js`, ChannelNPM},
+			{"pnpm 全局", string(KindPi), `C:\Users\me\AppData\Local\pnpm\node_modules\.pnpm\@earendil-works+pi\dist\cli.js`, ChannelPNPM},
+			{"bun 全局", string(KindPi), `C:\Users\me\.bun\install\global\node_modules\@earendil-works\pi-coding-agent\dist\cli.js`, ChannelBun},
+			{"omp 官方安装器", string(KindOMP), `C:\Users\me\AppData\Local\omp\omp.exe`, ChannelOMPInstaller},
+			{"别处的 omp 不是安装器", string(KindOMP), `D:\tools\omp\omp.exe`, ChannelUnknown},
+			{"空路径", string(KindOMP), "", ChannelUnknown},
+		}
+		for _, c := range cases {
 			if got := DetectChannel(Kind(c.kind), c.exe, home, local); got != c.want {
-				t.Fatalf("DetectChannel = %q，期望 %q", got, c.want)
+				t.Errorf("%s: DetectChannel = %q，期望 %q", c.name, got, c.want)
 			}
-		})
-	}
+		}
 
-	// 同级 node_modules 的 shim 只看路径段会判成未知，必须靠同级目录识别。
-	// 这是 npm / pnpm 全局安装最常见的形态，判错就等于没有卸载按钮。
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	exe := filepath.Join(root, "pi.cmd")
-	if got := DetectChannel(KindPi, exe, "", ""); got != ChannelNPM {
-		t.Fatalf("同级 node_modules 的 shim 应判为 npm，得到 %q", got)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "node_modules", ".pnpm"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if got := DetectChannel(KindPi, exe, "", ""); got != ChannelPNPM {
-		t.Fatalf("带 .pnpm 存储的应判为 pnpm，得到 %q", got)
-	}
+		// 同级 node_modules 的 shim 只看路径段会判成未知，必须靠同级目录识别。
+		// 这是 npm / pnpm 全局安装最常见的形态，判错就等于没有卸载按钮。
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		exe := filepath.Join(root, "pi.cmd")
+		if got := DetectChannel(KindPi, exe, "", ""); got != ChannelNPM {
+			t.Fatalf("同级 node_modules 的 shim 应判为 npm，得到 %q", got)
+		}
+		if err := os.MkdirAll(filepath.Join(root, "node_modules", ".pnpm"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if got := DetectChannel(KindPi, exe, "", ""); got != ChannelPNPM {
+			t.Fatalf("带 .pnpm 存储的应判为 pnpm，得到 %q", got)
+		}
+	})
+
+	t.Run("卸载命令与能力位一致", func(t *testing.T) {
+		// 两者不一致时，界面要么给一个点了报错的按钮，要么把一条能用的命令藏起来。
+		channels := []Channel{ChannelNPM, ChannelPNPM, ChannelBun, ChannelOMPInstaller, ChannelPiInstaller, ChannelUnknown}
+		for _, kind := range AllKinds() {
+			for _, ch := range channels {
+				hasCmd := len(UninstallCommand(kind, ch)) > 0
+				if hasCmd != CanUninstall(ch) {
+					t.Fatalf("%s/%s: CanUninstall=%v 但命令存在=%v", kind, ch, CanUninstall(ch), hasCmd)
+				}
+			}
+		}
+	})
+
+	t.Run("插件子命令拼装", func(t *testing.T) {
+		// 发错一条命令用户看到的就是「装/卸失败」，而且分不清是我们的参数还是引擎的问题。
+		cases := []struct {
+			name   string
+			kind   Kind
+			action string
+			want   []string
+		}{
+			{"omp 安装", KindOMP, PluginActionInstall, []string{"plugin", "install", "foo"}},
+			{"omp 停用", KindOMP, PluginActionDisable, []string{"plugin", "disable", "foo"}},
+			{"omp 升级", KindOMP, PluginActionUpgrade, []string{"plugin", "upgrade", "foo"}},
+			{"pi 安装", KindPi, PluginActionInstall, []string{"install", "foo"}},
+			{"pi 卸载发 remove", KindPi, PluginActionUninstall, []string{"remove", "foo"}},
+			{"pi 没有启停", KindPi, PluginActionEnable, nil},
+			{"pi 没有升级", KindPi, PluginActionUpgrade, nil},
+			{"未知引擎", Kind("xx"), PluginActionInstall, nil},
+		}
+		for _, c := range cases {
+			got := PluginArgs(c.kind, c.action, "foo")
+			if len(got) != len(c.want) {
+				t.Fatalf("%s: PluginArgs = %q，期望 %q", c.name, got, c.want)
+			}
+			for i := range c.want {
+				if got[i] != c.want[i] {
+					t.Fatalf("%s: PluginArgs = %q，期望 %q", c.name, got, c.want)
+				}
+			}
+		}
+	})
 }
 
 // Caps 是按钮是否出现的唯一依据：改错一个位，就等于给用户开一个点不动的入口。
@@ -100,27 +144,15 @@ func TestCapsMatchCommands(t *testing.T) {
 		KindOMP: {
 			Subagents: true, Goals: true, Todos: true, Login: true, Fragments: true,
 			QueueEdit: true, LiveSteerCount: true, SkillToggle: true,
-			Extensions: true, ExportHTML: true, SlashCommands: true,
+			Extensions: true, ExportHTML: false, SlashCommands: true, SessionClone: false,
+			PluginToggle: true, PluginUpgrade: true,
 		},
-		KindPi: {Extensions: true, ExportHTML: true, QueueClear: true},
+		KindPi: {Extensions: true, ExportHTML: true, QueueClear: true, SessionClone: true,
+			PluginToggle: false, PluginUpgrade: false},
 	}
 	for kind, w := range want {
 		if got := CapsFor(kind); got != w {
 			t.Errorf("%s 的能力表 = %+v，期望 %+v", kind, got, w)
-		}
-	}
-}
-
-// 「能不能卸」与「有没有卸载命令」必须一致：两者不一致时，界面要么给一个
-// 点了报错的按钮，要么把一条能用的命令藏起来。
-func TestUninstallCommandMatchesChannel(t *testing.T) {
-	channels := []Channel{ChannelNPM, ChannelPNPM, ChannelBun, ChannelOMPInstaller, ChannelPiInstaller, ChannelUnknown}
-	for _, kind := range AllKinds() {
-		for _, ch := range channels {
-			hasCmd := len(UninstallCommand(kind, ch)) > 0
-			if hasCmd != CanUninstall(ch) {
-				t.Fatalf("%s/%s: CanUninstall=%v 但命令存在=%v", kind, ch, CanUninstall(ch), hasCmd)
-			}
 		}
 	}
 }

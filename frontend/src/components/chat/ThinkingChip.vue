@@ -1,10 +1,6 @@
 <script setup lang="ts">
-// 思考档芯片：切推理强度。
-//
-// 它是一个读数 + 一个入口：档位名常驻在输入框底栏（用户随时看得见
-// 这一轮会想多久），点它才展开档位列表。
-//
-// 档位清单由引擎给出（caps 决定引擎有没有这个概念），没有就整个不渲染。
+// 思考档芯片：切推理强度。档位名常驻底栏（随时看得见这一轮会想多久），
+// 点它才展开档位列表；清单由引擎给出，caps 没有这个概念就整个不渲染。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

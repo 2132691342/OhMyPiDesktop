@@ -119,6 +119,107 @@ func isBinary(head []byte) bool {
 	return false
 }
 
+// 搜索的限界：工作区可能有几十万个文件，一次请求必须封顶，
+// 否则一次手滑的查询就是一次全盘遍历。
+const (
+	// maxSearchHits 返回的命中数上限
+	maxSearchHits = 50
+	// maxSearchScan 最多看多少个条目就停，命中不满也停
+	maxSearchScan = 20000
+	// maxSearchDepth 目录深度上限，再深的不看
+	maxSearchDepth = 10
+)
+
+// searchSkipDirs 这些目录不看：依赖、构建产物与缓存，命中它们只会干扰。
+var searchSkipDirs = map[string]bool{
+	"node_modules": true,
+	"dist":         true,
+	"build":        true,
+	"target":       true,
+	"__pycache__":  true,
+	"vendor":       true,
+}
+
+// SearchFiles 在整个工作区里按文件名找文件（大小写不敏感子串）。
+// 只回文件不回目录：@ 引用要的是能发进对话的东西。
+func (a *App) SearchFiles(query string, limit int) (*domain.FileSearchVO, error) {
+	root := a.Workspace()
+	if strings.TrimSpace(root) == "" {
+		return nil, pkg.New(pkg.CodeBadRequest, "还没有设置工作目录，先选一个文件夹", "")
+	}
+	needle := strings.ToLower(strings.TrimSpace(query))
+	if needle == "" {
+		return nil, pkg.New(pkg.CodeBadRequest, "先输入要找的文件名", "")
+	}
+	if limit <= 0 || limit > maxSearchHits {
+		limit = maxSearchHits
+	}
+	hits := make([]domain.FileHitVO, 0, 16)
+	scanned := 0
+	truncated := false
+	// walk 返回 false 表示「已经够了，整棵树都不用再看」。
+	var walk func(full, rel string, depth int) bool
+	walk = func(full, rel string, depth int) bool {
+		if len(hits) >= limit || scanned >= maxSearchScan || depth > maxSearchDepth {
+			truncated = truncated || len(hits) >= limit || scanned >= maxSearchScan
+			return false
+		}
+		entries, err := os.ReadDir(full)
+		if err != nil {
+			return true // 读不了的目录跳过，不让一个坏目录废掉整次搜索
+		}
+		for _, e := range entries {
+			scanned++
+			if scanned > maxSearchScan {
+				truncated = true
+				return false
+			}
+			name := e.Name()
+			if e.IsDir() {
+				if strings.HasPrefix(name, ".") || searchSkipDirs[strings.ToLower(name)] {
+					continue
+				}
+				childRel := name
+				if rel != "" {
+					childRel = rel + "/" + name
+				}
+				if !walk(filepath.Join(full, name), childRel, depth+1) {
+					return false
+				}
+				continue
+			}
+			// 隐藏文件与系统噪音跟 Files 的口径一致：给人看的搜索不列它们。
+			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "$") {
+				continue
+			}
+			if !strings.Contains(strings.ToLower(name), needle) {
+				continue
+			}
+			hitRel := name
+			if rel != "" {
+				hitRel = rel + "/" + name
+			}
+			hits = append(hits, domain.FileHitVO{FilePath: hitRel, EntryName: name})
+			if len(hits) >= limit {
+				truncated = true
+				return false
+			}
+		}
+		return true
+	}
+	walk(root, "", 1)
+	// 路径浅的在前：越靠近根的文件越可能是用户要的那一个。
+	sort.SliceStable(hits, func(i, j int) bool {
+		di := strings.Count(hits[i].FilePath, "/")
+		dj := strings.Count(hits[j].FilePath, "/")
+		if di != dj {
+			return di < dj
+		}
+		return strings.ToLower(hits[i].FilePath) < strings.ToLower(hits[j].FilePath)
+	})
+	return &domain.FileSearchVO{Query: query, Hits: hits, Truncated: truncated}, nil
+}
+
 // ---------------- git ----------------
 
 // GitStatus 读版本状态。不是仓库或没装 git 时返回标记而不是错误。

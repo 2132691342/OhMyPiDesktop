@@ -17,6 +17,7 @@ import type {
   EngineStatus,
   FileList,
   FileRead,
+  FileSearch,
   GitBranch,
   GitCommit,
   GitCommitDetail,
@@ -33,6 +34,7 @@ import type {
   ProvidersView,
   ProviderView,
   SessionDetail,
+  SessionExport,
   SessionRow,
   SkillRow,
   TranscriptPage,
@@ -168,6 +170,11 @@ export const api = {
   answer: (engine: EngineKind, session: string, request: UIResponse) =>
     post<{ ok: boolean }>('/chat/answer', { engine, session, request }),
   newChat: (engine: EngineKind) => post<{ session_file: string }>('/chat/new', { engine }),
+  // 复制当前会话开新分支（仅 Caps.SessionClone 的引擎提供，入口按能力位显隐）
+  cloneChat: (engine: EngineKind) => post<{ session_file: string }>('/chat/clone', { engine }),
+  // 导出当前会话为单文件 HTML（仅 Caps.ExportHTML 的引擎提供，入口按能力位显隐）
+  exportSessionHTML: (session: string, engine?: EngineKind) =>
+    post<SessionExport>('/chat/export-html', { session, ...k(engine) }),
   setModel: (engine: EngineKind, session: string, provider: string, model: string) =>
     post<{ ok: boolean }>('/chat/model', { engine, session, provider, model }),
   setThinking: (engine: EngineKind, session: string, level: string) =>
@@ -222,6 +229,11 @@ export const api = {
     post<{ output: string }>('/plugins/install', { source, ...k(engine) }),
   uninstallPlugin: (source: string, engine?: EngineKind) =>
     post<{ output: string }>('/plugins/uninstall', { source, ...k(engine) }),
+  // 启停 / 升级只对有该能力的引擎开放（omp），入口由 Caps 决定显隐
+  togglePlugin: (name: string, enabled: boolean, engine?: EngineKind) =>
+    post<{ output: string }>('/plugins/toggle', { plugin_name: name, enabled, ...k(engine) }),
+  upgradePlugin: (source: string, engine?: EngineKind) =>
+    post<{ output: string }>('/plugins/upgrade', { plugin_source: source, ...k(engine) }),
 
   // MCP 服务器
   mcpList: (engine?: EngineKind, live = false) =>
@@ -244,6 +256,7 @@ export const api = {
 
   // 工作区
   files: (path: string) => get<FileList>('/files', { path }),
+  filesSearch: (query: string, limit = 50) => get<FileSearch>('/files/search', { query, limit: String(limit) }),
   fileRead: (path: string) => get<FileRead>('/files/read', { path }),
   gitStatus: (path?: string) => get<GitStatus>('/git/status', { path }),
   gitDiff: (path?: string) => get<GitDiff>('/git/diff', { path }),

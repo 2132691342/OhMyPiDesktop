@@ -21,6 +21,9 @@ type PluginEntry struct {
 	Source string
 	// Scope 登记在哪一层：user / project
 	Scope string
+	// Enabled 启用位。pi 没有这个概念恒为 true；omp 读锁文件，
+	// 没有记录就是启用（锁文件只记「被关掉的」）
+	Enabled bool
 }
 
 // PluginDetail 是包目录里读出来的事实。
@@ -80,7 +83,7 @@ func readPiEntries(settingsPath string) ([]PluginEntry, string, error) {
 		if spec.Name == "" {
 			continue
 		}
-		out = append(out, PluginEntry{Name: spec.Name, Source: line, Scope: "user"})
+		out = append(out, PluginEntry{Name: spec.Name, Source: line, Scope: "user", Enabled: true})
 	}
 	return out, settingsPath, nil
 }
@@ -102,15 +105,43 @@ func readOMPEntries(path string) ([]PluginEntry, string, error) {
 	if err := json.Unmarshal(stripBOM(raw), &top); err != nil {
 		return nil, path, pkg.Wrap(pkg.CodeConfigParse, "plugins/package.json 格式有误", err)
 	}
+	enabledBits := ompEnabledBits(filepath.Join(filepath.Dir(path), "omp-plugins.lock.json"))
 	out := make([]PluginEntry, 0, len(top.Dependencies))
 	for name := range top.Dependencies {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue
 		}
-		out = append(out, PluginEntry{Name: name, Source: name, Scope: "user"})
+		entry := PluginEntry{Name: name, Source: name, Scope: "user", Enabled: true}
+		if bit, ok := enabledBits[name]; ok {
+			entry.Enabled = bit
+		}
+		out = append(out, entry)
 	}
 	return out, path, nil
+}
+
+// ompEnabledBits 读 omp 锁文件（omp-plugins.lock.json）里的启用位：plugins.<包名>.enabled。
+// 文件不存在或解析不了都返回 nil（全部按启用）：锁文件是引擎自己的账，
+// 读不懂时宁可多显示一个「开着」也不能把整个清单读挂。
+func ompEnabledBits(lockPath string) map[string]bool {
+	raw, err := os.ReadFile(lockPath)
+	if err != nil {
+		return nil
+	}
+	var top struct {
+		Plugins map[string]struct {
+			Enabled *bool `json:"enabled"`
+		} `json:"plugins"`
+	}
+	if err := json.Unmarshal(stripBOM(raw), &top); err != nil {
+		return nil
+	}
+	bits := make(map[string]bool, len(top.Plugins))
+	for name, cfg := range top.Plugins {
+		bits[name] = cfg.Enabled == nil || *cfg.Enabled
+	}
+	return bits
 }
 
 // ParsePackageSource 解析一条 source 原文，取出包名与版本。三种形态都要认：

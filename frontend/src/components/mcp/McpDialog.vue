@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // MCP 服务器编辑弹窗：本地命令 或 远端地址，二选一。
-//
-// 两种模式互斥而不是并列：一个服务器要么是把本地进程拉起来
-// （command + work_dir + env），要么是连远端（url + transport）。
-// 同时给两组字段会让人以为能两个都填，而写进配置时只有一个能生效。
+// 两种模式互斥：一个服务器要么拉本地进程要么连远端，同时给两组字段
+// 会让人以为都能填，而写进配置时只有一个生效。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 

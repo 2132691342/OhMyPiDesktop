@@ -1,9 +1,6 @@
 <script setup lang="ts">
-// 提交框与分支列表。
-//
-// 两者占的是同一块位置（改动清单下方），且都只在「改动」标签下出现。
-// 拆出来是为了让 WorkspaceView 只管三栏的排布与刷新——
-// 这一块自己的状态只有「正在写的提交说明」，不需要回到父组件去。
+// 提交框与分支列表：同一块位置（改动清单下方）、都只在「改动」标签下出现。
+// 拆出来让 WorkspaceView 只管三栏排布；自己的状态只有正在写的提交说明。
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

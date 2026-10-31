@@ -1,8 +1,6 @@
 <script setup lang="ts">
-// 子代理观测台（仅 omp）。
-//
-// 它不是编排器：omp 没有 spawn 的 RPC，子代理只能由模型调 task 工具拉起。
-// 这里只做三件事——看见名单、看见进度、在跑偏时插一句话或掐掉它。
+// 子代理观测台（仅 omp）。不是编排器：omp 没有 spawn 的 RPC，
+// 只做三件事——看见名单、看见进度、在跑偏时插话或掐掉。
 // pi 下整块不渲染（不做会说谎的界面）。
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'

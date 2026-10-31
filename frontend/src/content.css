@@ -371,56 +371,9 @@
   color: var(--omp-ink-5);
 }
 
-/* ============================================================
-   输入区
-   ============================================================ */
-.composer {
-  border-top: 1px solid var(--omp-line);
-  background: var(--omp-work);
-  padding: var(--omp-sp-3) var(--omp-sp-6) var(--omp-sp-4);
-}
-.composer-inner {
-  max-width: var(--omp-col);
-  margin: 0 auto;
-  border: 1px solid var(--omp-line-strong);
-  border-radius: var(--omp-r-xl);
-  background: var(--omp-surface);
-  box-shadow: var(--omp-shadow);
-  transition:
-    border-color var(--omp-dur) var(--omp-ease),
-    box-shadow var(--omp-dur) var(--omp-ease);
-}
-.composer-inner:focus-within {
-  border-color: var(--omp-brand-2);
-  box-shadow: 0 0 0 3px var(--omp-brand-soft);
-}
-.composer textarea {
-  display: block;
-  width: 100%;
-  min-height: 52px;
-  max-height: 260px;
-  padding: var(--omp-sp-3) var(--omp-sp-4);
-  border: none;
-  background: transparent;
-  color: var(--omp-ink);
-  font-family: inherit;
-  font-size: var(--omp-fs-base);
-  line-height: 1.65;
-  resize: none;
-  outline: none;
-}
-.composer-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--omp-sp-2);
-  padding: 0 var(--omp-sp-2) var(--omp-sp-2);
-}
-.composer-hint {
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
-  margin-left: auto;
-  font-family: var(--omp-font-mono);
-}
+/* 输入区的样式全部收在各组件 scoped 里（ChatComposer / ComposerBar）。
+   这里不再有全局 .composer* 规则：旧规则会把 ComposerBar 的根变成 flex 容器，
+   压缩 .bar-row 的宽度，发送按钮因此悬在行中。 */
 
 /* 斜杠菜单 */
 .slash {

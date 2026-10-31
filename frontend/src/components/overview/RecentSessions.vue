@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // 概览页的「最近会话」卡：一行一条，点开继续。
-//
-// 单独一个组件是因为它有两个容易漏掉的状态：**还在核对**与**真的没有会话**。
-// 前者的表现必须是「还没数完」，不能是空列表 + 「还没有会话」——
-// 那是一句断言，而那时磁盘上可能躺着一堆会话文件。
+// 「还在核对」必须显示成还没数完，不能是空列表 + 「还没有会话」——
+// 那是一句断言，而磁盘上可能躺着一堆会话文件。
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
 import type { SessionRow } from '@/types/api'

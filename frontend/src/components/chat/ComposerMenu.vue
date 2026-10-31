@@ -1,14 +1,7 @@
 <script setup lang="ts">
 // 输入区的两个弹出菜单：`/` 命令 与 `@` 文件引用。
-//
-// 两个关键交互必须自己实现，否则会静默失效：
-//
-//  1. 键盘高亮必须自己算 scrollTop，不能用 scrollIntoView ——
-//     后者会把外层页面一起滚，用户的视口被菜单带着跑。
-//  2. 在菜单里滚轮 / 拖滚动条 / 点选项时不许让输入框丢焦点 ——
-//     焦点一跑到按钮上，↑↓ 与回车就不再送到输入框了，等于导航失效。
-//
-// 菜单的其他部分（Escape 关、两套来源合并）走标准实现。
+// 键盘高亮自己算 scrollTop（scrollIntoView 会把外层页面一起滚）、
+// 菜单内滚动 / 点选项不让输入框丢焦点（焦点一丢 ↑↓ 与回车就失效）——必须自己实现。
 import { nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MentionBrowser from '@/components/chat/MentionBrowser.vue'
@@ -83,6 +76,19 @@ function keepFocus(event: PointerEvent): void {
   event.preventDefault()
 }
 
+// 键盘导航与悬停选择会打架：按 ↓ 让列表滚动，滚动把新的一行带到静止的
+// 指针底下，mouseenter 把高亮拽回去，列表看起来就「不跟着光标滚」。
+// 判据：滚动引发的 mouseenter 里指针坐标没变过——指针真的动了才算悬停选择。
+let lastHoverX = -1
+let lastHoverY = -1
+
+function onHover(index: number, event: MouseEvent): void {
+  const moved = event.screenX !== lastHoverX || event.screenY !== lastHoverY
+  lastHoverX = event.screenX
+  lastHoverY = event.screenY
+  if (moved) emit('hover', index)
+}
+
 /** 来源标签：内置由界面直接执行，引擎的只是填进输入框。 */
 function tagClass(source: MenuItem['source']): string {
   return source === 'builtin' ? 'is-builtin' : 'is-engine'
@@ -93,7 +99,8 @@ function tagClass(source: MenuItem['source']): string {
   <!-- 菜单贴着输入框上沿往上弹，左右各留一点边距，
        弹面板用 pointerdown 保焦：按钮按下的一瞬间就 preventDefault。 -->
   <div class="pop menu-pop" @pointerdown="keepFocus">
-    <div v-if="props.kind === 'slash'" class="pop-list">
+    <!-- listEl 是 ensureVisible 的滚动容器：高亮要跟手，全靠量它自己的 scrollTop -->
+    <div v-if="props.kind === 'slash'" ref="listEl" class="pop-list">
       <!-- 没有匹配项时也要给一句话：菜单默默消失看起来像按了没反应 -->
       <p v-if="!props.items.length" class="pop-hint pop-empty">{{ t('chat.slashNoMatch') }}</p>
       <button
@@ -103,7 +110,7 @@ function tagClass(source: MenuItem['source']): string {
         type="button"
         class="pop-row"
         :class="{ 'is-hi': index === props.index }"
-        @mouseenter="emit('hover', index)"
+        @mouseenter="onHover(index, $event)"
         @click="emit('pick', item)"
       >
         <span class="pop-grow">

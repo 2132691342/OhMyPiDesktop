@@ -20,9 +20,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ContractVersion 与前端 types/api.ts 同键，当前值 13 是前后端响应形态的契约版本；
+// ContractVersion 与前端 types/api.ts 同键，当前值 15 是前后端响应形态的契约版本；
 // 改响应字段形态必须 +1 并同步前端类型。
-const ContractVersion = 13
+const ContractVersion = 15
 
 // Server 是内嵌 HTTP 服务。
 type Server struct {

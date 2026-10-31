@@ -46,6 +46,40 @@ func (e *Engine) NewSession(ctx context.Context) error {
 	return nil
 }
 
+// Clone 复制当前会话当前位置为一个新会话并切过去（仅 Caps.SessionClone 的引擎提供）。
+func (e *Engine) Clone(ctx context.Context) error {
+	if e.Busy() {
+		return pkg.New(pkg.CodeEngineBusy, "当前对话还没结束，稍后再复制", "")
+	}
+	var out struct {
+		Cancelled bool `json:"cancelled"`
+	}
+	if err := e.Call(ctx, "clone", nil, &out, 60*time.Second); err != nil {
+		return err
+	}
+	if out.Cancelled {
+		return pkg.New(pkg.CodeEngineBusy, "引擎拒绝了这次复制（有扩展拦下了）", "")
+	}
+	e.afterSessionBound()
+	// 新会话的文件由引擎创建，路径要问一次。
+	if st, err := e.State(ctx); err == nil {
+		e.setSessionFile(st.SessionFile)
+	}
+	return nil
+}
+
+// ExportHTML 把引擎当前会话导出为单文件 HTML（仅 Caps.ExportHTML 的引擎提供）。
+// 写盘由引擎进程完成；outputPath 必须给绝对路径——不给的话引擎会写到它自己的工作目录。
+func (e *Engine) ExportHTML(ctx context.Context, outputPath string) (string, error) {
+	var out struct {
+		Path string `json:"path"`
+	}
+	if err := e.Call(ctx, "export_html", map[string]any{"outputPath": outputPath}, &out, 60*time.Second); err != nil {
+		return "", err
+	}
+	return out.Path, nil
+}
+
 // afterSessionBound 在会话换了之后清掉随会话存活的投影。
 // 引擎内部在 new/switch/fork 成功后会 clear() 子代理 roster，并把旧 id 放进墓碑表、丢弃其后的帧；
 // 我们不清就会显示「已经消失的子代理还挂着」。

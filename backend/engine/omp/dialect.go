@@ -28,8 +28,11 @@ func Caps() engine.Caps {
 		LiveSteerCount: true,
 		SkillToggle:    true,
 		Extensions:     true,
-		ExportHTML:     true,
+		ExportHTML:     false, // omp 没有导出 HTML 的 RPC，TUI 的 /export 走不了
 		SlashCommands:  true,
+		SessionClone:   false, // omp 的 /clone 只活在 TUI，RPC 没有 clone 方法
+		PluginToggle:   true,
+		PluginUpgrade:  true,
 	}
 }
 

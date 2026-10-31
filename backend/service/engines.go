@@ -249,5 +249,7 @@ func capsToMap(c engine.Caps) map[string]bool {
 		"queue_clear": c.QueueClear, "live_steer_count": c.LiveSteerCount,
 		"skill_toggle": c.SkillToggle, "extensions": c.Extensions,
 		"export_html": c.ExportHTML, "slash_commands": c.SlashCommands,
+		"session_clone": c.SessionClone,
+		"plugin_toggle": c.PluginToggle, "plugin_upgrade": c.PluginUpgrade,
 	}
 }

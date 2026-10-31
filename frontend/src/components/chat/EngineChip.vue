@@ -1,9 +1,6 @@
 <script setup lang="ts">
-// 引擎芯片：在输入框底栏切「这句话发给谁」。
-//
-// 为什么是芯片而不是页头的下拉：它决定的是「这一句话发给哪个引擎」，
-// 属于输入的一部分。放页头会让人以为在切整个应用。
-//
+// 引擎芯片：在输入框底栏切「这句话发给谁」——它决定这一句话的归宿，
+// 属于输入的一部分，放页头会让人以为在切整个应用。
 // 只列探测到的引擎；只有一个时不渲染（不占位置）。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -33,10 +30,8 @@ async function pick(kind: EngineKind): Promise<void> {
     open.value = false
     return
   }
-  // 正在回答时不能换引擎：这一轮的回答会落到原引擎的会话里，
-  // 而界面已经切到了另一个——两者的上下文就错位了。
-  //
-  // 不把按钮做成灰的（那看起来像没权限），而是点下去给一句话说明。
+  // 正在回答时不能换引擎：这一轮会落到原引擎的会话里，上下文就错位了。
+  // 不做灰按钮（那像没权限），点下去给一句话说明。
   if (chat.streaming) {
     toasts.push('warn', t('chat.engineLockedWhileRunning'))
     open.value = false

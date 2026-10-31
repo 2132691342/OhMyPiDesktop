@@ -54,6 +54,8 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.POST("/chat/compact", s.compact)
 	api.POST("/chat/answer", s.answer)
 	api.POST("/chat/new", s.newChat)
+	api.POST("/chat/clone", s.cloneChat)
+	api.POST("/chat/export-html", s.exportSessionHTML)
 	api.POST("/chat/model", s.setModel)
 	api.POST("/chat/thinking", s.setThinking)
 	api.POST("/chat/autocompact", s.setAutoCompaction)
@@ -93,6 +95,8 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.GET("/plugins", s.plugins)
 	api.POST("/plugins/install", s.installPlugin)
 	api.POST("/plugins/uninstall", s.uninstallPlugin)
+	api.POST("/plugins/toggle", s.togglePlugin)
+	api.POST("/plugins/upgrade", s.upgradePlugin)
 
 	// MCP 服务器
 	api.GET("/mcp", s.mcpList)
@@ -102,6 +106,7 @@ func (s *Server) routes(api *gin.RouterGroup) {
 
 	// 工作区：文件树与 git
 	api.GET("/files", s.files)
+	api.GET("/files/search", s.fileSearch)
 	api.GET("/files/read", s.fileRead)
 	api.GET("/git/status", s.gitStatus)
 	api.GET("/git/diff", s.gitDiff)

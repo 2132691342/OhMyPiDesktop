@@ -21,6 +21,24 @@ type FileListVO struct {
 	Truncated bool `json:"truncated"`
 }
 
+// FileHitVO 全工作区搜索的一个命中。
+type FileHitVO struct {
+	// FilePath 相对工作区的路径（正斜杠），@ 引用直接用它
+	FilePath string `json:"file_path"`
+	// EntryName 文件名（不含目录），列表主标题
+	EntryName string `json:"entry_name"`
+}
+
+// FileSearchVO 一次全工作区搜索的出参。
+type FileSearchVO struct {
+	// Query 原样返回的搜索词
+	Query string `json:"query"`
+	// Hits 命中，路径浅的在前
+	Hits []FileHitVO `json:"hits"`
+	// Truncated 为真表示命中数到了上限，界面要提示「结果不止这些」。
+	Truncated bool `json:"truncated"`
+}
+
 // FileReadVO 单文件预览。
 type FileReadVO struct {
 	// FilePath 相对工作区的路径

@@ -43,8 +43,11 @@ type Caps struct {
 	LiveSteerCount bool `json:"live_steer_count"` // queue_update.liveSteered
 	SkillToggle    bool `json:"skill_toggle"`     // 靠 frontmatter 启停技能
 	Extensions     bool `json:"extensions"`       // 扩展/插件 CLI 管理
-	ExportHTML     bool `json:"export_html"`      // 导出为 HTML
+	ExportHTML     bool `json:"export_html"`      // 会话导出为 HTML（export_html RPC）
 	SlashCommands  bool `json:"slash_commands"`   // available_commands_update 推送
+	SessionClone   bool `json:"session_clone"`    // 复制当前会话开新分支（clone RPC）
+	PluginToggle   bool `json:"plugin_toggle"`    // 插件启停（plugin enable/disable）
+	PluginUpgrade  bool `json:"plugin_upgrade"`   // 插件升级（plugin upgrade）
 }
 
 // Identity 是一次探测的结果：哪份可执行文件、什么版本、能干什么。

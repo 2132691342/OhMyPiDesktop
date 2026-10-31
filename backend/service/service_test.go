@@ -64,63 +64,61 @@ func fakeDetector(probes *atomic.Int64, reason string) func(context.Context, str
 
 // ---------------- 探测：并发与缓存 ----------------
 
-// 首屏并发打多个探测请求时，单飞锁把它们合成每引擎一次。
-// 不合并的话 Bootstrap / Health / EngineStatus 三个请求各起一轮探测，多出六个子进程查同一件事。
+// 探测的并发与缓存语义一条钉全。首屏并发打多个探测请求时，单飞锁把它们合成
+// 每引擎一次——不合并的话 Bootstrap / Health / EngineStatus 三个请求各起一轮探测，
+// 多出六个子进程查同一件事；缓存命中不重探、强制重探绕过缓存是同一条流水线的两端。
 func TestDetectSingleFlight(t *testing.T) {
-	app := newTestApp(t)
-	var probes atomic.Int64
-	restore := SetDetector(fakeDetector(&probes, ""))
-	defer restore()
+	t.Run("并发请求合成一轮探测", func(t *testing.T) {
+		app := newTestApp(t)
+		var probes atomic.Int64
+		restore := SetDetector(fakeDetector(&probes, ""))
+		defer restore()
 
-	const n = 12
-	done := make(chan struct{}, n)
-	for i := 0; i < n; i++ {
-		go func() {
-			app.detectAll(context.Background(), false)
-			done <- struct{}{}
-		}()
-	}
-	for i := 0; i < n; i++ {
-		<-done
-	}
-	app.waitDetect(t)
+		const n = 12
+		done := make(chan struct{}, n)
+		for i := 0; i < n; i++ {
+			go func() {
+				app.detectAll(context.Background(), false)
+				done <- struct{}{}
+			}()
+		}
+		for i := 0; i < n; i++ {
+			<-done
+		}
+		app.waitDetect(t)
 
-	// 单飞把 12 个并发请求合成了 1 轮探测；每轮按引擎数探测一次，
-	// 因此总调用数 = 2（两个引擎各一次），而不是 12 轮 × 2。
-	if got := probes.Load(); got != int64(len(engine.AllKinds())) {
-		t.Fatalf("单飞失效：探测了 %d 次，期望 %d（每轮两个引擎各一次）", got, len(engine.AllKinds()))
-	}
+		// 单飞把 12 个并发请求合成了 1 轮探测；每轮按引擎数探测一次，
+		// 因此总调用数 = 2（两个引擎各一次），而不是 12 轮 × 2。
+		if got := probes.Load(); got != int64(len(engine.AllKinds())) {
+			t.Fatalf("单飞失效：探测了 %d 次，期望 %d（每轮两个引擎各一次）", got, len(engine.AllKinds()))
+		}
+	})
+
+	t.Run("缓存命中不重探，强制重探绕过", func(t *testing.T) {
+		app := newTestApp(t)
+		var probes atomic.Int64
+		restore := SetDetector(fakeDetector(&probes, ""))
+		defer restore()
+
+		// 先走一轮，把 detectedAt 填上；缓存新鲜时再打一次非强制请求，应直接命中。
+		app.detectAll(context.Background(), false)
+		app.waitDetect(t)
+		app.detectAll(context.Background(), false)
+		app.waitDetect(t)
+		if got := probes.Load(); got != int64(len(engine.AllKinds())) {
+			t.Fatalf("缓存命中又探了 %d 次，期望仍 %d", got, len(engine.AllKinds()))
+		}
+		// 强制重探：这条路径是同步的（用户就是来看结果的）。
+		app.detectAll(context.Background(), true)
+		if got := probes.Load(); got != 2*int64(len(engine.AllKinds())) {
+			t.Fatalf("强制重探后共 %d 次，期望 %d", got, 2*len(engine.AllKinds()))
+		}
+	})
 }
 
-// 强制重探绕过缓存；缓存新鲜时的非强制请求直接命中、不再探测。
-func TestDetectForceBypassesCache(t *testing.T) {
-	app := newTestApp(t)
-	var probes atomic.Int64
-	restore := SetDetector(fakeDetector(&probes, ""))
-	defer restore()
-
-	// 先走一轮，把 detectedAt 填上。
-	app.detectAll(context.Background(), false)
-	app.waitDetect(t)
-	if got := probes.Load(); got != int64(len(engine.AllKinds())) {
-		t.Fatalf("首轮探测 %d 次，期望 %d", got, len(engine.AllKinds()))
-	}
-	// 缓存新鲜时再打一次非强制请求，应直接命中、不再探测。
-	app.detectAll(context.Background(), false)
-	app.waitDetect(t)
-	if got := probes.Load(); got != int64(len(engine.AllKinds())) {
-		t.Fatalf("缓存命中又探了 %d 次，期望仍 %d", got, len(engine.AllKinds()))
-	}
-	// 强制重探：这条路径是同步的（用户就是来看结果的）。
-	app.detectAll(context.Background(), true)
-
-	if got := probes.Load(); got != 2*int64(len(engine.AllKinds())) {
-		t.Fatalf("强制重探后共 %d 次，期望 %d", got, 2*len(engine.AllKinds()))
-	}
-}
-
-// 探测永远不挡路：首屏不等探测，读操作不等探测。这类错只表现为「打开应用卡几秒」：
-// 探测在后台跑、写回结果时不持锁，编译与其余测试全是绿的。
+// 探测永远不挡路：首屏不等探测，读操作不等探测，探测期间还能读到旧结论。
+// 这类错只表现为「打开应用卡几秒」：探测在后台跑、写回结果时不持锁，
+// 编译与其余测试全是绿的。
 func TestDetectDoesNotBlock(t *testing.T) {
 	t.Run("首屏调用立即返回，探测在后台跑", func(t *testing.T) {
 		app := newTestApp(t)
@@ -168,24 +166,23 @@ func TestDetectDoesNotBlock(t *testing.T) {
 		close(release)
 		app.waitDetect(t)
 	})
-}
 
-// 探测进行中，界面应立刻拿到旧结论（或空），而不是卡在探测上。
-func TestIdentityReadableDuringDetect(t *testing.T) {
-	app := newTestApp(t)
-	app.mu.Lock()
-	app.ids[engine.KindPi] = engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}
-	app.detectedAt = app.detectedAt.Add(-2 * detectTTL) // 让缓存过期
-	app.mu.Unlock()
-	restore := SetDetector(fakeDetector(nil, "timeout"))
-	defer restore()
+	t.Run("探测期间读到旧结论或空", func(t *testing.T) {
+		app := newTestApp(t)
+		app.mu.Lock()
+		app.ids[engine.KindPi] = engine.Identity{Kind: engine.KindPi, Exe: "pi", Caps: engine.CapsFor(engine.KindPi)}
+		app.detectedAt = app.detectedAt.Add(-2 * detectTTL) // 让缓存过期
+		app.mu.Unlock()
+		restore := SetDetector(fakeDetector(nil, "timeout"))
+		defer restore()
 
-	if got := app.Identity(engine.KindPi); got.Exe != "pi" {
-		t.Fatalf("探测期间应读出旧结论，得到 %+v", got)
-	}
-	if got := app.Identity(engine.KindOMP); got.Exe != "" {
-		t.Fatalf("没装过的引擎应读出空，得到 %+v", got)
-	}
+		if got := app.Identity(engine.KindPi); got.Exe != "pi" {
+			t.Fatalf("探测期间应读出旧结论，得到 %+v", got)
+		}
+		if got := app.Identity(engine.KindOMP); got.Exe != "" {
+			t.Fatalf("没装过的引擎应读出空，得到 %+v", got)
+		}
+	})
 }
 
 // ---------------- 探测：状态语义 ----------------

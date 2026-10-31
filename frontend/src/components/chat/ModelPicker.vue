@@ -1,10 +1,7 @@
 <script setup lang="ts">
 // 模型芯片：输入框底栏上的「现在用哪个模型」，点开是厂商 + 模型两级面板。
-//
-// 为什么在输入框里：模型是这一条消息的参数（跟工作目录、引擎、思考档同类）。
-// 放页头会让人以为在改全局设置。
-//
-// 芯片上显示的是模型名（有展示名就用展示名），窄屏时截断。
+// 在输入框里因为模型是这一条消息的参数，放页头像在改全局设置。
+// 显示模型名（有展示名用展示名），窄屏截断。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

@@ -1,12 +1,7 @@
 <script setup lang="ts">
 // 插件页：列、装、卸。
-//
-// 列表来自引擎自己的登记清单（pi 是 settings.json 的 packages，
-// omp 是 plugins/package.json 的 dependencies），不是扫 node_modules——
-// 扫目录会把几百个间接依赖一起当成插件。
-//
-// 装 / 卸仍然代跑引擎自己的 CLI：只有引擎知道怎么把包装进它的私有目录、
-// 怎么同步它自己的锁文件。我们自己去改目录会留下「配置说装了、目录里没有」的脏状态。
+// 列表来自引擎自己的登记清单（pi 的 packages / omp 的 dependencies），
+// 不扫 node_modules——那会把间接依赖当成插件。装 / 卸代跑引擎自己的 CLI。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -95,6 +90,51 @@ async function uninstall(row: PluginRow) {
   try {
     const res = await api.uninstallPlugin(row.plugin_source, rowEngine(row))
     output.value = res.output
+    await load()
+  } catch (err) {
+    output.value = err instanceof Error ? err.message : String(err)
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  } finally {
+    busyName.value = ''
+  }
+}
+
+// 启停是 omp 的 CLI 能力（改它的锁文件），pi 行不出开关。
+// 乐观更新让开关立即回弹到位，失败滚回来；成功后重拉清单拿真实状态。
+const toggling = ref('')
+
+function canToggle(row: PluginRow): boolean {
+  return Boolean(app.capsOf(rowEngine(row))?.plugin_toggle)
+}
+
+function canUpgrade(row: PluginRow): boolean {
+  return Boolean(app.capsOf(rowEngine(row))?.plugin_upgrade)
+}
+
+async function toggle(row: PluginRow, enabled: boolean) {
+  if (row.enabled === enabled) return
+  toggling.value = row.plugin_name
+  const prev = row.enabled
+  row.enabled = enabled
+  try {
+    await api.togglePlugin(row.plugin_name, enabled, rowEngine(row))
+    ElMessage.success(t('plugins.toggleDone'))
+    await load()
+  } catch (err) {
+    row.enabled = prev
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  } finally {
+    toggling.value = ''
+  }
+}
+
+async function upgrade(row: PluginRow) {
+  busyName.value = row.plugin_name
+  output.value = ''
+  try {
+    const res = await api.upgradePlugin(row.plugin_source, rowEngine(row))
+    output.value = res.output
+    ElMessage.success(t('plugins.upgradeDone'))
     await load()
   } catch (err) {
     output.value = err instanceof Error ? err.message : String(err)
@@ -237,21 +277,45 @@ onMounted(load)
               </span>
             </template>
           </el-table-column>
+          <!-- 启用列只对有启停能力的引擎行出现：能力缺失不渲染，不渲染灰开关 -->
+          <el-table-column v-if="rows.some((r) => canToggle(r))" :label="t('plugins.enabledLabel')" width="80">
+            <template #default="{ row }">
+              <el-switch
+                v-if="canToggle(row)"
+                :model-value="row.enabled"
+                :loading="toggling === row.plugin_name"
+                :disabled="(Boolean(toggling) && toggling !== row.plugin_name) || !row.installed"
+                @change="(v: string | number | boolean) => toggle(row, Boolean(v))"
+              />
+              <span v-else class="omp-mono">—</span>
+            </template>
+          </el-table-column>
           <el-table-column :label="t('plugins.path')" min-width="180">
             <template #default="{ row }">
               <span class="omp-mono clip">{{ row.plugin_path || '—' }}</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="96" align="right">
+          <el-table-column :label="t('common.actions')" width="150" align="right">
             <template #default="{ row }">
-              <button
-                class="omp-btn text sm danger"
-                :class="{ 'is-loading': busyName === row.plugin_name }"
-                :disabled="Boolean(busyName)"
-                @click="uninstall(row)"
-              >
-                {{ t('common.uninstall') }}
-              </button>
+              <div class="row-actions">
+                <button
+                  v-if="canUpgrade(row)"
+                  class="omp-btn text sm"
+                  :class="{ 'is-loading': busyName === row.plugin_name }"
+                  :disabled="Boolean(busyName)"
+                  @click="upgrade(row)"
+                >
+                  {{ t('plugins.upgrade') }}
+                </button>
+                <button
+                  class="omp-btn text sm danger"
+                  :class="{ 'is-loading': busyName === row.plugin_name }"
+                  :disabled="Boolean(busyName)"
+                  @click="uninstall(row)"
+                >
+                  {{ t('common.uninstall') }}
+                </button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -356,6 +420,13 @@ onMounted(load)
   color: var(--omp-faint);
   letter-spacing: 0;
   text-transform: none;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--omp-sp-2);
 }
 
 .registry {

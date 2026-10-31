@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // 引擎作用域切换器：omp / pi / 全部。
-//
-// 它只影响本页读哪个引擎的配置，**不碰对话引擎**。三个分段而不是下拉：
-// 一共三个选项，下拉要多一次点击，还看不出「全部」这个选项存在。
+// 只影响本页读哪个引擎的配置，不碰对话引擎。
+// 用三个分段不用下拉：三个选项下拉要多一次点击，还看不出「全部」存在。
 import { useI18n } from 'vue-i18n'
 import type { EngineScope } from '@/composables/useEngineScope'
 

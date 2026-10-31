@@ -1,16 +1,11 @@
 <script setup lang="ts">
-// @ 引用的文件浏览器：工作区内逐级浏览，点文件即加入待发送附件。
-//
-// 为什么不是模糊搜索整个工作区：索引全部文件名要在前端维护一份文件表，
-// 而工作区可能几十万个文件。逐级浏览用的是后端已有的 /files 接口，
-// 与「工作区」页看到的是同一份目录，不会出现「这里搜得到、那里打不开」。
-//
-// 键盘导航自己实现：↑↓ 移动高亮、回车选中。父组件把按键转给这里，
-// 因为菜单列表在这一层（父层只是个壳）。
-import { computed, onMounted, ref } from 'vue'
+// @ 引用的文件选择：逐级浏览 + 全工作区按文件名搜索。
+// 搜索放后端：前端维护几十万文件的索引不现实，后端限界遍历与工作区页
+// 同一份目录，不会「这里搜得到、那里打不开」。键盘导航自己实现。
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/http'
-import type { FileEntry } from '@/types/api'
+import type { FileEntry, FileHit } from '@/types/api'
 import AppIcon from '@/components/common/AppIcon.vue'
 
 const emit = defineEmits<{
@@ -28,6 +23,18 @@ const failed = ref('')
 // 当前高亮的下标。-1 表示还没高亮（列表为空或正在加载）。
 const index = ref(-1)
 
+// 搜索模式：过滤框非空时进入，清空时回到目录浏览。
+const searching = ref(false)
+const hits = ref<FileHit[]>([])
+const truncated = ref(false)
+
+/** 列表行：浏览与搜索统一成一种形状，键盘导航就不用分叉。 */
+interface Row {
+  name: string
+  path: string
+  isDir: boolean
+}
+
 /** 面包屑：根 + 每一级。点任意一级跳过去。 */
 const crumbs = computed(() => {
   const parts = dirPath.value ? dirPath.value.split('/').filter(Boolean) : []
@@ -37,11 +44,20 @@ const crumbs = computed(() => {
   ]
 })
 
-/** 按过滤词筛。目录始终显示——用户是在找路，不是在做精确搜索。 */
-const shown = computed(() => {
+/** 浏览模式下按过滤词筛当前目录；目录始终显示——用户是在找路，不是在做精确搜索。 */
+const shown = computed<Row[]>(() => {
+  if (searching.value) {
+    return hits.value.map((h) => ({ name: h.entry_name, path: h.file_path, isDir: false }))
+  }
   const q = filter.value.trim().toLowerCase()
-  if (!q) return entries.value
-  return entries.value.filter((e) => e.dir || e.entry_name.toLowerCase().includes(q))
+  const list = q
+    ? entries.value.filter((e) => e.dir || e.entry_name.toLowerCase().includes(q))
+    : entries.value
+  return list.map((e) => ({
+    name: e.entry_name,
+    path: dirPath.value ? `${dirPath.value}/${e.entry_name}` : e.entry_name,
+    isDir: e.dir,
+  }))
 })
 
 // 连点两个目录时两次请求会并发返回：只靠 loading 判断会让列表错位。
@@ -54,6 +70,8 @@ async function load(path: string): Promise<void> {
   failed.value = ''
   dirPath.value = path
   filter.value = ''
+  searching.value = false
+  hits.value = []
   index.value = -1
   try {
     const list = await api.files(path)
@@ -68,13 +86,49 @@ async function load(path: string): Promise<void> {
   }
 }
 
-function open(entry: FileEntry): void {
-  if (entry.dir) {
-    void load(dirPath.value ? `${dirPath.value}/${entry.entry_name}` : entry.entry_name)
+// 搜索防抖：每敲一个字都全工作区扫一遍，后端再快也扛不住。
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+let searchSeq = 0
+
+watch(filter, (value) => {
+  const query = value.trim()
+  clearTimeout(searchTimer)
+  if (!query) {
+    searching.value = false
+    hits.value = []
+    index.value = -1
     return
   }
-  const rel = dirPath.value ? `${dirPath.value}/${entry.entry_name}` : entry.entry_name
-  emit('pick', rel, entry.entry_name)
+  searchTimer = setTimeout(() => void runSearch(query), 250)
+})
+
+async function runSearch(query: string): Promise<void> {
+  const mine = ++searchSeq
+  loading.value = true
+  failed.value = ''
+  index.value = -1
+  try {
+    const res = await api.filesSearch(query)
+    if (mine !== searchSeq || filter.value.trim() !== query) return
+    hits.value = res.hits ?? []
+    truncated.value = res.truncated
+    searching.value = true
+  } catch (err) {
+    if (mine !== searchSeq) return
+    hits.value = []
+    searching.value = true
+    failed.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    if (mine === searchSeq) loading.value = false
+  }
+}
+
+function open(row: Row): void {
+  if (!searching.value && row.isDir) {
+    void load(row.path)
+    return
+  }
+  emit('pick', row.path, row.name)
 }
 
 function up(): void {
@@ -157,18 +211,21 @@ defineExpose({ reload: () => load(dirPath.value), move, pickCurrent, listEl: lis
       <p v-if="loading" class="mention-note">{{ t('common.loading') }}</p>
       <p v-else-if="failed" class="mention-note bad">{{ failed }}</p>
       <p v-else-if="!shown.length" class="mention-note">{{ t('chat.mentionEmpty') }}</p>
+      <p v-else-if="searching && truncated" class="mention-note">{{ t('chat.mentionTruncated') }}</p>
       <button
-        v-for="(entry, i) in shown"
-        :key="entry.entry_name"
+        v-for="(row, i) in shown"
+        :key="row.path"
         :data-idx="i"
         class="mention-row"
-        :class="{ dir: entry.dir, 'is-hi': i === index }"
+        :class="{ dir: row.isDir, 'is-hi': i === index }"
+        :title="searching ? row.path : undefined"
         @mouseenter="index = i"
-        @click="open(entry)"
+        @click="open(row)"
       >
-        <AppIcon :name="entry.dir ? 'folder' : 'file'" :size="13" />
-        <span class="mention-name">{{ entry.entry_name }}</span>
-        <span v-if="entry.dir" class="mention-go">›</span>
+        <AppIcon :name="row.isDir ? 'folder' : 'file'" :size="13" />
+        <span class="mention-name">{{ row.name }}</span>
+        <span v-if="searching && row.path.includes('/')" class="mention-dir">{{ row.path }}</span>
+        <span v-else-if="row.isDir" class="mention-go">›</span>
       </button>
     </div>
   </div>
@@ -268,12 +325,26 @@ defineExpose({ reload: () => load(dirPath.value), move, pickCurrent, listEl: lis
 }
 
 .mention-name {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--omp-font-mono);
+}
+
+/* 搜索命中带出来的所在目录：比名字淡一档，让用户知道会在哪儿改这个文件 */
+.mention-dir {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  color: var(--omp-faint);
   font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-3xs);
 }
 
 .mention-go {

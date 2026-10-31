@@ -1,11 +1,7 @@
 <script setup lang="ts">
 // 应用页：装 / 升级 / 卸载两个引擎。
-//
-// 我们不改自己实现安装：跑的就是引擎的官方安装器或包管理器命令，
-// 界面上显示的命令与真正执行的是同一个字符串。所以这一页的每一行都同时
-// 回答三件事：装的什么版本、能不能装、装了会跑哪条命令。
-//
-// 一行一个 AppCard：这里只做分组与派发，渲染细节在组件里。
+// 不自己实现安装：跑的是引擎官方安装器的原话，界面显示与真正执行是同一串；
+// 每行同时回答「装的什么版本、能不能装、会跑哪条命令」。渲染细节在 AppCard。
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

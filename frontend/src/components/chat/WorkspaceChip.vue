@@ -1,11 +1,7 @@
 <script setup lang="ts">
-// 工作区芯片：在输入框底栏直接切工作目录，并显示当前目录的完整路径。
-//
-// 为什么放在输入框里：工作目录决定「这句话在哪个工程里执行」，
-// 它是输入的一部分。放在页头会让人以为切的是整个应用。
-//
-// 芯片上显示的是完整路径（窄屏才截断），因为用户经常同时开着好几个工程，
-// 「…\my-project」这种缩写认不出是哪个，完整路径一眼就能对上。
+// 工作区芯片：在输入框底栏直接切工作目录——它决定这句话在哪个工程里执行，
+// 属于输入的一部分。显示完整路径（窄屏才截断）：
+// 同时开几个工程时「…\my-project」认不出是哪个。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

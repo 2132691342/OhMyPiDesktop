@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // 工作区页：文件树 + 改动清单 + 差异 + 提交/分支。
-//
-// 它回答一个真问题：「助手到底改了什么，我能不能收成一次提交」。
-// 读全开放；写只做白名单动作，且每个动作都由用户点下去。
-// 没有 git 或不是仓库时，页面显示原因与「初始化」，不显示空表格。
+// 回答「助手到底改了什么，能不能收成一次提交」：读全开放，写只做白名单动作；
+// 没有 git 或不是仓库时显示原因与「初始化」，不显示空表格。
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

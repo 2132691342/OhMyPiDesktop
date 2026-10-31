@@ -206,10 +206,12 @@ func CapsFor(kind Kind) Caps {
 		return Caps{
 			Subagents: true, Goals: true, Todos: true, Login: true, Fragments: true,
 			QueueEdit: true, QueueClear: false, LiveSteerCount: true, SkillToggle: true, Extensions: true,
-			ExportHTML: true, SlashCommands: true,
+			ExportHTML: false, SlashCommands: true, SessionClone: false,
+			PluginToggle: true, PluginUpgrade: true,
 		}
 	}
-	return Caps{Extensions: true, ExportHTML: true, QueueClear: true}
+	return Caps{Extensions: true, ExportHTML: true, QueueClear: true, SessionClone: true,
+		PluginToggle: false, PluginUpgrade: false}
 }
 
 // sameFile 判断两条路径是否同一文件（Windows 大小写不敏感）。

@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // 启动行为：开机自启、关闭动作、恢复上次会话、数据目录。
-//
-// 前三项写在系统里（注册表）与设置里，以系统为准——
-// 「设置了开机自启但没生效」这种事只能以系统说了算，
-// 界面显示的是读回来的事实，不是我们记的那一份。
+// 前三项以系统为准：「设置了但没生效」只能系统说了算，
+// 界面显示读回来的事实，不是我们记的那一份。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

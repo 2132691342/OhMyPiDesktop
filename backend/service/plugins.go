@@ -85,7 +85,7 @@ func (a *App) pluginsOf(kind engine.Kind) (*domain.PluginListVO, error) {
 			PluginDesc:    detail.Desc,
 			ResourceKinds: detail.Resources,
 			ScopeKind:     entry.Scope,
-			Enabled:       true,
+			Enabled:       entry.Enabled,
 			Installed:     detail.Path != "",
 		}
 		if row.ResourceKinds == nil {
@@ -110,17 +110,7 @@ func (a *App) InstallPlugin(ctx context.Context, kind engine.Kind, source string
 	if source == "" {
 		return "", pkg.New(pkg.CodeBadRequest, "给出包名或仓库地址", "")
 	}
-	k := a.KindOr(string(kind))
-	id := a.Identity(k)
-	if id.Exe == "" {
-		return "", engine.ErrMissing(k)
-	}
-	out, err := runText(ctx, id.Exe, 10*time.Minute, pluginArgs(k, "install", source)...)
-	if err != nil {
-		return out, pkg.Wrap(pkg.CodePluginFailed, "安装失败", err)
-	}
-	a.InvalidateCounts()
-	return out, nil
+	return a.runPluginCLI(ctx, a.KindOr(string(kind)), engine.PluginActionInstall, source, 10*time.Minute, "安装失败")
 }
 
 // UninstallPlugin 卸一个插件/扩展（走引擎 CLI）。传清单里那一行原文而不是裸包名：
@@ -130,27 +120,54 @@ func (a *App) UninstallPlugin(ctx context.Context, kind engine.Kind, source stri
 	if source == "" {
 		return "", pkg.New(pkg.CodeBadRequest, "要卸哪个插件？", "")
 	}
-	k := a.KindOr(string(kind))
-	id := a.Identity(k)
-	if id.Exe == "" {
-		return "", engine.ErrMissing(k)
+	return a.runPluginCLI(ctx, a.KindOr(string(kind)), engine.PluginActionUninstall, source, 3*time.Minute, "卸载失败")
+}
+
+// TogglePlugin 启用 / 停用一个插件（omp CLI：plugin enable/disable）。
+// 改的是引擎的锁文件，运行中的引擎要重启才会重新加载插件——提示由界面给。
+func (a *App) TogglePlugin(ctx context.Context, kind engine.Kind, name string, enabled bool) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", pkg.New(pkg.CodeBadRequest, "要操作哪个插件？", "")
 	}
-	out, err := runText(ctx, id.Exe, 3*time.Minute, pluginArgs(k, "uninstall", source)...)
+	k := a.KindOr(string(kind))
+	if !a.Identity(k).Caps.PluginToggle {
+		return "", pkg.New(pkg.CodeEngineUnsupported, "这个引擎不支持启停插件", "")
+	}
+	action := engine.PluginActionEnable
+	if !enabled {
+		action = engine.PluginActionDisable
+	}
+	return a.runPluginCLI(ctx, k, action, name, 2*time.Minute, "启停失败")
+}
+
+// UpgradePlugin 升级一个插件（omp CLI：plugin upgrade <名字>）。
+func (a *App) UpgradePlugin(ctx context.Context, kind engine.Kind, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", pkg.New(pkg.CodeBadRequest, "要升级哪个插件？", "")
+	}
+	k := a.KindOr(string(kind))
+	if !a.Identity(k).Caps.PluginUpgrade {
+		return "", pkg.New(pkg.CodeEngineUnsupported, "这个引擎不支持升级插件", "")
+	}
+	return a.runPluginCLI(ctx, k, engine.PluginActionUpgrade, name, 10*time.Minute, "升级失败")
+}
+
+// runPluginCLI 代跑一条插件子命令：取引擎身份、拼参数（拼装事实在 engine 层）、同步执行。
+func (a *App) runPluginCLI(ctx context.Context, kind engine.Kind, action, name string, timeout time.Duration, failText string) (string, error) {
+	id := a.Identity(kind)
+	if id.Exe == "" {
+		return "", engine.ErrMissing(kind)
+	}
+	args := engine.PluginArgs(kind, action, name)
+	if args == nil {
+		return "", pkg.New(pkg.CodeEngineUnsupported, "这个引擎没有这条插件命令", "")
+	}
+	out, err := runText(ctx, id.Exe, timeout, args...)
 	if err != nil {
-		return out, pkg.Wrap(pkg.CodePluginFailed, "卸载失败", err)
+		return out, pkg.Wrap(pkg.CodePluginFailed, failText, err)
 	}
 	a.InvalidateCounts()
 	return out, nil
-}
-
-// pluginArgs 把动作翻成该引擎的 CLI 参数。omp 用 `plugin install`，pi 用 `install` / `remove`
-// （uninstall 是 remove 的别名，统一发 remove——与 pi 帮助里列出的第一个名字一致）。
-func pluginArgs(kind engine.Kind, action, source string) []string {
-	if kind == engine.KindPi {
-		if action == "uninstall" {
-			return []string{"remove", source}
-		}
-		return []string{"install", source}
-	}
-	return []string{"plugin", action, source}
 }

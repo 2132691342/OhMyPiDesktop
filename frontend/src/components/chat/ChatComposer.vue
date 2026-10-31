@@ -1,13 +1,7 @@
 <script setup lang="ts">
 // 输入区：多行输入 + 待发送附件 + @ 引用 + / 命令菜单 + 工具行 + 发送/停止。
-//
-// 布局要点：
-//   - 输入块给 68px 的最小高度，空态也有一个大目标可点，点空白即落光标；
-//   - 工具行与输入块之间有一条分隔线，工具行不再抢输入框的横向空间；
-//   - 待发送附件占独立一行，超过两行就在区内滚动，不把输入框顶出屏。
-//
-// 本文件只做编排（持有状态、把事件接到各处），三块各自在自己的组件里：
-//   ComposerStatus 状态条 / ComposerMenu 弹出菜单 / ComposerBar 工具行。
+// 只做编排（持有状态、接事件），三块各自在组件里：
+// ComposerStatus 状态条 / ComposerMenu 弹出菜单 / ComposerBar 工具行。
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ComposerStatus from '@/components/chat/ComposerStatus.vue'
@@ -326,9 +320,12 @@ defineExpose({ focus })
 </template>
 
 <style scoped>
-/* 输入区根：它自己在页面底部，菜单要从它内部往上弹。 */
+/* 输入区根：它自己在页面底部，菜单要从它内部往上弹。
+   页脚的分隔线与底色在这里声明，不再依赖全局样式。 */
 .composer {
   flex: none;
+  border-top: 1px solid var(--omp-line);
+  background: var(--omp-work);
   padding: var(--omp-sp-3) var(--omp-sp-5) var(--omp-sp-4);
 }
 
@@ -352,6 +349,7 @@ defineExpose({ focus })
 
 .composer-box:focus-within {
   border-color: var(--omp-brand-2);
+  box-shadow: 0 0 0 3px var(--omp-brand-soft);
 }
 
 /* 输入块：给一个 68px 的最小高度，空态也有一个大目标可点。

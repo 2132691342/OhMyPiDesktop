@@ -36,8 +36,8 @@ func (s *Server) deleteSession(c *gin.Context) {
 	if !bind(c, &body) {
 		return
 	}
-	s.run(c, func(*gin.Context) (any, error) {
-		if err := s.svc.DeleteSession(s2kind(body.Engine), body.Path); err != nil {
+	s.run(c, func(ctx *gin.Context) (any, error) {
+		if err := s.svc.DeleteSession(ctx, s2kind(body.Engine), body.Path); err != nil {
 			return nil, err
 		}
 		return gin.H{"ok": true}, nil
@@ -218,6 +218,35 @@ func (s *Server) newChat(c *gin.Context) {
 			return nil, err
 		}
 		return gin.H{"session_file": file}, nil
+	})
+}
+
+// cloneChat 复制当前会话开新分支（仅 Caps.SessionClone 的引擎提供）。
+func (s *Server) cloneChat(c *gin.Context) {
+	var body struct {
+		Engine string `json:"engine"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	s.run(c, func(ctx *gin.Context) (any, error) {
+		file, err := s.svc.CloneChat(ctx, s2kind(body.Engine))
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"session_file": file}, nil
+	})
+}
+
+// exportSessionHTML 导出当前会话为单文件 HTML（仅 Caps.ExportHTML 的引擎提供）。
+func (s *Server) exportSessionHTML(c *gin.Context) {
+	var body struct {
+		Engine  string `json:"engine"`
+		Session string `json:"session"`
+	}
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(ctx *gin.Context) (any, error) {
+		return s.svc.ExportSessionHTML(ctx, s2kind(body.Engine), body.Session)
 	})
 }
 

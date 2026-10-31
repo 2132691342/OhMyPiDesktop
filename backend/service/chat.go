@@ -7,6 +7,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
@@ -363,4 +368,70 @@ func (a *App) NewChat(ctx context.Context, kind engine.Kind) (string, error) {
 		return "", err
 	}
 	return st.SessionFile, nil
+}
+
+// CloneChat 复制当前会话当前位置为一个新会话并切过去。
+// 仅 Caps.SessionClone 的引擎提供；界面按能力位隐藏入口，这里不再重复判断引擎种类。
+func (a *App) CloneChat(ctx context.Context, kind engine.Kind) (string, error) {
+	if !kind.Valid() {
+		kind = a.ActiveKind()
+	}
+	e := a.EngineFor(kind, a.Workspace())
+	if err := e.Clone(ctx); err != nil {
+		return "", err
+	}
+	st, err := e.State(ctx)
+	if err != nil {
+		return "", err
+	}
+	return st.SessionFile, nil
+}
+
+// ExportSessionHTML 把一个会话导出为单文件 HTML（仅 Caps.ExportHTML 的引擎提供）。
+// 引擎把文件写进数据目录的暂存位，这里读完内容就删——前端拿内容走 Blob 下载，
+// 与 Markdown 导出同一套体验。
+func (a *App) ExportSessionHTML(ctx context.Context, kind engine.Kind, sessionFile string) (*domain.SessionExportVO, error) {
+	if sessionFile == "" {
+		return nil, pkg.New(pkg.CodeBadRequest, "还没有当前会话", "")
+	}
+	e, err := a.engineForSession(kind, sessionFile)
+	if err != nil {
+		return nil, err
+	}
+	if !a.Identity(e.Kind).Caps.ExportHTML {
+		return nil, pkg.New(pkg.CodeEngineUnsupported, "这个引擎不支持 HTML 导出", "")
+	}
+	if !e.Live() {
+		return nil, pkg.New(pkg.CodeEngineDown, "先在对话页打开这个会话再导出", sessionFile)
+	}
+	// 导出的是引擎当前绑定的那个会话；正看着的不是它绑定的，先切过去。
+	if current := e.CurrentSessionFile(); !samePath(current, sessionFile) {
+		if err := e.Switch(ctx, sessionFile); err != nil {
+			return nil, err
+		}
+	}
+	target, err := a.exportStagingPath()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := e.ExportHTML(ctx, target); err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(target)
+	if err != nil {
+		// 读不回来时保留暂存文件：用户还能按 detail 里的路径手工捞。
+		return nil, pkg.Wrap(pkg.CodeDataDir, "导出的 HTML 读不回来（暂存在 "+target+"）", err)
+	}
+	_ = os.Remove(target)
+	name := strings.TrimSuffix(filepath.Base(sessionFile), ".jsonl") + ".html"
+	return &domain.SessionExportVO{FileName: name, Content: string(raw)}, nil
+}
+
+// exportStagingPath 造一个不冲突的导出暂存位：数据目录的 exports/ 下按毫秒时间命名。
+func (a *App) exportStagingPath() (string, error) {
+	dir := filepath.Join(a.appDir, "exports")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", pkg.Wrap(pkg.CodeDataDir, "建不了导出暂存目录", err)
+	}
+	return filepath.Join(dir, fmt.Sprintf("session-%d.html", time.Now().UnixMilli())), nil
 }

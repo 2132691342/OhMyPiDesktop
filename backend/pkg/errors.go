@@ -111,8 +111,9 @@ const (
 	CodeConfigParse   = "5006"
 
 	// 6xxx：会话。
-	CodeSessionInvalid = "6001"
-	CodeSessionBusy    = "6002"
+	CodeSessionInvalid      = "6001"
+	CodeSessionBusy         = "6002"
+	CodeSessionDeleteFailed = "6003"
 
 	// 7xxx：入参与鉴权。
 	CodeBadRequest = "7001"

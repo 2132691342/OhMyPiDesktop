@@ -1,8 +1,6 @@
 <script setup lang="ts">
 // 新建技能：名字 / 说明 / 初始正文。
-//
-// 名字的校验在这里而不是交给后端：它要变成一个目录名，
-// 含路径分隔符就写到别人的目录里去了。
+// 名字在这里校验：它要变成目录名，含路径分隔符就写到别人的目录里去了。
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 

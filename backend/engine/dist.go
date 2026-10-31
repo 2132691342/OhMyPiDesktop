@@ -89,6 +89,34 @@ func UninstallCommand(kind Kind, channel Channel) []string {
 	}
 }
 
+// 插件管理子命令名。取值与两个引擎的 CLI 子命令对齐。
+const (
+	PluginActionInstall   = "install"
+	PluginActionUninstall = "uninstall"
+	PluginActionEnable    = "enable"
+	PluginActionDisable   = "disable"
+	PluginActionUpgrade   = "upgrade"
+)
+
+// PluginArgs 返回插件管理子命令的参数（不含引擎可执行文件本身）。
+// omp 是 `plugin <动作> <名字>`；pi 的装卸是顶层 `install` / `remove`，
+// 且没有启停与升级——返回 nil 表示「引擎没有这条命令」，调用方不得把 nil 发出去。
+func PluginArgs(kind Kind, action, name string) []string {
+	if kind == KindPi {
+		switch action {
+		case PluginActionInstall:
+			return []string{"install", name}
+		case PluginActionUninstall:
+			return []string{"remove", name}
+		}
+		return nil
+	}
+	if kind == KindOMP {
+		return []string{"plugin", action, name}
+	}
+	return nil
+}
+
 // InstallHint 返回该引擎的安装命令原文（给人复制，也给人看懂我们要跑什么）。
 func InstallHint(kind Kind) string {
 	if script := InstallerScript(kind); script != "" {

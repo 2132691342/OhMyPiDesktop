@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"OhMyPiDesktop/backend/engine"
 	"OhMyPiDesktop/backend/pkg"
@@ -72,17 +73,22 @@ func (a *App) kindOfSession(kind engine.Kind, path string) engine.Kind {
 	return a.ActiveKind()
 }
 
-// DeleteSession 删掉会话文件。
-//
-// 不删正在跑的那个：引擎会往已删文件继续追加，表现为「删了又回来了」。
-func (a *App) DeleteSession(kind engine.Kind, path string) error {
+// DeleteSession 删掉会话文件。正在跑的不删（引擎会往已删文件继续追加，表现为「删了又回来了」）；
+// 空闲但进程停在它上面的，先让引擎切走再删。
+func (a *App) DeleteSession(ctx context.Context, kind engine.Kind, path string) error {
 	eng := a.kindOfSession(kind, path)
 	e := a.EngineFor(eng, dirOf(path))
 	if e.Busy() && samePath(e.CurrentSessionFile(), path) {
 		return pkg.New(pkg.CodeSessionBusy, "这个会话正在跑，先停下来再删", "")
 	}
-	if err := os.Remove(path); err != nil {
-		return pkg.Wrap(pkg.CodeNotFound, "删除会话失败", err)
+	if e.Live() && !e.Busy() && samePath(e.CurrentSessionFile(), path) {
+		// 切走失败不拦删除：引擎多半已经在退出路上，文件照删。
+		swapCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		_ = e.NewSession(swapCtx)
+		cancel()
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return pkg.Wrap(pkg.CodeSessionDeleteFailed, "删除会话失败，文件可能被别的程序占用", err)
 	}
 	// 目录里的其它文件（子代理转录等）一起清掉。
 	base := strings.TrimSuffix(path, ".jsonl")

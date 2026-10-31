@@ -44,3 +44,13 @@ type PluginActionREQ struct {
 	// PluginSource 包名或仓库地址（npm:xxx / git:… / 本地路径）
 	PluginSource string `json:"plugin_source"`
 }
+
+// PluginToggleREQ 启停一个插件。
+type PluginToggleREQ struct {
+	// EngineKind 目标引擎；空表示当前选中的
+	EngineKind string `json:"engine_kind"`
+	// PluginName 插件包名（omp 的 enable/disable 认裸名）
+	PluginName string `json:"plugin_name"`
+	// Enabled true=启用 false=停用
+	Enabled bool `json:"enabled"`
+}

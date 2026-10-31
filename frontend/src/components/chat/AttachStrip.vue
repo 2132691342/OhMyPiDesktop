@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // 待发送附件条：图片给缩略图，文件给名字，每条可单独移除。
-//
-// 单独一个组件是因为它有自己的视觉规则（缩略图尺寸、横向换行、截断），
-// 混在输入区里会让那个文件同时回答「怎么发」和「附件长什么样」两个问题。
+// 单独一个组件：它有自己的视觉规则（缩略图尺寸、换行、截断），
+// 不该和「怎么发」挤在输入区里。
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
 import type { PendingAttachment } from '@/composables/useAttachments'

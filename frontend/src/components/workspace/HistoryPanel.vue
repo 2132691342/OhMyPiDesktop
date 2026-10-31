@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // 历史面板：提交列表 + 单次提交详情（改动文件与逐行差异）+ 单个文件的时间线。
-//
-// 为什么单独一个组件：页面级视图只编排，而这里同时管「列表 / 详情 / 文件过滤」
-// 三种状态与它们的选择态，塞回页面会让那个文件变成第二个 store。
+// 单独一个组件：这里同时管「列表 / 详情 / 文件过滤」三种状态与选择态，
+// 塞回页面会让那个文件变成第二个 store。
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'

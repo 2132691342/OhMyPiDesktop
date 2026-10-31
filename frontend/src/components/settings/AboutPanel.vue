@@ -1,8 +1,6 @@
 <script setup lang="ts">
 // 关于：版本号、引擎版本、运行日志。
-//
-// 日志不给自动刷新：它是一次排错动作，看的是「刚才那几秒发生了什么」，
-// 定时刷新会把正在看的那段顶走。
+// 日志不自动刷新：排错看的是「刚才那几秒」，定时刷新会把正在看的那段顶走。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'

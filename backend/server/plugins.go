@@ -46,6 +46,36 @@ func (s *Server) uninstallPlugin(c *gin.Context) {
 	})
 }
 
+// togglePlugin 启停一个插件（omp 的 CLI 能力；pi 请求会被 service 按能力位拒绝）。
+func (s *Server) togglePlugin(c *gin.Context) {
+	var body domain.PluginToggleREQ
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(ctx *gin.Context) (any, error) {
+		out, err := s.svc.TogglePlugin(ctx, s2kind(body.EngineKind), body.PluginName, body.Enabled)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"output": out}, nil
+	})
+}
+
+// upgradePlugin 升级一个插件（omp 的 CLI 能力）。
+func (s *Server) upgradePlugin(c *gin.Context) {
+	var body domain.PluginActionREQ
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(ctx *gin.Context) (any, error) {
+		out, err := s.svc.UpgradePlugin(ctx, s2kind(body.EngineKind), body.PluginSource)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"output": out}, nil
+	})
+}
+
 // ---------------- MCP ----------------
 
 // mcpList 列出 MCP 服务器。`live=1` 时额外问引擎一次连接状态。

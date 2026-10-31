@@ -58,6 +58,7 @@ tasks:
 
   dev:frontend:
     summary: Runs the frontend in development mode
+    dir: frontend
     deps:
       - task: install:frontend:deps
     cmds:

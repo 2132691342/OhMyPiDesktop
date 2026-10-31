@@ -26,6 +26,12 @@ export interface EngineCaps {
   extensions: boolean
   export_html: boolean
   slash_commands: boolean
+  /** 复制当前会话开新分支（clone RPC）；omp 没有 */
+  session_clone: boolean
+  /** 插件启停（omp CLI：plugin enable/disable）；pi 没有 */
+  plugin_toggle: boolean
+  /** 插件升级（omp CLI：plugin upgrade）；pi 没有 */
+  plugin_upgrade: boolean
 }
 
 export interface EngineIdentity {
@@ -638,6 +644,24 @@ export interface FileEntry {
 export interface FileList {
   dir_path: string
   entries: FileEntry[]
+  truncated: boolean
+}
+
+/** 全工作区搜索的一个命中：@ 引用直接用 file_path */
+export interface FileHit {
+  file_path: string
+  entry_name: string
+}
+
+/** 会话 HTML 导出的出参：自包含单文件，前端 Blob 下载 */
+export interface SessionExport {
+  file_name: string
+  content: string
+}
+
+export interface FileSearch {
+  query: string
+  hits: FileHit[]
   truncated: boolean
 }
 

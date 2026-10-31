@@ -1,8 +1,6 @@
 <script setup lang="ts">
 // 工作区：当前目录 + 最近用过的目录。
-//
-// 「最近」这份记忆只影响这一份列表——点 × 是从记忆里去掉，
-// **不动目录本身**。删别人的目录不该由一个设置页的按钮做。
+// 点 × 只是从记忆里去掉，不动目录本身——删目录不该由设置页的按钮做。
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { useAppStore } from '@/stores/app'

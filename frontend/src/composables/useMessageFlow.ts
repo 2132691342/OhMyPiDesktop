@@ -1,15 +1,6 @@
 // 对话的消息流：当前轮、历史轮、增量补丁、收尾。
-//
-// 单独一个 composable 的理由：这一块的状态有它自己的生命周期与纪律——
-//
-//   - 性能：流式正文只追加到「当前轮的 blocks 数组」上，不重建整个消息列表。
-//     一轮长回答如果每次都整表替换，重渲染成本是 O(字数²)。
-//   - 收尾：chat:done 之后要把这一轮交出去，交给**服务器的历史**，
-//     而不是本地再并一遍。
-//   - 缓存：这一轮的流式渲染缓存用完即丢（正文已经进历史）。
-//
-// 把它从会话状态（模型 / 思考档 / 上下文）里分出来，
-// 「哪些东西跨轮保留、哪些用完即弃」这条界线才说得清。
+// 三条纪律：流式正文只追加当前轮的 blocks（整表替换是 O(字数²)）；
+// 收尾交给服务器的历史不再本地并；流式缓存用完即弃——跨轮与否的分界才说得清。
 import { ref } from 'vue'
 import { dropAllCaches, dropCache } from '@/utils/md'
 import type { ChatBlock, ChatPatch, HistoryTurn, Turn } from '@/types/api'
@@ -155,10 +146,8 @@ export function useMessageFlow() {
   const lastFinishedRunId = ref('')
   // 历史轮（由后端投影好的轮次，界面直接渲染）
   const history = ref<HistoryTurn[]>([])
-  // 每轮的用量与耗时，按 run id 记。
-  //
-  // 收尾之后界面还要用它渲染那一轮的读数（输入 / 输出 / 缓存命中 / 耗时），
-  // 而那时候这一轮已经不在 turn 里了——历史轮不带这些字段。
+  // 每轮的用量与耗时，按 run id 记：收尾后界面还要用它渲染那一轮的读数，
+  // 而那时这一轮已经不在 turn 里了——历史轮不带这些字段。
   const usages = ref<Record<string, TurnUsage>>({})
   // 本轮开始的时刻。用 context 的原因：它是唯一一个「这一轮从什么时候开始」的事实。
   const startedAt = ref(0)

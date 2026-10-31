@@ -139,6 +139,18 @@ async function openSession(path: string) {
   await pinBottom()
 }
 
+/**
+ * 侧栏里的会话被删 / 改名了。
+ * 删的是正看着的这个时，后端已经先把引擎切到了新会话（删除的防护动作），
+ * 这里跟着 refresh 对齐——不能调 newChat，那会再多开一条空会话文件。
+ */
+async function onSessionChanged(path?: string) {
+  if (path && path === chat.sessionFile) {
+    // 显式传空串：refresh 的缺省参数会带上还没更新的旧路径（刚被删的那个）。
+    await chat.refresh('')
+  }
+}
+
 /** 会话页跳过来时带的会话路径。 */
 function sessionFromQuery(): string {
   const value = route.query.session
@@ -154,7 +166,13 @@ onMounted(async () => {
     pinned.value = true
     await pinBottom()
   } catch {
-    /* 引擎没起来时对话页仍是可用的空态 */
+    // query 里的会话可能刚被删掉：退回默认会话，地址也一并清掉。
+    await router.replace({ name: 'chat', query: {} })
+    try {
+      await chat.refresh()
+    } catch {
+      /* 引擎没起来时对话页仍是可用的空态 */
+    }
   }
   // 模型与思考档清单不阻塞首屏：它要问引擎，而引擎冷启动可能要十几秒。
   // 但它**必须发**：之前没有任何地方在进对话页时拉它，于是模型下拉永远空的。
@@ -179,7 +197,14 @@ watch(
 <template>
   <div class="chat-page">
     <aside class="chat-side">
-      <SessionList :active="chat.sessionFile" :compact="true" show-new @open="openSession" @new-chat="onNewChat" />
+      <SessionList
+        :active="chat.sessionFile"
+        :compact="true"
+        show-new
+        @open="openSession"
+        @new-chat="onNewChat"
+        @changed="onSessionChanged"
+      />
     </aside>
 
     <section class="chat-main">

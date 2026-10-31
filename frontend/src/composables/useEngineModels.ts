@@ -1,14 +1,6 @@
-// 按引擎分桶的模型清单与思考档。
-//
-// 为什么要分桶：两个引擎的清单完全不同，而拉清单可能要起进程
-// （omp 冷启动实测 11 秒，pi 起一次 Node 3 秒）。不分桶的话，
-// 切一次引擎就要重拉一次——于是「切引擎」这个高频动作每次都付一次冷启动。
-//
-// 分桶之后，第一次切到某个引擎要付一次，之后是瞬时的。
-//
-// 它之所以独立于 chat store：这一块的状态是「每个引擎各有一份」，
-// 而 store 里其余的状态是「当前会话只有一份」。两者的生命周期不同，
-// 放一起会让「切引擎要换哪些东西」这件事说不清。
+// 按引擎分桶的模型清单与思考档：拉清单可能要起进程（omp 冷启动实测 11 秒），
+// 不分桶的话「切引擎」这个高频动作每次都付一次冷启动；分桶后只付第一次。
+// 独立于 chat store 是因为生命周期不同：这里每个引擎一份，store 里当前会话一份。
 import { computed, ref } from 'vue'
 import { api } from '@/api/http'
 import type { EngineKind, ModelRow } from '@/types/api'
@@ -22,11 +14,9 @@ import type { EngineKind, ModelRow } from '@/types/api'
 export function useEngineModels(kind: () => EngineKind) {
   const modelCache = ref<Record<EngineKind, ModelRow[]>>({ omp: [], pi: [] })
   const levelCache = ref<Record<EngineKind, string[]>>({ omp: [], pi: [] })
-  // loading 按引擎分桶，不用一个全局标志。
-  //
-  // 之前是一个 bool：切引擎时如果上个引擎的拉取还在飞，loadModels 直接返回，
-  // 于是新引擎的清单永远拉不下来——用户看到的是上一引擎的模型清单，
-  // 而界面上写的是新引擎的名字。
+  // loading 按引擎分桶，不用一个全局标志：全局 bool 会在上个引擎的拉取
+  // 还在飞时让新引擎的清单永远拉不下来——看到的是旧清单，
+  // 界面上写的却是新引擎的名字。
   const modelLoading = ref<Record<EngineKind, boolean>>({ omp: false, pi: false })
 
   /**
