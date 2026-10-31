@@ -56,6 +56,8 @@ export const useChatStore = defineStore('chat', () => {
   const turn = flow.turn
   const lastFinishedRunId = flow.lastFinishedRunId
   const history = flow.history
+  // 本轮开始的时刻：消息脚标的秒表从它起走。
+  const startedAt = flow.startedAt
   const applyPatch = flow.applyPatch
   const setUsage = flow.setUsage
   const usageOf = flow.usageOf
@@ -386,6 +388,7 @@ export const useChatStore = defineStore('chat', () => {
     turn,
     lastFinishedRunId,
     history,
+    startedAt,
     asks,
     activeAsk,
     queue,

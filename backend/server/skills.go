@@ -103,6 +103,24 @@ func (s *Server) deleteSkill(c *gin.Context) {
 	})
 }
 
+// copySkill 把另一个引擎的用户级同名技能复制过来（矩阵页的「装到这一列」）。
+func (s *Server) copySkill(c *gin.Context) {
+	var body struct {
+		Engine string `json:"engine"`
+		Path   string `json:"path"`
+	}
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(*gin.Context) (any, error) {
+		path, err := s.svc.SkillCopyTo(s2kind(body.Engine), body.Path)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"path": path}, nil
+	})
+}
+
 // ---------------- 系统能力 ----------------
 
 func (s *Server) revealPath(c *gin.Context) {

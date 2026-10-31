@@ -582,6 +582,15 @@ export interface SkillRow {
   kind: EngineKind
 }
 
+/** 矩阵行：一个技能（按名合并两引擎的扫描结果），cells 是每个引擎那份的原文 */
+export interface SkillMatrixRow {
+  name: string
+  description: string
+  /** 分组用：两边的来源取优先级最高的那个（与引擎加载优先级一致） */
+  group_source: SkillRow['source']
+  cells: Partial<Record<EngineKind, SkillRow>>
+}
+
 /** 一条已装插件。清单来自引擎自己的登记文件，不是扫 node_modules 的结果。 */
 export interface PluginRow {
   engine_kind: string
@@ -622,6 +631,16 @@ export interface McpServer {
   live_status?: string
   live_error?: string
   tool_names?: string[]
+}
+
+/** 矩阵行：一个服务器（按名合并两引擎的定义），cells 是每个引擎那份的原文 */
+export interface McpMatrixRow {
+  server_name: string
+  transport_kind: string
+  command_line?: string
+  server_url?: string
+  desc?: string
+  cells: Partial<Record<EngineKind, McpServer>>
 }
 
 export interface McpListData {

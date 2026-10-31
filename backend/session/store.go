@@ -31,6 +31,10 @@ type Session struct {
 	Messages  int       `json:"messages"`
 	Tokens    int       `json:"tokens"`
 	Cost      float64   `json:"cost"`
+
+	// contOf 是 omp 写冲突续接的头字段（continuationOf）：本文件的对话
+	// 从哪个会话续过来。只在本包内用于把续接链折叠成一条，不出 JSON。
+	contOf string
 }
 
 // Detail 是会话详情：元信息 + 投影消息。
@@ -120,7 +124,23 @@ func (ix *Index) List(workspace string) ([]Session, error) {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
-	return out, nil
+	// 续接链折叠：引擎写不进自己的会话文件时（别的进程占着）会续接到同目录的
+	// 新文件，新文件的头里记着 continuationOf。旧文件还躺在目录里，照直列出来
+	// 就是「同一段对话出现好几条」。被续接的源文件只留链尾——用户认的是对话，不是文件。
+	continued := map[string]bool{}
+	for _, s := range out {
+		if s.contOf != "" {
+			continued[s.contOf] = true
+		}
+	}
+	kept := out[:0]
+	for _, s := range out {
+		if continued[s.ID] {
+			continue
+		}
+		kept = append(kept, s)
+	}
+	return kept, nil
 }
 
 // metaOf 读会话头与尾部统计，命中缓存则直接返回。
@@ -157,11 +177,12 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 			continue
 		}
 		var head struct {
-			Type      string `json:"type"`
-			Title     string `json:"title"`
-			CWD       string `json:"cwd"`
-			Timestamp string `json:"timestamp"`
-			Message   struct {
+			Type           string `json:"type"`
+			Title          string `json:"title"`
+			CWD            string `json:"cwd"`
+			Timestamp      string `json:"timestamp"`
+			ContinuationOf string `json:"continuationOf"`
+			Message        struct {
 				Role    string          `json:"role"`
 				Model   string          `json:"model"`
 				Content json.RawMessage `json:"content"`
@@ -191,6 +212,7 @@ func (ix *Index) metaOf(path string, size int64, mtime time.Time) Session {
 			if head.CWD != "" {
 				meta.CWD = head.CWD
 			}
+			meta.contOf = head.ContinuationOf
 		case "session_info":
 			// pi 的标题存在 session_info 条目里，取最新一条（空串 = 清除）。
 			if head.Name != nil {

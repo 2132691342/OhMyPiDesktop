@@ -87,6 +87,9 @@ type McpServerVO struct {
     LiveError      string
     ToolNames      []string
 }
+
+// 跨引擎复制（矩阵页「装到这一列」）
+func (a *App) McpCopyTo(kind engine.Kind, name string, enabled bool) (*domain.McpListVO, error)
 ```
 
 ## 关键流程
@@ -118,6 +121,19 @@ McpToggle(kind, name, enabled):
 
 删条目时连带把它从 `disabledServers` / `enabledServers` 里摘掉——
 否则同名残留会变成一条永远匹配不到任何服务器的幽灵规则。
+
+### 跨引擎复制（矩阵页的「装到这一列」）
+
+```
+McpCopyTo(kind, name, enabled):
+  1. 读另一个引擎的用户级 mcp.json，同名条目就是现成的定义
+  2. Upsert 进 kind 的用户级 mcp.json，再 SetEnabled
+  3. 不做常驻的中心清单：复制之后两边各改各的，各自的文件仍是唯一事实
+```
+
+为什么不做中心库：cc-switch 管十几个应用才需要一份中心定义；这里只有两个引擎、
+文件形状相同，「以另一边的条目为源复制一次」就能达到同样的管理体验，
+却不会多出一本迟早分叉的账。
 
 ## 约束
 

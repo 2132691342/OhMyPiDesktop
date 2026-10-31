@@ -41,21 +41,15 @@ const connection = computed(() => {
         <span class="conn-text">{{ connection.text }}</span>
       </span>
       <div class="win-ctl" style="--wails-draggable: no-drag">
-        <button class="win-btn" title="最小化" @click="windowCtl.minimize()">
+        <button class="win-btn" :title="t('titlebar.minimize')" @click="windowCtl.minimize()">
           <svg viewBox="0 0 12 12" width="11" height="11" stroke="currentColor" stroke-width="1.2"><path d="M2 6h8" /></svg>
         </button>
-        <button class="win-btn" title="最大化" @click="windowCtl.toggleMaximize()">
+        <button class="win-btn" :title="t('titlebar.maximize')" @click="windowCtl.toggleMaximize()">
           <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="7" height="7" rx="1" /></svg>
         </button>
-        <!-- 关闭按设置走（收托盘 / 退出）；想直接退就用右边那个 -->
-        <button class="win-btn" title="关闭" @click="windowCtl.close()">
+        <!-- 唯一的关闭钮：按设置走（收托盘 / 退出），后端在 WindowClosing 里分流 -->
+        <button class="win-btn close" :title="t('common.close')" @click="windowCtl.close()">
           <svg viewBox="0 0 12 12" width="11" height="11" stroke="currentColor" stroke-width="1.2"><path d="M3 3l6 6M9 3l-6 6" /></svg>
-        </button>
-        <button class="win-btn win-quit" :title="t('common.quitApp')" @click="windowCtl.quit()">
-          <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3">
-            <path d="M6 1.5v4" />
-            <path d="M3.1 3.3a4 4 0 1 0 5.8 0" />
-          </svg>
         </button>
       </div>
     </div>
@@ -170,11 +164,5 @@ const connection = computed(() => {
 .win-btn.close:hover {
   background: var(--omp-bad);
   color: #fff;
-}
-
-/* 退出：与关闭分开，因为两者的含义真的不同（一个是收托盘，一个是结束进程） */
-.win-btn.win-quit:hover {
-  background: var(--omp-bad-soft);
-  color: var(--omp-bad);
 }
 </style>

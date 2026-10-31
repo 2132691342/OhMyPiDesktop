@@ -95,6 +95,9 @@ const nameLocked = computed(() => Boolean(props.editing))
       <el-form-item :label="t('mcp.desc')">
         <el-input v-model="props.form.desc" :placeholder="t('mcp.descPlaceholder')" />
       </el-form-item>
+
+      <!-- 矩阵页的写入目标：一次写进勾选的引擎各自的 mcp.json -->
+      <slot name="extra" />
     </el-form>
 
     <template #footer>

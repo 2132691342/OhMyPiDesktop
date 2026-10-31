@@ -18,21 +18,22 @@ const Kind = engine.KindOMP
 // Caps 是 omp 的能力表：公共层能表达的能力它全有。
 func Caps() engine.Caps {
 	return engine.Caps{
-		Subagents:      true,
-		Goals:          true,
-		Todos:          true,
-		Login:          true,
-		Fragments:      true,
-		QueueEdit:      true,
-		QueueClear:     false, // omp 没有 clear_queue，只能逐条移除
-		LiveSteerCount: true,
-		SkillToggle:    true,
-		Extensions:     true,
-		ExportHTML:     false, // omp 没有导出 HTML 的 RPC，TUI 的 /export 走不了
-		SlashCommands:  true,
-		SessionClone:   false, // omp 的 /clone 只活在 TUI，RPC 没有 clone 方法
-		PluginToggle:   true,
-		PluginUpgrade:  true,
+		Subagents:         true,
+		Goals:             true,
+		Todos:             true,
+		Login:             true,
+		Fragments:         true,
+		QueueEdit:         true,
+		QueueClear:        false, // omp 没有 clear_queue，只能逐条移除
+		AbortRestoreQueue: true,  // 停止必须连排队一起撤，否则排队的活会接着跑
+		LiveSteerCount:    true,
+		SkillToggle:       true,
+		Extensions:        true,
+		ExportHTML:        false, // omp 没有导出 HTML 的 RPC，TUI 的 /export 走不了
+		SlashCommands:     true,
+		SessionClone:      false, // omp 的 /clone 只活在 TUI，RPC 没有 clone 方法
+		PluginToggle:      true,
+		PluginUpgrade:     true,
 	}
 }
 

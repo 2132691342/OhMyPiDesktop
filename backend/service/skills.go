@@ -89,6 +89,29 @@ func (a *App) DeleteSkill(kind engine.Kind, path string) error {
 	return skill.DeleteByPath(path)
 }
 
+// SkillCopyTo 把另一个引擎的用户级技能复制到 kind 的用户技能根。
+// 两家引擎认同一套 SKILL.md，复制即可用；之后各自启停各改各的，两边目录仍是唯一事实。
+// 只有用户目录里的技能可复制：工作区与插件来的那份属于仓库或包，复制出去就是本地漂移。
+func (a *App) SkillCopyTo(kind engine.Kind, path string) (string, error) {
+	k := a.KindOr(string(kind))
+	from, err := otherKind(k)
+	if err != nil {
+		return "", err
+	}
+	fromLayout, err := a.Layout(from)
+	if err != nil {
+		return "", err
+	}
+	if !isUnder(path, fromLayout.Skills) {
+		return "", pkg.New(pkg.CodeSkillReadOnly, "只能复制用户目录里的技能", path)
+	}
+	layout, err := a.Layout(k)
+	if err != nil {
+		return "", err
+	}
+	return skill.CopyInto(path, layout.Skills)
+}
+
 // SkillContent 读技能原文。
 func (a *App) SkillContent(path string) (string, error) {
 	return skill.Content(path)

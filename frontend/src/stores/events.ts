@@ -3,6 +3,7 @@
 // 依赖由调用方以接口传入，本文件不 import 任何 store，避免循环依赖。
 import { asNumber, asString, readAppProgress, readAsk, readBlocks, readCommands, readPatch, readStrings } from '@/utils/sse'
 import type { AppProgressLog, TurnUsagePayload } from '@/utils/sse'
+import i18n from '@/i18n'
 import { useChatStore } from './chat'
 import { useAgentsStore } from './agents'
 
@@ -245,6 +246,12 @@ export function routeFrame(
     case 'chat:editor_text': {
       const text = asString(data.text)
       if (text) chat.draftOverride = text
+      // 停止时撤回的排队消息：原文回输入框之外，再报一句数，
+      // 不然用户不知道「排队的那些话去哪了」。
+      const restored = asNumber(data.restored)
+      if (restored > 0) {
+        deps.toast('info', i18n.global.t('chat.stopRestored', { n: restored }))
+      }
       return
     }
     case 'chat:notice': {

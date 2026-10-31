@@ -140,7 +140,6 @@ const transcript = computed(() => {
         >
           <span class="dot" :class="statusClass(item.status)" />
           <span class="roster-name">{{ item.agent }}</span>
-          <span class="roster-idx">#{{ item.index }}</span>
         </li>
       </ul>
 
@@ -175,8 +174,10 @@ const transcript = computed(() => {
 </template>
 
 <style scoped>
+/* 宽度封顶：面板再宽也不能把主对话挤扁——它只是观测台，不是主战场。
+   视口缩放会把 360px 放大到 486px，封顶后最多吃掉窗口的三成。 */
 .agents {
-  width: 260px;
+  width: min(calc(260px * var(--omp-vw-scale)), 24vw);
   flex: none;
   display: flex;
   flex-direction: column;
@@ -187,7 +188,7 @@ const transcript = computed(() => {
 }
 
 .agents.wide {
-  width: 360px;
+  width: min(calc(360px * var(--omp-vw-scale)), 30vw);
 }
 
 .agents-head {
@@ -270,12 +271,6 @@ const transcript = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.roster-idx {
-  font-family: var(--omp-font-mono);
-  font-size: var(--omp-fs-3xs);
-  color: var(--omp-faint);
 }
 
 /* 状态灯：pending 灰 / running 呼吸主色 / completed 绿 / failed 红 */

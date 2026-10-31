@@ -223,6 +223,9 @@ export const api = {
     post<{ path: string }>('/skills/create', { name, description, body, ...k(engine) }),
   deleteSkill: (path: string, engine?: EngineKind) =>
     post<{ ok: boolean }>('/skills/delete', { path, ...k(engine) }),
+  // 矩阵页：把另一个引擎的用户级同名技能复制过来
+  skillCopyTo: (path: string, engine: EngineKind) =>
+    post<{ path: string }>('/skills/copy', { path, engine_kind: engine }),
 
   plugins: (engine?: EngineKind) => get<PluginListData>('/plugins', k(engine)),
   installPlugin: (source: string, engine?: EngineKind) =>
@@ -253,6 +256,9 @@ export const api = {
     post<McpListData>('/mcp/toggle', { server_name: serverName, enabled, ...k(engine) }),
   mcpRemove: (serverName: string, engine?: EngineKind) =>
     post<McpListData>('/mcp/remove', { server_name: serverName, ...k(engine) }),
+  // 矩阵页：把另一个引擎里同名服务器的定义复制过来并启停
+  mcpCopyTo: (serverName: string, enabled: boolean, engine: EngineKind) =>
+    post<McpListData>('/mcp/copy', { server_name: serverName, enabled, engine_kind: engine }),
 
   // 工作区
   files: (path: string) => get<FileList>('/files', { path }),

@@ -343,3 +343,49 @@ func Delete(sk Skill) error {
 	}
 	return nil
 }
+
+// CopyInto 把一份技能目录复制到目标技能根下（<dstRoot>/<目录名>/）。
+// 两个引擎认同一套 SKILL.md（frontmatter 同形），用户级的技能原样复制即可用；
+// 目标同名已存在时拒绝——覆盖等于无声毁掉那边已有的技能。
+func CopyInto(srcDir, dstRoot string) (string, error) {
+	name := filepath.Base(srcDir)
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		return "", pkg.New(pkg.CodeSkillInvalid, "技能目录不合法", srcDir)
+	}
+	if _, err := os.Stat(filepath.Join(srcDir, "SKILL.md")); err != nil {
+		return "", pkg.New(pkg.CodeSkillInvalid, "源目录里没有 SKILL.md", srcDir)
+	}
+	dst := filepath.Join(dstRoot, name)
+	if _, err := os.Stat(dst); err == nil {
+		return "", pkg.New(pkg.CodeSkillInvalid, "目标引擎那边已经有同名技能", dst)
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return "", pkg.Wrap(pkg.CodeSkillInvalid, "建不了目标目录", err)
+	}
+	err := filepath.WalkDir(srcDir, func(p string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(srcDir, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		if !d.Type().IsRegular() {
+			return nil // 符号链接等非常规条目不带：那不是技能的本体
+		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, raw, 0o644)
+	})
+	if err != nil {
+		_ = os.RemoveAll(dst) // 复制到一半失败时不留半个技能：引擎启动时会读它
+		return "", pkg.Wrap(pkg.CodeSkillInvalid, "复制技能失败", err)
+	}
+	return filepath.Join(dst, "SKILL.md"), nil
+}

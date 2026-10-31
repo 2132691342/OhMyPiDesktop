@@ -155,6 +155,54 @@ func TestExtractToolDiff(t *testing.T) {
 	}
 }
 
+// 工具参数里的文件路径：pi 放独立字段，omp 埋在 input 正文开头。
+// 认不出 omp 那种，「看改动」入口就只在 pi 上出现。
+func TestToolFilePath(t *testing.T) {
+	cases := []struct {
+		name string
+		args string
+		want string
+	}{
+		{
+			name: "pi 的 edit：file_path 字段",
+			args: `{"file_path":"/w/a.go","old":"a","new":"b"}`,
+			want: "/w/a.go",
+		},
+		{
+			name: "独立 path 字段优先",
+			args: `{"path":"/w/b.go","file_path":"/w/other.go"}`,
+			want: "/w/b.go",
+		},
+		{
+			name: "omp 的 edit：路径埋在 input 开头的 [路径#锚点] 里",
+			args: `{"i":"改前缀","input":"[D:/RustFiles/wb/crates/src/ulid.rs#BD1E]\nPUT 8*:"}`,
+			want: "D:/RustFiles/wb/crates/src/ulid.rs",
+		},
+		{
+			name: "锚点缺失：整个方括号都是路径",
+			args: `{"input":"[D:/w/c.go]\nbody"}`,
+			want: "D:/w/c.go",
+		},
+		{
+			name: "input 不带路径标记",
+			args: `{"input":"plain text"}`,
+			want: "",
+		},
+		{
+			name: "空参数",
+			args: `{}`,
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ToolFilePath(json.RawMessage(tc.args)); got != tc.want {
+				t.Errorf("路径不对：got %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // ---------------- 协议翻译 ----------------
 
 // feed 把若干条 message_update 帧依次喂进翻译器。

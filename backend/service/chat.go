@@ -55,6 +55,13 @@ func (a *App) ChatState(ctx context.Context, kind engine.Kind, sessionFile strin
 	// 用户可能点开另一个引擎的会话，照旧用请求的 kind 会让 pi 去绑 omp 的会话文件——
 	// 引擎拒绝，界面弹「切不到这个会话」，而用户什么也没做错。
 	kind = a.kindOfSession(kind, sessionFile)
+	// 续接链跟到尾：这条会话的对话若已在别的文件里继续（引擎写冲突时自动续接），
+	// 绑旧文件等于把对话劈成两半各写各的，列表里也会再冒出一条「重复历史」。
+	if sessionFile != "" {
+		if tip := a.Index(kind).ContinuationTip(sessionFile); tip != "" {
+			sessionFile = tip
+		}
+	}
 	dir := a.Workspace()
 	detail, detailErr := a.sessionDetailFor(kind, sessionFile)
 	if detailErr == nil && detail.CWD != "" {

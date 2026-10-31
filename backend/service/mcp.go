@@ -254,6 +254,56 @@ func (a *App) McpToggle(kind engine.Kind, name string, enabled bool) (*domain.Mc
 	return a.McpList(context.Background(), k, false)
 }
 
+// McpCopyTo 把另一个引擎里同名服务器的定义复制到 kind 的用户级 mcp.json 并启停。
+// 两个引擎的文件形状相同，另一边现成的条目就是定义；复制之后两边各改各的，
+// 各自的 mcp.json 仍是唯一事实——这里不做常驻的「中心清单」。
+func (a *App) McpCopyTo(kind engine.Kind, name string, enabled bool) (*domain.McpListVO, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, pkg.New(pkg.CodeBadRequest, "要复制哪个服务器？", "")
+	}
+	k := a.KindOr(string(kind))
+	from, err := otherKind(k)
+	if err != nil {
+		return nil, err
+	}
+	fromLayout, err := a.Layout(from)
+	if err != nil {
+		return nil, err
+	}
+	srcFile, err := mcpcfg.Read(mcpPathIn(fromLayout.Agent))
+	if err != nil {
+		return nil, pkg.Wrap(pkg.CodeNotFound, "另一个引擎的 mcp.json 读不到，没有定义可复制", err)
+	}
+	entry, ok := srcFile.Servers[name]
+	if !ok {
+		return nil, pkg.New(pkg.CodeNotFound, "另一个引擎的配置里没有这个服务器", name)
+	}
+	layout, err := a.Layout(k)
+	if err != nil {
+		return nil, err
+	}
+	target := mcpPathIn(layout.Agent)
+	if err := mcpcfg.Upsert(target, name, entry); err != nil {
+		return nil, err
+	}
+	if err := mcpcfg.SetEnabled(target, name, enabled, k == engine.KindOMP); err != nil {
+		return nil, err
+	}
+	a.InvalidateCounts()
+	return a.McpList(context.Background(), k, false)
+}
+
+// otherKind 返回另一个引擎。界面是双引擎矩阵，复制动作的来源永远是「另一边」。
+func otherKind(k engine.Kind) (engine.Kind, error) {
+	for _, other := range engine.AllKinds() {
+		if other != k {
+			return other, nil
+		}
+	}
+	return "", pkg.New(pkg.CodeBadRequest, "没有另一个引擎", string(k))
+}
+
 // McpRemove 删掉一个 MCP 服务器。
 func (a *App) McpRemove(kind engine.Kind, name string) (*domain.McpListVO, error) {
 	name = strings.TrimSpace(name)

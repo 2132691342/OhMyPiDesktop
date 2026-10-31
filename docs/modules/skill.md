@@ -73,10 +73,24 @@ func Scan(roots Roots) ([]Skill, error)      // Roots 见「一套扫描」一�
 func Toggle(path string, enabled bool) error  // omp：enabled
 func TogglePi(path string, enabled bool) error // pi：disable-model-invocation
 func Create(rootDir, name, description, body string) (string, error)
+func CopyInto(srcDir, dstRoot string) (string, error) // 跨引擎复制：目标同名已存在时拒绝
 func DeleteByPath(path string) error
 func Content(path string) (string, error)
 func SaveContent(path, text string) error     // 只认 SKILL.md；256 KB 上限；原子写
 ```
+
+### 跨引擎复制（矩阵页的「装到另一边」）
+
+```
+SkillCopyTo(kind, path):
+  1. 源必须在另一个引擎的用户技能根下（isUnder 判定，不重新推导目录归属）
+  2. skill.CopyInto(path, kind 的用户技能根)
+```
+
+两个引擎认同一套 SKILL.md（frontmatter 同形），用户级技能目录原样复制到另一边的
+用户技能根即可用。复制是**一次性动作**：之后各自启停各改各的，两边目录仍是唯一事实。
+目标同名已存在时拒绝——覆盖等于无声毁掉那边已有的技能；复制到一半失败不留半个目录
+（引擎启动时一定会读它）。只允许源是用户级技能：工作区与插件来的那份属于仓库或包。
 
 正文编辑是一条独立用例：`SkillContent` 读原文（含 frontmatter，界面直接显示），
 `SaveSkillContent` 先验归属（只允许用户技能目录，工作区与插件来的那份跟着

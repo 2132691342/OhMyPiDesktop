@@ -2,7 +2,7 @@
 // 输入区：多行输入 + 待发送附件 + @ 引用 + / 命令菜单 + 工具行 + 发送/停止。
 // 只做编排（持有状态、接事件），三块各自在组件里：
 // ComposerStatus 状态条 / ComposerMenu 弹出菜单 / ComposerBar 工具行。
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ComposerStatus from '@/components/chat/ComposerStatus.vue'
 import ComposerMenu from '@/components/chat/ComposerMenu.vue'
@@ -33,6 +33,21 @@ const attachError = ref('')
 
 // 草稿按会话存：切走再切回来还在，关掉窗口也不丢。
 const draftStore = useComposerDraft(computed(() => chat.sessionFile), draft)
+
+// 引擎或「停止撤回排队」要求把一段话放回输入框：整段替换当前草稿。
+// 消费即清空——它是一次性的，留着会让下一次输入被同样的内容顶掉。
+watch(
+  () => chat.draftOverride,
+  (text) => {
+    if (!text) return
+    draft.value = text
+    chat.draftOverride = ''
+    void nextTick(() => {
+      autosize()
+      textarea.value?.focus()
+    })
+  },
+)
 
 // 附件：粘贴图片 / 回形针选文件 / @ 引用工作区文件，三种来源一个列表。
 const attachments = useAttachments()

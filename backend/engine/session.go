@@ -234,8 +234,39 @@ func (e *Engine) beginRun() (runID, dir, sessionID string, kind Kind) {
 	return runID, e.WorkDir, e.session, e.Kind
 }
 
-// Abort 中止当前轮。排队消息要跟着停，否则用户排的那句话凭空消失。
+// restoredQueued 是 abort_and_restore_queue 结果里的一条撤回消息。
+type restoredQueued struct {
+	Text string `json:"text"`
+}
+
+// Abort 中止当前轮。omp 的 plain abort 之后排队 drain 会把排队的活接着跑完——
+// 「停止」就必须连排队一起撤（abort_and_restore_queue），撤回的原话走 editor_text
+// 放回输入框：用户打过的字不因为一次停止而丢。pi 没有这条命令，plain abort 即停。
 func (e *Engine) Abort(ctx context.Context) error {
+	if e.Caps().AbortRestoreQueue {
+		var out struct {
+			Steering []restoredQueued `json:"steering"`
+			FollowUp []restoredQueued `json:"followUp"`
+		}
+		if err := e.Call(ctx, "abort_and_restore_queue", nil, &out, 30*time.Second); err == nil {
+			var texts []string
+			for _, m := range out.Steering {
+				if m.Text != "" {
+					texts = append(texts, m.Text)
+				}
+			}
+			for _, m := range out.FollowUp {
+				if m.Text != "" {
+					texts = append(texts, m.Text)
+				}
+			}
+			if len(texts) > 0 {
+				e.send("", "chat:editor_text", map[string]any{"text": strings.Join(texts, "\n\n"), "restored": len(texts)})
+			}
+			return nil
+		}
+		// 引擎不认这条命令（版本太旧）就退回 plain abort：停得住比撤得回重要。
+	}
 	return e.Call(ctx, "abort", nil, nil, 30*time.Second)
 }
 

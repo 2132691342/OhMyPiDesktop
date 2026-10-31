@@ -90,3 +90,13 @@ type McpRemoveREQ struct {
 	// ServerName 服务器名
 	ServerName string `json:"server_name"`
 }
+
+// McpCopyREQ 把另一个引擎里同名服务器的定义复制到目标引擎。
+type McpCopyREQ struct {
+	// EngineKind 目标引擎；定义取自另一个引擎的用户级 mcp.json
+	EngineKind string `json:"engine_kind"`
+	// ServerName 服务器名
+	ServerName string `json:"server_name"`
+	// Enabled 复制过去之后是启用还是停用
+	Enabled bool `json:"enabled"`
+}

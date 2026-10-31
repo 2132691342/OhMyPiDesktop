@@ -11,7 +11,9 @@ export default {
     "starting": "Starting",
     "detecting": "Detecting",
     "noEngine": "No engine installed",
-    "connected": "Connected"
+    "connected": "Connected",
+    "minimize": "Minimize",
+    "maximize": "Maximize"
   },
   "nav": {
     "overview": "Overview",
@@ -75,7 +77,12 @@ export default {
   "mcp": {
     "title": "MCP",
     "subtitle": "MCP servers give {engine} extra tools. Both engines share the same mcp.json shape, so one page manages both.",
-    "scopedSubtitle": "MCP servers give engines extra tools. Pick the scope above: omp, pi, or both; each engine keeps its own mcp.json.",
+    "matrixSubtitle": "One list for both engines: each column is an engine’s switch; missing entries can be copied over from the other side.",
+    "writeTargets": "Write to",
+    "installTo": "Install to {engine}",
+    "copyHint": "Copy the same-named server definition from the other engine into {engine} and enable it",
+    "copied": "Copied and enabled",
+    "notInstalled": "Not installed",
     "probeScopeOnly": "Live probing needs a specific engine: switch the scope to omp or pi first.",
     "subtitleSidebar": "MCP servers for {engine}",
     "file": "Config file",
@@ -114,7 +121,7 @@ export default {
     "emptyTitle": "No MCP servers yet",
     "emptyHint": "Add a local command or remote URL; restart the engine and its tools become available.",
     "removeTitle": "Remove server?",
-    "removeConfirm": "Remove ‘{name}’? The entry disappears and its tools stop working."
+    "removeConfirm": "Remove ‘{name}’ from {engines}? The entry disappears and its tools stop working."
   },
   "apps": {
     "title": "Apps",
@@ -267,7 +274,6 @@ export default {
     "delete": "Delete",
     "edit": "Edit",
     "close": "Close",
-    "quitApp": "Quit app",
     "confirm": "Confirm",
     "remove": "Remove",
     "refresh": "Refresh",
@@ -308,6 +314,7 @@ export default {
     "sendSteer": "Steer",
     "sendQueue": "Queue",
     "stop": "Stop",
+    "stopRestored": "Stopped. {n} queued message(s) withdrawn and put back in the input box",
     "thinking": "Thinking",
     "thinkingLive": "Thinking…",
     "toolRunning": "Running",
@@ -319,8 +326,8 @@ export default {
     "chars": "{n} chars",
     "expand": "Expand",
     "collapse": "Collapse",
-    "peekInWorkspace": "Open in workspace",
-    "toolNoInlineDiff": "No diff body in this frame — use Open in workspace to see the real change now.",
+    "viewChanges": "View changes",
+    "liveAnswering": "Answering",
     "emptyTitle": "Start a conversation",
     "emptyHint": "Tools, skills and rules for this working directory all apply here.",
     "pickWorkspace": "Choose folder",
@@ -449,7 +456,9 @@ export default {
     "cancel": "Cancel",
     "cancelled": "Cancelled",
     "alreadyGone": "It had already finished",
-    "unsupported": "This engine has no subagents"
+    "unsupported": "This engine has no subagents",
+    "showTranscript": "View its transcript",
+    "hideTranscript": "Hide transcript"
   },
   "sessions": {
     "title": "Sessions",
@@ -530,7 +539,12 @@ export default {
   "skills": {
     "title": "Skills",
     "subtitle": "A skill is a short instruction set for how to do something. Toggling edits the front matter of SKILL.md.",
-    "scopedSubtitle": "A skill is a short instruction set for how to do something. Pick the scope above: omp, pi, or both; it does not change the engine used for chatting.",
+    "matrixSubtitle": "One list for both engines: each column is an engine’s switch; user-level skills can be installed to the other side in one click.",
+    "writeTargets": "Install to",
+    "installTo": "Install to {engine}",
+    "copyHint": "Copy the user-level skill with the same name into {engine}",
+    "copied": "Installed to {engine}",
+    "noToggle": "Skills from this source are not toggled here",
     "create": "New skill",
     "createTitle": "New skill",
     "nameLabel": "Name",
@@ -541,7 +555,7 @@ export default {
     "bodyHint": "Steps, constraints, examples",
     "view": "View",
     "deleteTitle": "Delete skill",
-    "deleteConfirm": "Delete skill “{name}”? Its folder is removed.",
+    "deleteConfirm": "Delete skill “{name}” from {engines}? Its folder is removed.",
     "readonly": "Read-only",
     "sources": {
       "project": "Workspace",

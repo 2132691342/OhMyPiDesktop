@@ -18,21 +18,22 @@ const Kind = engine.KindPi
 // Caps 是 pi 的能力表：没有子代理、目标、待办、OAuth 向导、分片与排队编辑。
 func Caps() engine.Caps {
 	return engine.Caps{
-		Subagents:      false,
-		Goals:          false,
-		Todos:          false,
-		Login:          false,
-		Fragments:      false,
-		QueueEdit:      false,
-		QueueClear:     true, // pi 只有一次性 clear_queue，没有逐条移除
-		LiveSteerCount: false,
-		SkillToggle:    false,
-		Extensions:     true,
-		ExportHTML:     true,
-		SlashCommands:  false, // pi 不主动推，只能拉
-		SessionClone:   true,  // clone RPC：复制当前会话位置开新分支
-		PluginToggle:   false, // pi 的 CLI 没有 plugin enable/disable
-		PluginUpgrade:  false, // pi 的 CLI 没有 plugin upgrade
+		Subagents:         false,
+		Goals:             false,
+		Todos:             false,
+		Login:             false,
+		Fragments:         false,
+		QueueEdit:         false,
+		QueueClear:        true, // pi 只有一次性 clear_queue，没有逐条移除
+		AbortRestoreQueue: false,
+		LiveSteerCount:    false,
+		SkillToggle:       false,
+		Extensions:        true,
+		ExportHTML:        true,
+		SlashCommands:     false, // pi 不主动推，只能拉
+		SessionClone:      true,  // clone RPC：复制当前会话位置开新分支
+		PluginToggle:      false, // pi 的 CLI 没有 plugin enable/disable
+		PluginUpgrade:     false, // pi 的 CLI 没有 plugin upgrade
 	}
 }
 

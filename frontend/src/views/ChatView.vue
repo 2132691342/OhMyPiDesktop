@@ -73,6 +73,8 @@ const liveTurn = computed(() => {
     model: chat.model?.id,
     streaming: chat.streaming,
     errored: Boolean(chat.promptError),
+    // 脚标秒表的起点：一轮从「发送成功」那一刻起就有耗时，不用等引擎报。
+    startedAt: chat.startedAt || undefined,
     // 用量与耗时：收尾之后这一轮会从直播位退到历史位，
     // 那时读数还得留着——所以它按 run id 记在 store 里，不在 turn 上。
     usage: chat.usageOf(turn.run_id),

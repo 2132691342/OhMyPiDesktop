@@ -83,8 +83,9 @@ func ExtractToolDiff(result json.RawMessage) (diffText, filePath string) {
 }
 
 // ToolFilePath 从工具参数里取出被改动的文件路径。
-// pi 的 edit 工具把路径放在参数里（details 里没有），omp 放在 details.path，两条路都要覆盖——
-// 缺了任何一条，那个引擎的「看工作区」入口就是空的。
+// pi 的 edit 把路径放在参数里；omp 没有独立的路径字段，
+// 它埋在 input 正文开头的 `[路径#锚点]` 里——三种都要认，
+// 缺了任何一种，那个引擎的「看改动」入口就是空的。
 func ToolFilePath(args json.RawMessage) string {
 	if len(args) == 0 {
 		return ""
@@ -92,6 +93,7 @@ func ToolFilePath(args json.RawMessage) string {
 	var a struct {
 		Path     string `json:"path"`
 		FilePath string `json:"file_path"`
+		Input    string `json:"input"`
 	}
 	if json.Unmarshal(args, &a) != nil {
 		return ""
@@ -99,7 +101,22 @@ func ToolFilePath(args json.RawMessage) string {
 	if a.Path != "" {
 		return a.Path
 	}
-	return a.FilePath
+	if a.FilePath != "" {
+		return a.FilePath
+	}
+	// omp 的 input 以 `[D:/dir/file.rs#BD1E]` 开头：方括号里 # 之前是文件路径。
+	if a.Input != "" {
+		if a.Input[0] == '[' {
+			if end := strings.IndexByte(a.Input, ']'); end > 1 {
+				inner := a.Input[1:end]
+				if cut := strings.IndexByte(inner, '#'); cut > 1 {
+					inner = inner[:cut]
+				}
+				return inner
+			}
+		}
+	}
+	return ""
 }
 
 // parseToolDetails 从两种形状里认出工具细节：先按「details 嵌在里面」解一次，

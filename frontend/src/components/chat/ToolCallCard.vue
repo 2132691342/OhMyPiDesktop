@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// 工具卡：一行摘要 + 展开后的参数 / 输出 / 差异。
-// 默认收起输出（几千行，展开是用户的选择）；差异优先于输出展示。
-// 头压一行，挤压时截摘要不截工具名；平铺行而非描边盒子——十几个调用不该像一堆卡片。
+// 工具卡：一行摘要 + 展开后的参数 / 输出。
+// 改动看抽屉（「看改动」打开右侧差异抽屉，看工作区里的真实差异）；
+// 引擎带了 diff 却没说文件路径时才就地铺差异行。
+// 头压一行，挤压时截摘要不截工具名。
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/common/AppIcon.vue'
@@ -16,10 +17,9 @@ const open = ref(false)
 watch(
   () => props.block.status,
   (status, prev) => {
+    // 只有出错才自动展开：差异到货就展开会让流式中的版面不停跳动，
+    // 「它改了什么」由头一行的「看改动」负责，那是抽屉的入口。
     if (prev === 'running' && status === 'error') open.value = true
-    // 差异到货就把卡片展开：用户最想看的就是「它改了什么」，
-    // 而展开这一步由他们自己点会漏掉。
-    if (prev !== 'done' && status === 'done' && props.block.diff?.length) open.value = true
   },
 )
 
@@ -87,20 +87,19 @@ const fileName = computed(() => {
 })
 
 /**
- * 有没有「这个文件被改过」的证据：引擎给的 diff，或它自己报的文件路径。
+ * 能不能「看改动」（打开差异抽屉）。
  *
- * 只认 diff 是不够的：写入 / 补丁类工具在引擎那边不一定带 diff 帧，
- * 那时界面上完全没有差异入口，用户只能去工作区页自己找。
- */
-const touched = computed(() => Boolean(props.block.file_path) || diffLines.value.length > 0)
-
-/**
- * 能不能「看工作区里的真实差异」。
- *
- * 只要知道文件路径就行。之前的判据还要求文件落在当前工作区内，
+ * 只要知道文件路径就行——抽屉问的是工作区里的真实差异，
+ * 不依赖引擎这一帧带没带 diff。之前的判据还要求文件落在当前工作区内，
  * 而那把最常见的情形挡掉了：引擎常在别的项目目录里改东西。
  */
-const canPeek = computed(() => touched.value)
+const canPeek = computed(() => Boolean(props.block.file_path))
+
+/**
+ * 就地铺差异行的条件：引擎带了 diff 却没说文件路径。
+ * 有路径的一律走抽屉——两处看同一份改动只会让人怀疑哪份是真的。
+ */
+const inlineDiff = computed(() => diffLines.value.length > 0 && !props.block.file_path)
 
 /** 摘要那一行显示什么：优先文件名（用户认文件，不认命令）。 */
 const summaryText = computed(() => fileName.value || headline.value)
@@ -141,17 +140,17 @@ const summaryText = computed(() => fileName.value || headline.value)
         @click="openFilePeek(block.file_path ?? '', fileName)"
       >
         <AppIcon name="git" :size="11" />
+        {{ t('chat.viewChanges') }}
       </button>
     </div>
 
     <div v-if="open" class="tool-body">
-      <!-- 差异先于输出：改文件工具的输出只是一句人话。 -->
-      <div v-if="touched">
+      <!-- 没有文件路径的 diff 只能就地铺：抽屉不知道去问哪个文件。 -->
+      <div v-if="inlineDiff">
         <div class="tool-label">{{ t('chat.toolChanges') }}</div>
-        <div v-if="diffLines.length" class="tool-diff">
+        <div class="tool-diff">
           <DiffRows :lines="diffLines" />
         </div>
-        <p v-else class="tool-nodiff">{{ t('chat.toolNoInlineDiff') }}</p>
       </div>
       <template v-if="args">
         <div>
@@ -165,21 +164,21 @@ const summaryText = computed(() => fileName.value || headline.value)
           <pre class="tool-pre selectable">{{ output }}</pre>
         </div>
       </template>
-      <div v-if="!args && !output && !diffLines.length" class="tool-label">{{ t('common.empty') }}</div>
+      <div v-if="!args && !output && !inlineDiff" class="tool-label">{{ t('common.empty') }}</div>
     </div>
   </div>
 </template>
 
 <style scoped>
 /* 头是严格一行：除摘要以外每一段都 flex: none，被挤的只能是摘要。
-   头这个按钮负责打开/收起，它自己得是 flex 容器的一部分。 */
+   卡片化之后头有自己的上下留白，按钮负责整卡的展开/收起。 */
 .tool-toggle {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
   flex: 1;
   min-width: 0;
-  padding: 3px var(--omp-sp-2);
+  padding: 6px var(--omp-sp-2) 6px var(--omp-sp-3);
   border: none;
   background: transparent;
   text-align: left;
@@ -189,12 +188,12 @@ const summaryText = computed(() => fileName.value || headline.value)
   cursor: pointer;
 }
 
-/* 状态点：15px 的圈。运行中转，结束变绿，出错变红；未开始是一个灰点。 */
+/* 状态点：16px 的圈。运行中转，结束变绿，出错变红；未开始是一个灰点。 */
 .tool-dot {
   display: grid;
   place-items: center;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   flex: none;
   border-radius: var(--omp-r-full);
   background: var(--omp-hover);
@@ -277,38 +276,31 @@ const summaryText = computed(() => fileName.value || headline.value)
   transform: rotate(90deg);
 }
 
-/* 「看改动」是头这一行的最后一个动作：不另起一行。 */
+/* 「看改动」是头这一行的最后一个动作：带文字的链接式按钮，
+   进的是差异抽屉。不另起一行，空间紧张时先缩摘要再缩它。 */
 .tool-peek {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   flex: none;
-  padding: 0;
+  padding: 0 var(--omp-sp-2) 0 0;
   border: none;
-  border-radius: var(--omp-r-xs);
   background: transparent;
-  color: var(--omp-faint);
+  color: var(--omp-brand);
+  font-size: var(--omp-fs-3xs);
+  font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
   transition:
-    background-color var(--omp-dur-fast) var(--omp-ease),
     color var(--omp-dur-fast) var(--omp-ease),
     transform var(--omp-dur-fast) var(--omp-ease);
 }
 .tool-peek:hover {
-  background: var(--omp-surface);
-  color: var(--omp-brand);
+  color: var(--omp-brand-strong);
   transform: scale(var(--omp-press-hover));
 }
 .tool-peek:active {
   transform: scale(var(--omp-press-active));
-}
-
-.tool-nodiff {
-  margin: 0;
-  font-size: var(--omp-fs-2xs);
-  color: var(--omp-faint);
-  line-height: 1.6;
 }
 
 /* 差异表：三列（旧行号 / 新行号 / 正文），与工作区的差异视图同一套列宽。 */

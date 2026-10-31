@@ -42,68 +42,73 @@ const { t } = useI18n()
 <template>
   <div class="composer-bar">
     <div class="bar-row">
-      <WorkspaceChip />
-      <EngineChip />
-      <ModelPicker />
-      <ThinkingChip />
+      <!-- 参数组：允许被裁剪的一侧。窗口窄了先收参数，
+           「排队 / 停止 / 发送」永远在——动作被顶出去就是按钮消失。 -->
+      <div class="bar-params">
+        <WorkspaceChip />
+        <EngineChip />
+        <ModelPicker />
+        <ThinkingChip />
 
-      <button
-        class="omp-btn icon ghost"
-        :title="props.imagesAllowed ? t('chat.attachPick') : t('chat.attachNoImageModel')"
-        :disabled="!app.hasEngine || !props.imagesAllowed"
-        @click="emit('browseFiles')"
-      >
-        <AppIcon name="file" :size="14" />
-      </button>
+        <button
+          class="omp-btn icon ghost"
+          :title="props.imagesAllowed ? t('chat.attachPick') : t('chat.attachNoImageModel')"
+          :disabled="!app.hasEngine || !props.imagesAllowed"
+          @click="emit('browseFiles')"
+        >
+          <AppIcon name="file" :size="14" />
+        </button>
 
-      <button
-        class="omp-btn icon ghost"
-        :class="{ on: chat.autoCompaction, 'is-loading': chat.switching === 'compaction' }"
-        :disabled="chat.busy || chat.switching === 'compaction' || !app.hasEngine"
-        :title="chat.autoCompaction ? t('chat.autoCompactOn') : t('chat.autoCompactOff')"
-        @click="emit('toggleCompact', !chat.autoCompaction)"
-      >
-        <AppIcon name="refresh" :size="13" />
-      </button>
+        <button
+          class="omp-btn icon ghost"
+          :class="{ on: chat.autoCompaction, 'is-loading': chat.switching === 'compaction' }"
+          :disabled="chat.busy || chat.switching === 'compaction' || !app.hasEngine"
+          :title="chat.autoCompaction ? t('chat.autoCompactOn') : t('chat.autoCompactOff')"
+          @click="emit('toggleCompact', !chat.autoCompaction)"
+        >
+          <AppIcon name="refresh" :size="13" />
+        </button>
 
-      <span v-if="props.count && !chat.streaming" class="composer-hint">{{ props.count }}</span>
-      <span class="bar-sp" />
+        <span v-if="props.count && !chat.streaming" class="composer-hint">{{ props.count }}</span>
+      </div>
 
-      <ContextMeter />
+      <div class="bar-acts">
+        <ContextMeter />
 
-      <button
-        v-if="chat.streaming"
-        class="omp-btn sm ghost"
-        :class="{ 'is-loading': props.queueing }"
-        :disabled="!props.canSend || props.queueing"
-        :title="t('chat.queueHint')"
-        @click="emit('queue')"
-      >
-        <AppIcon name="clock" :size="13" />
-        {{ t('chat.queue') }}
-      </button>
+        <button
+          v-if="chat.streaming"
+          class="omp-btn sm ghost"
+          :class="{ 'is-loading': props.queueing }"
+          :disabled="!props.canSend || props.queueing"
+          :title="t('chat.queueHint')"
+          @click="emit('queue')"
+        >
+          <AppIcon name="clock" :size="13" />
+          {{ t('chat.queue') }}
+        </button>
 
-      <button
-        v-if="chat.streaming"
-        class="omp-btn sm"
-        :class="{ 'is-loading': props.stopping }"
-        :disabled="props.stopping"
-        :title="t('chat.stop')"
-        @click="emit('stop')"
-      >
-        <AppIcon name="stop" :size="13" />
-        {{ t('chat.stop') }}
-      </button>
+        <button
+          v-if="chat.streaming"
+          class="omp-btn sm"
+          :class="{ 'is-loading': props.stopping }"
+          :disabled="props.stopping"
+          :title="t('chat.stop')"
+          @click="emit('stop')"
+        >
+          <AppIcon name="stop" :size="13" />
+          {{ t('chat.stop') }}
+        </button>
 
-      <button
-        class="omp-btn primary sm"
-        :class="{ 'is-loading': props.sending || props.busyCmd !== '' }"
-        :disabled="!props.canSend || !app.hasEngine"
-        @click="emit('submit')"
-      >
-        <AppIcon name="send" :size="13" />
-        {{ chat.streaming ? t('chat.sendSteer') : t('chat.send') }}
-      </button>
+        <button
+          class="omp-btn primary sm"
+          :class="{ 'is-loading': props.sending || props.busyCmd !== '' }"
+          :disabled="!props.canSend || !app.hasEngine"
+          @click="emit('submit')"
+        >
+          <AppIcon name="send" :size="13" />
+          {{ chat.streaming ? t('chat.sendSteer') : t('chat.send') }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -113,8 +118,8 @@ const { t } = useI18n()
   min-width: 0;
 }
 
-/* 一行：不换行，超出的部分交给各自的省略号。
-   换行会让「发送」按钮的位置随内容长短漂移。 */
+/* 一行两段：参数组可收缩（内部裁剪），动作组恒定可见。
+   不换行——换行会让「发送」按钮的位置随内容长短漂移。 */
 .bar-row {
   display: flex;
   align-items: center;
@@ -122,14 +127,32 @@ const { t } = useI18n()
   min-width: 0;
 }
 
-/* 芯片不参与收缩：它们自己管截断，被父级压窄时反而会把图标挤掉 */
-.bar-row > * {
+/* 参数组：吃掉剩余宽度；装不下时由各芯片按自己的省略号收缩。
+   不给这组加 overflow: hidden——芯片的下拉面板就渲染在组里，
+   裁剪会把弹出层一起裁掉（表现为「点了没反应」）。 */
+.bar-params {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bar-params > * {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.bar-params > .omp-btn {
   flex: none;
 }
 
-.bar-sp {
-  flex: 1;
-  min-width: var(--omp-sp-1);
+/* 动作组：不参与收缩，始终完整可见 */
+.bar-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  flex: none;
 }
 
 .composer-hint {

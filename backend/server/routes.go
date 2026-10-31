@@ -88,6 +88,7 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.GET("/skills/content", s.skillContent)
 	api.POST("/skills/toggle", s.toggleSkill)
 	api.POST("/skills/create", s.createSkill)
+	api.POST("/skills/copy", s.copySkill)
 	api.POST("/skills/delete", s.deleteSkill)
 	api.POST("/skills/save", s.saveSkillContent)
 
@@ -102,6 +103,7 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.GET("/mcp", s.mcpList)
 	api.POST("/mcp/save", s.mcpSave)
 	api.POST("/mcp/toggle", s.mcpToggle)
+	api.POST("/mcp/copy", s.mcpCopyTo)
 	api.POST("/mcp/remove", s.mcpRemove)
 
 	// 工作区：文件树与 git

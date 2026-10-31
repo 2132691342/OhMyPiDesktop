@@ -106,6 +106,17 @@ func (s *Server) mcpToggle(c *gin.Context) {
 	})
 }
 
+// mcpCopyTo 把另一个引擎里同名服务器的定义复制过来（矩阵页的「装到这一列」）。
+func (s *Server) mcpCopyTo(c *gin.Context) {
+	var body domain.McpCopyREQ
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(*gin.Context) (any, error) {
+		return s.svc.McpCopyTo(engine.Kind(body.EngineKind), body.ServerName, body.Enabled)
+	})
+}
+
 func (s *Server) mcpRemove(c *gin.Context) {
 	var body domain.McpRemoveREQ
 	if !bind(c, &body) {

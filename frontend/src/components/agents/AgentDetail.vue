@@ -2,15 +2,29 @@
 // 子代理详情的读数区：阶段、进度条、六个读数、正文尾部。
 // 数据由外部 ticker 每秒拉一次，进度条只呈现已到货的值——
 // 每 900ms 从 12% 跳到 13% 会被读成「卡住了」。
+import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { AgentRow } from '@/types/api'
 
 const props = defineProps<{
   detail: AgentRow
-  /** 展开态（宽面板）才显示正文尾部 */
+  /** 展开态（宽面板）才允许展开正文尾部 */
   wide: boolean
   /** 正文尾部若干条消息（已抽好纯文本，渲染层不再解结构） */
   transcript: string[]
 }>()
+
+const { t } = useI18n()
+
+// 正文默认收起：子代理的任务书与输出动辄几千字，
+// 一选中就铺开一堵字墙，把进度读数顶到看不见的地方。
+const expanded = ref(false)
+watch(
+  () => props.detail.id,
+  () => {
+    expanded.value = false
+  },
+)
 
 function money(v: number): string {
   if (!v) return '$0'
@@ -58,9 +72,14 @@ function seconds(ms: number): string {
       <span>{{ seconds(props.detail.progress.duration_ms) }}</span>
     </div>
 
-    <div v-if="props.wide" class="transcript selectable">
-      <p v-for="(line, i) in props.transcript" :key="i" class="turn">{{ line }}</p>
-    </div>
+    <template v-if="props.wide && props.transcript.length">
+      <button class="transcript-toggle" type="button" @click="expanded = !expanded">
+        {{ expanded ? t('agents.hideTranscript') : t('agents.showTranscript') }}
+      </button>
+      <div v-if="expanded" class="transcript selectable">
+        <p v-for="(line, i) in props.transcript" :key="i" class="turn">{{ line }}</p>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -73,11 +92,33 @@ function seconds(ms: number): string {
   border-top: 1px solid var(--omp-line);
 }
 
+/* 阶段 / 任务书只给两行：任务书原文是几千字的 prompt，
+   全文铺开会把详情区变成一道字墙，进度读数反而看不见。 */
 .detail-stage {
   font-size: var(--omp-fs-2xs);
   color: var(--omp-ink-2);
   line-height: 1.55;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.transcript-toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--omp-faint);
+  font-size: var(--omp-fs-3xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--omp-dur-fast) var(--omp-ease);
+}
+
+.transcript-toggle:hover {
+  color: var(--omp-brand);
 }
 
 .bar {

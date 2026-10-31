@@ -12,6 +12,19 @@
   max-width: var(--omp-col);
   margin: 0 auto;
   padding: var(--omp-sp-5) var(--omp-sp-6) var(--omp-sp-10);
+  position: relative;
+}
+
+/* 消息列左侧的脊线：整段回答串在一根时间轴上，回答内容挂在它的右侧。
+   用户消息右对齐，脊线从它们的空白处穿过，正好把「谁在说话」分成左右两栏。 */
+.msg-col::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: var(--omp-sp-2);
+  bottom: var(--omp-sp-2);
+  width: 1px;
+  background: var(--omp-line);
 }
 
 /* 屏幕外消息不参与 layout/paint：长会话的硬约束。
@@ -92,10 +105,43 @@
   border-left: 2px solid var(--omp-bad);
 }
 
-/* 流式中的那一轮：左侧一条细标记，说明“这段还在长” */
-.msg-streaming .msg-body {
-  padding-left: var(--omp-sp-3);
-  border-left: 2px solid var(--omp-brand-2);
+/* 助手轮从脊线右侧起排；每个轮次的头在脊线上钉一枚节点，
+   长会话里「一轮从哪开始」顺着线就能数出来。用户轮不参与。 */
+.msg.is-assistant {
+  position: relative;
+  padding-left: var(--omp-sp-4);
+}
+
+.msg.is-assistant::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--omp-sp-6));
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--omp-r-full);
+  background: var(--omp-line-strong);
+  box-shadow: 0 0 0 3px var(--omp-window);
+}
+
+/* 接着上一轮往下说的轮次不出头、也不钉节点——它和上一轮是同一坨 */
+.msg.is-assistant.is-continued::before {
+  content: none;
+}
+
+/* 流式中的那一轮：节点转活色并呼吸——「这段还在长」这件事就挂在线上。
+   续写中的轮次也要有：正在生长的段落，不管出不头，都得在线上占一个点。 */
+.msg.is-assistant.msg-streaming::before {
+  content: '';
+  background: var(--omp-live);
+  animation: omp-pulse 1.6s var(--omp-ease) infinite;
+}
+
+/* 出错的轮次：节点同步转红，不必读正文就知道哪一轮断了 */
+.msg.is-assistant.msg-error::before {
+  content: '';
+  background: var(--omp-bad);
+  animation: none;
 }
 
 /* ============================================================
@@ -231,26 +277,30 @@
 }
 
 /* ============================================================
-   思考块：一行摘要，展开才长内容
-   不画整圈描边：一屏十几轮时，十几个框比内容更显眼。
+   思考块：一张描边卡片，一行摘要，展开才长内容。
+   卡片化之后运行中给描边转活色，收起后仍是消息流里可数的一个步骤。
    ============================================================ */
 .think {
-  border-radius: var(--omp-r-sm);
+  border: 1px solid var(--omp-line);
+  border-radius: var(--omp-r-md);
+  background: var(--omp-surface);
   overflow: hidden;
-  transition: background-color var(--omp-dur-fast) var(--omp-ease);
+  transition:
+    border-color var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease);
 }
 .think:hover {
-  background: var(--omp-hover);
+  border-color: var(--omp-line-strong);
 }
 .think.live {
-  box-shadow: inset 2px 0 0 var(--omp-brand-2);
+  border-color: var(--omp-live-line);
 }
 .think-head {
   display: flex;
   align-items: center;
   gap: var(--omp-sp-2);
   width: 100%;
-  padding: 3px var(--omp-sp-2);
+  padding: 6px var(--omp-sp-3);
   border: none;
   background: transparent;
   color: var(--omp-mute);
@@ -264,13 +314,13 @@
   color: var(--omp-ink-2);
 }
 .think-body {
-  padding: 0 var(--omp-sp-2) var(--omp-sp-2) var(--omp-sp-4);
+  padding: var(--omp-sp-2) var(--omp-sp-3) var(--omp-sp-3);
   font-size: var(--omp-fs-sm);
   line-height: 1.7;
   color: var(--omp-mute);
   white-space: pre-wrap;
   border-top: 1px solid var(--omp-line);
-  padding-top: var(--omp-sp-2);
+  background: var(--omp-work);
   animation: tool-unfold var(--omp-dur) var(--omp-ease);
 }
 .caret-toggle {
@@ -281,25 +331,27 @@
 }
 
 /* ============================================================
-   工具卡
-   头是严格一行：状态点 / 工具名 / 摘要 / 增删 / 耗时 / 箭头。
-   不画盒子：一轮回答里可能有十几个工具调用，每个一个带框的盒子
-   就是十几个框，读起来像一堆卡片而不是一串操作记录。
+   工具卡：一张描边卡片，头是严格一行，展开是卡内的下半张。
+   与思考块同一种壳：整段回答读起来是一串可数的步骤，
+   而不是一列没有边界的行。
    ============================================================ */
 .tool {
-  border-radius: var(--omp-r-sm);
+  border: 1px solid var(--omp-line);
+  border-radius: var(--omp-r-md);
+  background: var(--omp-surface);
   overflow: hidden;
-  transition: background-color var(--omp-dur-fast) var(--omp-ease);
+  transition:
+    border-color var(--omp-dur-fast) var(--omp-ease),
+    background-color var(--omp-dur-fast) var(--omp-ease);
 }
 .tool:hover {
-  background: var(--omp-hover);
+  border-color: var(--omp-line-strong);
 }
-/* 运行中 / 出错只给左缘竖条：整张卡染色在一屏十几个调用时会变成一堵红墙。 */
 .tool.running {
-  box-shadow: inset 2px 0 0 var(--omp-brand-2);
+  border-color: var(--omp-brand-line);
 }
 .tool.error {
-  box-shadow: inset 2px 0 0 var(--omp-bad);
+  border-color: var(--omp-bad);
   background: var(--omp-bad-soft);
 }
 .tool-head {
@@ -307,7 +359,6 @@
   align-items: center;
   gap: 2px;
   width: 100%;
-  padding: 0 var(--omp-sp-1) 0 0;
   border: none;
   background: transparent;
 }
@@ -317,7 +368,7 @@
 .tool-name {
   font-family: var(--omp-font-mono);
   font-weight: 650;
-  font-size: var(--omp-fs-3xs);
+  font-size: var(--omp-fs-2xs);
   color: var(--omp-ink);
 }
 .tool-intent {
@@ -335,12 +386,11 @@
 }
 .tool-body {
   border-top: 1px solid var(--omp-line);
-  margin-top: var(--omp-sp-1);
   padding: var(--omp-sp-2) var(--omp-sp-3) var(--omp-sp-3);
   display: flex;
   flex-direction: column;
   gap: var(--omp-sp-2);
-  background: var(--omp-hover);
+  background: var(--omp-work);
   animation: tool-unfold var(--omp-dur) var(--omp-ease);
 }
 @keyframes tool-unfold {

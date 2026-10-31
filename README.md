@@ -155,7 +155,7 @@ task smoke -- -engine omp -message "Reply with exactly: OK"
 task smoke -- -engine pi  -message "Reply with exactly: OK"
 ```
 
-构建需要 Go 1.26+、Node 18+、Wails v3 CLI（`wails3`），打安装器还要 `makensis`。
+构建需要 Go 1.26+、Node 24+、Wails v3 CLI（`wails3`），打安装器还要 `makensis`。
 
 ### 安装器与数据
 

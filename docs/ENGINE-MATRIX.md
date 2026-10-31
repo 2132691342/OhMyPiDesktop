@@ -44,6 +44,7 @@
 | `fragments` | ✅ | — | 收 `rpc_chunk` 做分片重组 |
 | `queue_edit` | ✅ | — | 排队条目可逐条移除（`remove_queued_message`）；pi 没有这条命令 |
 | `queue_clear` | — | ✅ | 一次性清空排队（`clear_queue`）；omp 的命令表里没有这条 |
+| `abort_restore_queue` | ✅ | — | 停止走 `abort_and_restore_queue`：plain abort 之后 omp 的排队 drain 会把排队的活接着跑完，撤回的原话经 `chat:editor_text` 放回输入框 |
 | `live_steer_count` | ✅ | — | 不读 `queue_update.liveSteered` |
 | `skill_toggle` | ✅ | — | 技能行不显示开关（pi 走另一条路，见 §6） |
 | `extensions` | ✅ | ✅ | 插件页可管理 |

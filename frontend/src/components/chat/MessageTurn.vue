@@ -2,7 +2,7 @@
 // 一轮消息：角色头 + 若干块（正文 / 思考 / 工具卡）+ 轮尾读数。
 // 同一角色连续几轮只出一次头——一次回答被切成几块，读的人得自己拼。
 // 轮尾给读数（输入 / 输出 / 缓存 / 耗时）与复制、删除，答案不藏进菜单。
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import TurnBlocks from '@/components/chat/TurnBlocks.vue'
@@ -48,6 +48,8 @@ const props = defineProps<{
   historyTurn?: HistoryTurn
   /** 这一轮的隐藏标识：有它才能「删除」（直播轮没有，因此不可删） */
   hid?: string
+  /** 直播这一轮的开始时刻（毫秒时间戳）：脚标的计时从它起走 */
+  startedAt?: number
   /**
    * 要不要显示用量读数。
    *
@@ -62,6 +64,52 @@ const chat = useChatStore()
 const toasts = useToasts()
 
 const isUser = computed(() => props.role === 'user')
+
+/**
+ * 直播脚标：轮尾一行「正在回答 … 12s」。
+ *
+ * 流式的增量是一阵一阵到的——两阵之间界面纹丝不动，
+ * 用户分不清「在执行」还是「卡住了」。脚标常驻在正文下面，
+ * 秒表一秒一跳，哪怕半分钟没有新字，也能看见时间在走。
+ */
+const liveActive = computed(() => Boolean(props.live) && Boolean(props.streaming))
+
+const now = ref(Date.now())
+let clock: ReturnType<typeof setInterval> | undefined
+
+watch(
+  liveActive,
+  (on) => {
+    if (on) {
+      now.value = Date.now()
+      if (clock === undefined) clock = setInterval(() => (now.value = Date.now()), 1000)
+    } else if (clock !== undefined) {
+      clearInterval(clock)
+      clock = undefined
+    }
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  if (clock !== undefined) clearInterval(clock)
+})
+
+/** 秒表：60 秒内显示纯秒，过了就带分。 */
+const liveElapsed = computed(() => {
+  if (!props.startedAt) return ''
+  const s = Math.max(0, Math.floor((now.value - props.startedAt) / 1000))
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
+})
+
+/** 已经吐出的输出 token：用量帧是累计值，到一笔就涨一笔。 */
+const liveOut = computed(() => props.usage?.output ?? 0)
+
+/** 引擎报的生成速度：给就显示，不给不占位。 */
+const liveSpeed = computed(() => {
+  const tps = chat.tokensPerSecond
+  return tps && tps > 0 ? `${tps.toFixed(1)} tok/s` : ''
+})
 
 /** 切引擎的分隔行：它不是消息，只是界面层的标记。 */
 const handoffEngine = computed<EngineKind | ''>(() =>
@@ -145,6 +193,9 @@ const hasText = computed(() => plainText.value.trim().length > 0)
  */
 const metrics = computed(() => {
   if (props.showMetrics === false) return []
+  // 直播中的轮次不摆静态读数：轮尾的脚标在替它计时，
+  // 两份时间戳并存必然有一份是停着的——停着的那份就是「是不是卡了」的误报来源。
+  if (liveActive.value) return []
   const u = props.usage ?? usageFrom(props.historyTurn?.usage)
   if (!u) return []
   const prompt = u.input + u.cacheRead + u.cacheWrite
@@ -186,6 +237,7 @@ function fmtMs(ms: number): string {
     class="msg"
     :class="{
       user: isUser,
+      'is-assistant': !isUser,
       'is-continued': props.continued,
       'msg-streaming': props.live,
       'msg-error': props.errored,
@@ -207,6 +259,18 @@ function fmtMs(ms: number): string {
 
       <!-- 这轮改了哪些文件：从工具块就地聚合，点击去工作区页看差异 -->
       <TurnChanges :blocks="props.blocks" />
+
+      <!-- 直播脚标：呼吸点 + 状态 + 秒表。增量一阵一阵到，
+           两阵之间就让这一行替流「证明自己还活着」。 -->
+      <div v-if="liveActive" class="live-foot">
+        <span class="live-dot" />
+        <span class="live-label">{{ chat.statusText || t('chat.liveAnswering') }}</span>
+        <span class="live-read">
+          <span v-if="liveSpeed">{{ liveSpeed }}</span>
+          <span v-if="liveOut">↑ {{ fmtCount(liveOut) }}</span>
+          <span v-if="liveElapsed" class="live-elapsed">{{ liveElapsed }}</span>
+        </span>
+      </div>
 
       <!-- 轮尾：读数 + 复制 + 删除。悬停整个回合才浮现，平时不占位置。
            用户侧也有复制：用户要拿自己刚发的那句去别处贴，
@@ -276,6 +340,47 @@ function fmtMs(ms: number): string {
 
 .msg-body {
   min-width: 0;
+}
+
+/* 直播脚标：读数不是控件——不套描边、不缩放，只走字色 */
+.live-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--omp-sp-2);
+  min-height: 18px;
+  margin-top: var(--omp-sp-1);
+  font-family: var(--omp-font-mono);
+  font-size: var(--omp-fs-3xs);
+  color: var(--omp-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: var(--omp-r-full);
+  background: var(--omp-live);
+  animation: omp-pulse 1.6s var(--omp-ease) infinite;
+}
+
+.live-label {
+  color: var(--omp-live);
+  font-weight: 600;
+}
+
+.live-read {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--omp-sp-3);
+  margin-left: auto;
+}
+
+.live-elapsed {
+  min-width: 3em;
+  text-align: right;
+  color: var(--omp-ink-2);
+  font-weight: 600;
 }
 
 /* 轮尾动作：默认透明，悬停整个回合才浮现 */

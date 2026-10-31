@@ -429,7 +429,7 @@ GET /events?since=41
 | `chat:notice` | 引擎的 notice 帧 |
 | `chat:command_output` | 内置斜杠命令的输出 |
 | `chat:open_url` | `{url, instructions?}`（仅 omp） |
-| `chat:editor_text` | 引擎请求回填输入框 |
+| `chat:editor_text` | 引擎请求回填输入框；`restored` 为停止时撤回的排队条数（撤回原话在 `text` 里） |
 | `chat:goal` | 目标更新（仅 omp） |
 | `chat:gap` | 丢帧通知（慢消费者 / 超大帧） |
 | `engine:ready` | 引擎就绪 `{kind, work_dir, pid, protocol}` |

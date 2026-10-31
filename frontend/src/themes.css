@@ -103,7 +103,9 @@
   --omp-side: calc(232px * var(--omp-vw-scale));
   --omp-side-narrow: calc(188px * var(--omp-vw-scale));
   --omp-panel: calc(336px * var(--omp-vw-scale));
-  --omp-col: calc(880px * var(--omp-vw-scale));
+  /* 消息列宽度：跟着窗口走（基准上限 1240），不再是固定 880——
+     宽窗口里两侧的大片空白没人受益，读代码块与差异时尤甚。 */
+  --omp-col: min(calc(1240px * var(--omp-vw-scale)), 100%);
   /* 面板头部那段说明文字的排版宽度：几个管理页都用它，
      各自写一遍 560px 的话改一次要动好几个文件 */
   --omp-w-desc: calc(620px * var(--omp-vw-scale));

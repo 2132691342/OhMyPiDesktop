@@ -33,21 +33,22 @@ func (k Kind) Label() string {
 // Caps 是「这个引擎能干什么」的唯一答案。界面按它隐藏入口，绝不渲染灰按钮
 // ——灰按钮会被当成「我还没权限」。新增能力先加在这里，再让两个 Dialect 各自回答。
 type Caps struct {
-	Subagents      bool `json:"subagents"`        // 子代理观测台（get_subagents / steer / cancel）
-	Goals          bool `json:"goals"`            // 目标（goal_updated）
-	Todos          bool `json:"todos"`            // 待办阶段（todoPhases）
-	Login          bool `json:"login"`            // 界面里发起 OAuth
-	Fragments      bool `json:"fragments"`        // 协议 v2 分片重组
-	QueueEdit      bool `json:"queue_edit"`       // 移除 / 提前排队单条消息（remove_queued_message）
-	QueueClear     bool `json:"queue_clear"`      // 一次性清空排队（clear_queue）
-	LiveSteerCount bool `json:"live_steer_count"` // queue_update.liveSteered
-	SkillToggle    bool `json:"skill_toggle"`     // 靠 frontmatter 启停技能
-	Extensions     bool `json:"extensions"`       // 扩展/插件 CLI 管理
-	ExportHTML     bool `json:"export_html"`      // 会话导出为 HTML（export_html RPC）
-	SlashCommands  bool `json:"slash_commands"`   // available_commands_update 推送
-	SessionClone   bool `json:"session_clone"`    // 复制当前会话开新分支（clone RPC）
-	PluginToggle   bool `json:"plugin_toggle"`    // 插件启停（plugin enable/disable）
-	PluginUpgrade  bool `json:"plugin_upgrade"`   // 插件升级（plugin upgrade）
+	Subagents         bool `json:"subagents"`           // 子代理观测台（get_subagents / steer / cancel）
+	Goals             bool `json:"goals"`               // 目标（goal_updated）
+	Todos             bool `json:"todos"`               // 待办阶段（todoPhases）
+	Login             bool `json:"login"`               // 界面里发起 OAuth
+	Fragments         bool `json:"fragments"`           // 协议 v2 分片重组
+	QueueEdit         bool `json:"queue_edit"`          // 移除 / 提前排队单条消息（remove_queued_message）
+	QueueClear        bool `json:"queue_clear"`         // 一次性清空排队（clear_queue）
+	AbortRestoreQueue bool `json:"abort_restore_queue"` // 停止时撤回排队（abort_and_restore_queue）
+	LiveSteerCount    bool `json:"live_steer_count"`    // queue_update.liveSteered
+	SkillToggle       bool `json:"skill_toggle"`        // 靠 frontmatter 启停技能
+	Extensions        bool `json:"extensions"`          // 扩展/插件 CLI 管理
+	ExportHTML        bool `json:"export_html"`         // 会话导出为 HTML（export_html RPC）
+	SlashCommands     bool `json:"slash_commands"`      // available_commands_update 推送
+	SessionClone      bool `json:"session_clone"`       // 复制当前会话开新分支（clone RPC）
+	PluginToggle      bool `json:"plugin_toggle"`       // 插件启停（plugin enable/disable）
+	PluginUpgrade     bool `json:"plugin_upgrade"`      // 插件升级（plugin upgrade）
 }
 
 // Identity 是一次探测的结果：哪份可执行文件、什么版本、能干什么。

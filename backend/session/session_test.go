@@ -209,3 +209,68 @@ func TestIndexInvalidate(t *testing.T) {
 		t.Errorf("失效后缓存应减少 1（%d → %d），实际 %d", before, before-1, got)
 	}
 }
+
+// omp 写冲突续接：两个进程同时写一个会话文件时，输的一方把对话续接到同目录的新文件，
+// 新文件头里记着 continuationOf。列表要把被续接的旧文件折叠掉——
+// 照直列出来就是「同一段对话出现好几条」；打开旧文件时要跟到链尾，
+// 绑旧文件等于把对话劈成两半各写各的。
+func TestSessionContinuationFold(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "2026-10-31T15-21-30Z")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(id, contOf string) string {
+		head := `{"type":"title","title":""}`
+		if contOf != "" {
+			head = `{"type":"session","id":"` + id + `","cwd":"/repo","continuationOf":"` + contOf + `"}`
+		} else {
+			head = `{"type":"session","id":"` + id + `","cwd":"/repo"}`
+		}
+		p := filepath.Join(sub, "2026-10-31T15-00-00Z_"+id+".jsonl")
+		body := head + "\n" +
+			`{"type":"message","message":{"role":"user","content":"hi","timestamp":1}}` + "\n" +
+			`{"type":"message","message":{"role":"assistant","content":"hello","timestamp":2}}` + "\n"
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	pa := write("ida", "")
+	pb := write("idb", "ida")
+	pc := write("idc", "idb")
+
+	idx := NewIndex(dir, engine.KindOMP)
+	list, err := idx.List("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("续接链应折叠成 1 条，得到 %d", len(list))
+	}
+	if len(list) == 1 && list[0].Path != pc {
+		t.Errorf("应留下链尾 idc，得到 %s", filepath.Base(list[0].Path))
+	}
+	if tip := idx.ContinuationTip(pa); tip != pc {
+		t.Errorf("ida 的链尾应是 idc，得到 %s", tip)
+	}
+	if tip := idx.ContinuationTip(pb); tip != pc {
+		t.Errorf("idb 的链尾应是 idc，得到 %s", tip)
+	}
+	if tip := idx.ContinuationTip(pc); tip != "" {
+		t.Errorf("链尾自己没有下家，得到 %s", tip)
+	}
+	// pi 的文件没有 continuationOf：与 omp 文件同目录列出时不被折叠误伤。
+	piBody := `{"type":"session","session_id":"pis","version":"2.0.0","cwd":"/repo"}` + "\n" +
+		`{"type":"message","message":{"role":"user","content":"hi","timestamp":1}}` + "\n"
+	if err := os.WriteFile(filepath.Join(sub, "2026-10-31T15-30-00Z_pis.jsonl"), []byte(piBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	listPi, err := idx.List("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listPi) != 2 {
+		t.Fatalf("链尾 + 无续接的 pi 文件应共 2 条，得到 %d 条", len(listPi))
+	}
+}

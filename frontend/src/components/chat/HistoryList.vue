@@ -20,6 +20,8 @@ const props = defineProps<{
     model?: string
     streaming: boolean
     errored: boolean
+    /** 直播这一轮的开始时刻：传给脚标秒表 */
+    startedAt?: number
     usage?: TurnUsage
   } | null
 }>()
@@ -111,6 +113,7 @@ function isRoundEnd(index: number): boolean {
         :streaming="props.live.streaming"
         live
         :errored="props.live.errored"
+        :started-at="props.live.startedAt"
         :usage="props.live.usage"
         show-metrics
       />
