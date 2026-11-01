@@ -10,6 +10,7 @@ import AppearancePanel from '@/components/settings/AppearancePanel.vue'
 import BehaviorPanel from '@/components/settings/BehaviorPanel.vue'
 import ConfigPanel from '@/components/settings/ConfigPanel.vue'
 import WorkspacePanel from '@/components/settings/WorkspacePanel.vue'
+import DiagPanel from '@/components/settings/DiagPanel.vue'
 import AboutPanel from '@/components/settings/AboutPanel.vue'
 import { useAppStore } from '@/stores/app'
 import { usePrefsStore } from '@/stores/prefs'
@@ -251,8 +252,11 @@ onMounted(() => {
       <!-- 引擎配置原文：只看不改 -->
       <ConfigPanel :kind="configKind" @pick="loadConfig" />
 
+      <!-- 诊断：失败记录 + 后端日志。两者回答同一个问题：刚才那一下哪一层出的错 -->
+      <DiagPanel :logs="logs" @refresh-logs="loadLogs" />
+
       <!-- 关于 -->
-      <AboutPanel :engines="installed" :logs="logs" @refresh-logs="loadLogs" />
+      <AboutPanel :engines="installed" />
     </div>
   </div>
 </template>

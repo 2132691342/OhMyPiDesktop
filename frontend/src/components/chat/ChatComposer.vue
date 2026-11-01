@@ -5,6 +5,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ComposerStatus from '@/components/chat/ComposerStatus.vue'
+import ActivityBar from '@/components/chat/ActivityBar.vue'
 import ComposerMenu from '@/components/chat/ComposerMenu.vue'
 import ComposerBar from '@/components/chat/ComposerBar.vue'
 import AttachStrip from '@/components/chat/AttachStrip.vue'
@@ -272,6 +273,7 @@ defineExpose({ focus })
 <template>
   <div class="composer">
     <ComposerStatus :attach-error="attachError" @clear-attach-error="attachError = ''" />
+    <ActivityBar :stopping="stopping" @stop="stopTurn" />
 
     <!-- 菜单的定位上下文：菜单贴着输入框上沿往上弹，必须相对「输入框那一块」定位。 -->
     <div class="composer-inner">

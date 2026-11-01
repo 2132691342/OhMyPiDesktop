@@ -82,10 +82,8 @@ func ExtractToolDiff(result json.RawMessage) (diffText, filePath string) {
 	return "", d.Path
 }
 
-// ToolFilePath 从工具参数里取出被改动的文件路径。
-// pi 的 edit 把路径放在参数里；omp 没有独立的路径字段，
-// 它埋在 input 正文开头的 `[路径#锚点]` 里——三种都要认，
-// 缺了任何一种，那个引擎的「看改动」入口就是空的。
+// ToolFilePath 从工具参数里取出被改动的文件路径：
+// pi 放在参数里，omp 埋在 input 开头的 `[路径#锚点]` 里，三种都要认。
 func ToolFilePath(args json.RawMessage) string {
 	if len(args) == 0 {
 		return ""

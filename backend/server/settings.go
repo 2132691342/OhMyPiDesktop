@@ -92,6 +92,25 @@ func (s *Server) restartEngines(c *gin.Context) {
 	})
 }
 
+// stopEngine 停掉一个存活实例。入参是「引擎种类 + 工作目录」，
+// 因为同一个引擎可能在多个目录各有一个进程，只给 kind 会停错那个。
+func (s *Server) stopEngine(c *gin.Context) {
+	var body struct {
+		Engine  string `json:"engine"`
+		WorkDir string `json:"work_dir"`
+	}
+	if !bind(c, &body) {
+		return
+	}
+	s.run(c, func(*gin.Context) (any, error) {
+		stopped, err := s.svc.StopEngine(s2kind(body.Engine), body.WorkDir)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"stopped": stopped}, nil
+	})
+}
+
 // engineHealth 是概览页要用的引擎健康快照。
 func (s *Server) engineHealth(c *gin.Context) {
 	s.run(c, func(ctx *gin.Context) (any, error) { return s.svc.Health(ctx) })

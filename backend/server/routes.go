@@ -29,6 +29,7 @@ func (s *Server) routes(api *gin.RouterGroup) {
 	api.GET("/engines", s.engines)
 	api.POST("/engines/detect", s.detectEngines)
 	api.POST("/engines/restart", s.restartEngines)
+	api.POST("/engines/stop", s.stopEngine)
 	// 健康度：概览页一屏要用的全部引擎事实（探测 + 进程 + 落盘计数 + 配置现状）
 	api.GET("/health/engines", s.engineHealth)
 

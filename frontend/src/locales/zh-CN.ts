@@ -81,6 +81,15 @@ export default {
     minutes: ' 分钟',
     hours: ' 小时',
     days: ' 天',
+    // 引擎进程：一个工作目录一个进程，切目录就新建，空闲十分钟后回收。
+    // 这一块把「机器怎么变卡的」说清楚。
+    processes: '引擎进程',
+    processesHint: '一个工作目录一个引擎进程。切目录会新建一个，空闲十分钟后自动回收；正在回答的那个不会被回收。',
+    processesEmpty: '现在没有引擎进程。发一句话时会按时拉起一个。',
+    stopProcess: '停掉',
+    processGone: '这个进程已经不在了',
+    busy: '正在回答',
+    calls: '{n} 条命令',
   },
   mcp: {
     title: 'MCP',
@@ -345,6 +354,11 @@ export default {
     collapse: '收起',
     viewChanges: '看改动',
     liveAnswering: '正在回答',
+    // 活动条与轮内脚标共用的一组阶段文案：它们回答「引擎此刻在干什么」，
+    // 不是一个能点的动作，所以只有名词与动名词，不留命令式。
+    liveTool: '正在运行 {name}',
+    liveThinking: '正在思考',
+    liveStalled: '引擎已经一分钟没有新输出了',
     emptyTitle: '开始一轮对话',
     emptyHint: '这个工作目录下的工具、技能与规则都会生效。',
     pickWorkspace: '选择目录',
@@ -651,6 +665,7 @@ export default {
     groups: {
       appearance: '外观',
       behavior: '启动行为',
+      diag: '诊断',
       engine: '环境',
       workspace: '工作区',
       config: '引擎配置',
@@ -683,6 +698,11 @@ export default {
     reduceMotion: '减少动效',
     reduceMotionHint: '关掉过渡与呼吸动画',
     engineExe: '引擎路径',
+    diagFailures: '失败记录 {n}',
+    diagLogs: '后端日志',
+    diagHint: '失败记录是这一会话里请求失败过的调用（码 + 位置 + 原话）；日志是后端自己说的话。只保存在内存里，不写盘。',
+    diagNoFailures: '这一会话里还没有失败的请求。',
+    diagClear: '清空记录',
     engineExeHint: '留空则自动找：只看 PATH 上的那份',
     missingTitle: '没有找到引擎',
     missingHint: '去「应用」页装一份；也可以在终端里自己装，装好回来点「重新检测」。',

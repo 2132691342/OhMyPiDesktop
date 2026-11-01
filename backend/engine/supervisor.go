@@ -40,6 +40,9 @@ type Engine struct {
 	runID       string
 	booting     bool
 	subs        SubagentStore
+	// lastLive 是上一次推出去的实时读数签名：流式时每一帧 delta 都会调 emitLive，
+	// 而读数的变化率远低于 delta——不去重就是白白多一倍帧。
+	lastLive string
 
 	// lastUsed 是最后一次有人跟这个引擎说话的时刻。
 	// 它是回收的唯一依据：进程在不在跑不等于「有没有人在用」——

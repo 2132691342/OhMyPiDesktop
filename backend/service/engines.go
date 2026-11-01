@@ -8,6 +8,7 @@ import (
 
 	"OhMyPiDesktop/backend/domain"
 	"OhMyPiDesktop/backend/engine"
+	"OhMyPiDesktop/backend/pkg"
 )
 
 // ---------------- 引擎状态 ----------------
@@ -157,10 +158,45 @@ func (a *App) Health(ctx context.Context) (*domain.HealthVO, error) {
 		}
 	}
 	out.LiveEngines, out.MaxEngines = a.Engine.Stats()
+	out.EngineRuns = a.engineRuns()
 	// Ready 的判据只有两条：探过了，且没有后台补验在跑。不看 counts 的 age：
 	// 计数是「已完成的观测」而不是「还在算」，算进来会让 Ready 在没变化的情况下自己变假。
 	out.Ready = !out.Detecting && !out.Refreshing
 	return out, nil
+}
+
+// StopEngine 停掉一个存活实例（按「引擎种类 + 工作目录」定位）。
+// 它不动引擎的会话、配置与凭据：停的只是一个进程，下次发消息时会重新拉起来。
+func (a *App) StopEngine(kind engine.Kind, workDir string) (bool, error) {
+	if !kind.Valid() {
+		return false, pkg.New(pkg.CodeBadRequest, "要停哪一个引擎？", string(kind))
+	}
+	if workDir == "" {
+		workDir = a.Workspace()
+	}
+	return a.Engine.StopOne(kind, workDir), nil
+}
+
+// engineRuns 把存活实例摊成界面要的明细行。
+// 不按引擎归并：同一引擎可能在多个目录各有一个进程，「在哪个目录」才是用户要停哪一个的判据。
+func (a *App) engineRuns() []domain.EngineRunVO {
+	rows := a.Engine.Running()
+	out := make([]domain.EngineRunVO, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, domain.EngineRunVO{
+			EngineKind:      string(row.Kind),
+			EngineLabel:     row.Kind.Label(),
+			WorkDir:         row.WorkDir,
+			ProcessID:       row.PID,
+			ProtocolVersion: row.Protocol,
+			StartedAt:       row.StartedAt,
+			CallCount:       row.CallCount,
+			LastError:       row.LastError,
+			Busy:            row.Busy,
+			SessionID:       row.SessionID,
+		})
+	}
+	return out
 }
 
 // runningByKind 把「在跑的实例」按引擎归并成一个代表行。同一引擎可能在多个目录各有一个进程，

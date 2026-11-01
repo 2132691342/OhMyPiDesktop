@@ -42,6 +42,8 @@ export const useChatStore = defineStore('chat', () => {
   const widgets = runStatus.widgets
   const notices = runStatus.notices
   const retry = runStatus.retry
+  const live = runStatus.live
+  const lastActivityAt = runStatus.lastActivityAt
   const pushNotice = runStatus.pushNotice
   const dismissNotice = runStatus.dismissNotice
   const setStatus = runStatus.setStatus
@@ -66,6 +68,11 @@ export const useChatStore = defineStore('chat', () => {
   const queue = ref<{ steering: string[]; followUp: string[] }>({ steering: [], followUp: [] })
   const compacting = ref(false)
   const promptError = ref('')
+  // runError 是「这一轮自己出的错」。它与 promptError 分开：
+  // promptError 是输入区上方的横幅，任何动作失败都会往它里写（换模型、压缩、发消息），
+  // 而「这一轮出错了」是轮尾的红色状态——拿一个全局错误去染一轮对话的颜色，
+  // 会让一次失败的模型切换把一段已经答完的回复标成出错。
+  const runError = ref('')
   // 切不到请求会话的原因（引擎正忙 / 扩展拦下）。它不会自动消失：
   // 用户需要知道“历史可以看，但下一句话会写到另一条会话里”。
   const bindErr = ref('')
@@ -248,6 +255,7 @@ export const useChatStore = defineStore('chat', () => {
     stats.value = null
     bindErr.value = ''
     promptError.value = ''
+    runError.value = ''
     queue.value = { steering: [], followUp: [] }
     // 流里插一条分隔：告诉用户「以下由 xxx 接续，前面的内容不在新会话里」。
     history.value = [...kept, mark]
@@ -294,6 +302,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function send(message: string, attachments: ChatAttachment[] = []) {
     promptError.value = ''
+    runError.value = ''
     // 新的一轮开始了：上一个已收尾的标记到这里就作废。
     // 不能挂在 refresh() 上——chat:done 后紧跟的 refresh 会先清掉标记，
     // 之后才到的那帧迟到的快照就会把重复的正文再放进界面。
@@ -354,7 +363,26 @@ export const useChatStore = defineStore('chat', () => {
   function finishTurn() {
     streaming.value = false
     retry.value = null
+    // 实时读数属于「正在跑的那一轮」：收尾了就清掉。
+    // 留着的话活动条会拿上一轮的工具名去解释一轮已经不存在的执行。
+    resetLive()
     flow.finishTurn()
+  }
+
+  /** 清掉实时读数（新开局 / 收尾 / 换会话）。 */
+  function resetLive() {
+    live.value = { run_id: '', phase: '', tool_name: '', tool_call_id: '', output_tokens: 0 }
+  }
+
+  /**
+   * 对齐这一轮的开始时刻。
+   *
+   * 只用引擎报的值往**前**对齐，不往后：用户点发送那一刻起表，
+   * 如果引擎受理得晚了（冷启动），把起点改成那个更晚的时刻等于把等待藏起来。
+   */
+  function setRunStart(at: number) {
+    if (!at) return
+    if (!startedAt.value || at < startedAt.value) startedAt.value = at
   }
 
   function reset() {
@@ -365,6 +393,7 @@ export const useChatStore = defineStore('chat', () => {
     context.value = null
     stats.value = null
     promptError.value = ''
+    runError.value = ''
   }
 
   return {
@@ -396,9 +425,12 @@ export const useChatStore = defineStore('chat', () => {
     widgets,
     notices,
     retry,
+    live,
+    lastActivityAt,
     compacting,
     busy,
     promptError,
+    runError,
     bindErr,
     draftOverride,
     pickerRequest,
@@ -428,6 +460,8 @@ export const useChatStore = defineStore('chat', () => {
     setStatus,
     setWidget,
     finishTurn,
+    resetLive,
+    setRunStart,
     reset,
   }
 })

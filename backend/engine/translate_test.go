@@ -1,8 +1,7 @@
 package engine
 
-// 差异解析与协议翻译：这两处错了界面照样渲染，只是内容不对。
-// 差异行号算错时每行编号对不上而用户不会知道是算错的；块的顺序一丢就读不出先干了什么
-// （分组会把工具卡全顶到正文前面）；增量与全量不等价时「正在打字」与「刷新后重看」会长得不一样。
+// 差异解析与协议翻译：这两处错了界面照样渲染，只是内容不对——差异行号算错时编号对不上，
+// 块顺序一丢就读不出先干了什么，增量与全量不等价时「正在打字」与「刷新重看」会长得不一样。
 
 import (
 	"encoding/json"
@@ -14,8 +13,6 @@ import (
 
 // ---------------- 差异解析 ----------------
 
-// 差异解析是最会「悄无声息错」的一环：行号算错时界面照样渲染，
-// 只是每行的编号对不上，而用户不会知道那是算错的。
 func TestParseToolDiff(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -69,8 +66,7 @@ func TestParseToolDiff(t *testing.T) {
 			want:  []domain.DiffLineVO{},
 		},
 		{
-			// 文件头若被当成增删行，用户会看到文件头被涂成红绿两色，
-			// 而那是根本不存在的改动。
+			// 文件头若被当成增删行，用户会看到文件头被涂成红绿两色，而那是根本不存在的改动。
 			name:  "unified 文件头不当成增删行",
 			input: "--- hello.txt\n+++ hello.txt\n@@ -1,3 +1,3 @@\n line one\n-line two\n+line 2\n",
 			want: []domain.DiffLineVO{
@@ -98,8 +94,8 @@ func TestParseToolDiff(t *testing.T) {
 	}
 }
 
-// 引擎把差异放在 result.details 里，而不在 content 里。
-// 漏了这一步的表现是：界面永远看不到「引擎改了什么」。
+// 引擎把差异放在 result.details 里，而不在 content 里；历史路径传的是 details 本身，
+// 不是包着 details 的 result。两种形状都要认，否则「刷新一下差异就没了」。
 func TestExtractToolDiff(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -131,8 +127,6 @@ func TestExtractToolDiff(t *testing.T) {
 			wantDiff: false,
 		},
 		{
-			// 历史路径传的是 details 本身，不是包着 details 的 result。
-			// 两种形状都要认，否则「刷新一下差异就没了」。
 			name:     "details 本身就是差异对象",
 			result:   `{"diff":"@@ -1 +1 @@\n-a\n+b","path":"/w/e.go"}`,
 			wantDiff: true,
@@ -155,7 +149,7 @@ func TestExtractToolDiff(t *testing.T) {
 	}
 }
 
-// 工具参数里的文件路径：pi 放独立字段，omp 埋在 input 正文开头。
+// 工具参数里的文件路径：pi 放独立字段，omp 埋在 input 正文开头的 [路径#锚点] 里。
 // 认不出 omp 那种，「看改动」入口就只在 pi 上出现。
 func TestToolFilePath(t *testing.T) {
 	cases := []struct {
@@ -163,36 +157,16 @@ func TestToolFilePath(t *testing.T) {
 		args string
 		want string
 	}{
-		{
-			name: "pi 的 edit：file_path 字段",
-			args: `{"file_path":"/w/a.go","old":"a","new":"b"}`,
-			want: "/w/a.go",
-		},
-		{
-			name: "独立 path 字段优先",
-			args: `{"path":"/w/b.go","file_path":"/w/other.go"}`,
-			want: "/w/b.go",
-		},
+		{name: "pi 的 edit：file_path 字段", args: `{"file_path":"/w/a.go","old":"a","new":"b"}`, want: "/w/a.go"},
+		{name: "独立 path 字段优先", args: `{"path":"/w/b.go","file_path":"/w/other.go"}`, want: "/w/b.go"},
 		{
 			name: "omp 的 edit：路径埋在 input 开头的 [路径#锚点] 里",
 			args: `{"i":"改前缀","input":"[D:/RustFiles/wb/crates/src/ulid.rs#BD1E]\nPUT 8*:"}`,
 			want: "D:/RustFiles/wb/crates/src/ulid.rs",
 		},
-		{
-			name: "锚点缺失：整个方括号都是路径",
-			args: `{"input":"[D:/w/c.go]\nbody"}`,
-			want: "D:/w/c.go",
-		},
-		{
-			name: "input 不带路径标记",
-			args: `{"input":"plain text"}`,
-			want: "",
-		},
-		{
-			name: "空参数",
-			args: `{}`,
-			want: "",
-		},
+		{name: "锚点缺失：整个方括号都是路径", args: `{"input":"[D:/w/c.go]\nbody"}`, want: "D:/w/c.go"},
+		{name: "input 不带路径标记", args: `{"input":"plain text"}`, want: ""},
+		{name: "空参数", args: `{}`, want: ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -205,25 +179,22 @@ func TestToolFilePath(t *testing.T) {
 
 // ---------------- 协议翻译 ----------------
 
-// feed 把若干条 message_update 帧依次喂进翻译器。
 func feed(tr *Translator, raws ...string) {
 	for _, raw := range raws {
 		tr.Apply("message_update", json.RawMessage(raw))
 	}
 }
 
-// blockOrder 取一轮里各块的类型，按顺序。
-func blockOrder(t *Turn) []string {
-	out := make([]string, 0, len(t.Blocks))
-	for _, b := range t.Blocks {
+func blockOrder(t *testing.T, turn *Turn) []string {
+	t.Helper()
+	out := make([]string, 0, len(turn.Blocks))
+	for _, b := range turn.Blocks {
 		out = append(out, b.Kind)
 	}
 	return out
 }
 
-// 工具块要带上差异、文件路径与状态。
-// 差异漏了的表现是「引擎改了什么」整段消失；耗时漏了更隐蔽：
-// 0 看起来像「瞬间完成」，是个会误导人的假数字，所以引擎没给时自己量。
+// 工具块要带上差异、文件路径与状态；引擎没给耗时就自己量（0 会误导成「瞬间完成」）。
 func TestTranslateToolBlock(t *testing.T) {
 	t.Run("带上差异与文件路径", func(t *testing.T) {
 		tr := NewTranslator()
@@ -277,9 +248,7 @@ func TestTranslateToolBlock(t *testing.T) {
 	})
 }
 
-// 块的顺序必须跟引擎吐出来的一样。
-//
-// 分组会把一轮里所有工具卡顶到正文前面，顺序一丢就读不出先干了什么。
+// 块的顺序必须跟引擎吐出来的一样——分组会把一轮里所有工具卡顶到正文前面，顺序一丢就读不出先干了什么。
 func TestTranslateBlockOrder(t *testing.T) {
 	t.Run("正文与工具的相对顺序", func(t *testing.T) {
 		tr := NewTranslator()
@@ -319,7 +288,7 @@ func TestTranslateBlockOrder(t *testing.T) {
 			`{"assistantMessageEvent":{"type":"toolcall_end","contentIndex":2,"toolCall":{"id":"t1","name":"bash","arguments":{"cmd":"ls"}}}}`,
 			`{"assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"再说"}}`,
 		)
-		got := blockOrder(tr.Current())
+		got := blockOrder(t, tr.Current())
 		want := []string{BlockThinking, BlockText, BlockTool}
 		if len(got) != len(want) {
 			t.Fatalf("块数 = %d (%v)，期望 %d", len(got), got, len(want))
@@ -331,6 +300,44 @@ func TestTranslateBlockOrder(t *testing.T) {
 		}
 		if text := tr.Current().Blocks[1].Text; text != "先说再说" {
 			t.Fatalf("正文 = %q，期望两段 delta 累加", text)
+		}
+	})
+}
+
+// 实时阶段错了界面只会长时间说一个不对的状态——比如工具跑完了却一直写「正在运行 bash」。
+func TestTranslateLivePhase(t *testing.T) {
+	tr := NewTranslator()
+	tr.BeginTurn("run-1", "hi", "")
+
+	tr.Apply("message_update", json.RawMessage(`{"assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}`))
+	if phase := tr.Live().Phase; phase != PhaseThinking {
+		t.Fatalf("阶段 = %q，期望 %q", phase, PhaseThinking)
+	}
+
+	tr.Apply("message_update", json.RawMessage(`{"assistantMessageEvent":{"type":"text_start","contentIndex":1}}`))
+	if phase := tr.Live().Phase; phase != PhaseText {
+		t.Fatalf("阶段 = %q，期望 %q", phase, PhaseText)
+	}
+
+	// 工具开始：阶段转 tool 并带上工具名；这是活动条那一行字的数据源。
+	tr.Apply("tool_execution_start", json.RawMessage(`{"toolCallId":"t1","toolName":"bash","args":{"command":"ls"}}`))
+	live := tr.Live()
+	if live.Phase != PhaseTool || live.ToolName != "bash" || live.ToolCallID != "t1" {
+		t.Fatalf("工具阶段 = %+v，期望 tool/bash/t1", live)
+	}
+
+	// 工具结束：阶段与工具名都必须退回去，只清一个活动条会继续写「正在运行 bash」。
+	tr.Apply("tool_execution_end", json.RawMessage(`{"toolCallId":"t1","result":{"content":[]}}`))
+	live = tr.Live()
+	if live.Phase == PhaseTool || live.ToolName != "" || live.ToolCallID != "" {
+		t.Fatalf("工具结束后 = %+v，期望阶段与工具名都清空", live)
+	}
+
+	t.Run("输出 token 只向前走", func(t *testing.T) {
+		tr.SetOutputTokens(120)
+		tr.SetOutputTokens(80) // 引擎晚到的一帧旧值不能把读数改小
+		if n := tr.Live().OutputTokens; n != 120 {
+			t.Fatalf("输出 token = %d，期望 120", n)
 		}
 	})
 }

@@ -1,8 +1,6 @@
 package service
 
-// 健康计数的可信度：计数没读到时，界面显示 0。0 是一个断言（「有 0 个会话」）而实际是「没读到」，
-// 磁盘上可能躺着九十个会话；这种错不崩、不报错、日志是绿的，
-// 用户只会觉得「这个软件数不准」，然后不再信它说的任何一个数字。
+// 引擎进程明细与「按实例停掉」、健康计数的可信度：两者都是「不崩、不报错」那一类错。
 
 import (
 	"context"
@@ -14,10 +12,64 @@ import (
 	"OhMyPiDesktop/backend/engine"
 )
 
-// ---------------- 健康计数的可信度 ----------------
+// 引擎进程明细与「按实例停掉」都按 (kind, work_dir) 定位；只凭 kind 停会把另一个目录里正在用的那个一起停掉。
+func TestEngineRuns(t *testing.T) {
+	app := newTestApp(t)
+	restore := SetDetector(fakeDetector(nil, ""))
+	defer restore()
 
-// 计数没读到时，界面显示 0。0 是断言（「有 0 个会话」）而实际是「没读到」，磁盘上可能躺着九十个会话；
-// 这种错不崩、不报错、日志是绿的，用户只会觉得「这个软件数不准」，然后不再信它说的任何一个数字。
+	// 只取句柄不拉进程：两个目录各一个实例，两个都没在跑。
+	app.Engine.Engine(engine.KindOMP, `C:\work\a`)
+	app.Engine.Engine(engine.KindOMP, `C:\work\b`)
+
+	runs := app.engineRuns()
+	if len(runs) != 2 {
+		t.Fatalf("实例数 = %d，期望 2（同一引擎在两个目录各一个）", len(runs))
+	}
+	for _, row := range runs {
+		if row.EngineKind != string(engine.KindOMP) || row.EngineLabel != engine.KindOMP.Label() {
+			t.Errorf("行身份不对：%+v", row)
+		}
+		if row.WorkDir == "" {
+			t.Errorf("缺工作目录就看不出该停哪一个：%+v", row)
+		}
+		if row.ProcessID != 0 {
+			t.Errorf("没拉进程时 pid 应为 0，实际 %d", row.ProcessID)
+		}
+	}
+
+	t.Run("按实例停不动另一个目录", func(t *testing.T) {
+		stopped, err := app.StopEngine(engine.KindOMP, `C:\work\a`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stopped {
+			t.Fatal("应该停掉了一条")
+		}
+		if left := app.engineRuns(); len(left) != 1 || left[0].WorkDir != `C:\work\b` {
+			t.Fatalf("剩下的实例 = %+v，期望只剩 C:\\work\\b", left)
+		}
+	})
+
+	t.Run("停一个不存在的实例不算错", func(t *testing.T) {
+		stopped, err := app.StopEngine(engine.KindOMP, `C:\work\gone`)
+		if err != nil {
+			t.Fatalf("不存在的实例不该报错，实际 %v", err)
+		}
+		if stopped {
+			t.Fatal("不存在的实例不该报「停掉了」")
+		}
+	})
+
+	t.Run("缺引擎种类是入参错", func(t *testing.T) {
+		if _, err := app.StopEngine(engine.Kind("nope"), `C:\work\b`); err == nil {
+			t.Fatal("未识别的引擎种类应报错")
+		}
+	})
+}
+
+// 计数没读到时界面显示 0，而 0 是断言（「有 0 个会话」）却实际是「没读到」——磁盘上可能躺着几十个会话；
+// 这种错不崩、不报错、日志是绿的，用户只会觉得「这个软件数不准」。
 func TestHealthCountConfidence(t *testing.T) {
 	t.Run("目录不存在是「没读到」不是「0 个」", func(t *testing.T) {
 		app := newTestApp(t)
@@ -108,8 +160,7 @@ func TestHealthCountConfidence(t *testing.T) {
 		if health.TotalSessions != 5 {
 			t.Fatalf("合计应是读到的那 5 个（未知的算 0，所以它是偏小的真话），实际 %d", health.TotalSessions)
 		}
-		// Health 会顺手触发一轮后台探测（把结果落盘）。不等它跑完就退出的话，
-		// 那颗 goroutine 会在 t.TempDir() 回收之后才去写文件，清理因此失败。
+		// Health 顺手触发后台探测写盘；等它退完，否则 t.TempDir() 回收时撞上还在跑的写入。
 		app.waitDetect(t)
 	})
 }

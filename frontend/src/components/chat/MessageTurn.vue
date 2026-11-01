@@ -2,7 +2,7 @@
 // 一轮消息：角色头 + 若干块（正文 / 思考 / 工具卡）+ 轮尾读数。
 // 同一角色连续几轮只出一次头——一次回答被切成几块，读的人得自己拼。
 // 轮尾给读数（输入 / 输出 / 缓存 / 耗时）与复制、删除，答案不藏进菜单。
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import TurnBlocks from '@/components/chat/TurnBlocks.vue'
@@ -10,6 +10,7 @@ import MarkdownBlock from '@/components/chat/MarkdownBlock.vue'
 import TurnChanges from '@/components/chat/TurnChanges.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { usageFrom, type TurnUsage } from '@/composables/useMessageFlow'
+import { useTurnClock } from '@/composables/useTurnClock'
 import { useChatStore } from '@/stores/chat'
 import { useToasts } from '@/composables/useToasts'
 import type { ChatBlock, EngineKind, HistoryTurn } from '@/types/api'
@@ -66,7 +67,7 @@ const toasts = useToasts()
 const isUser = computed(() => props.role === 'user')
 
 /**
- * 直播脚标：轮尾一行「正在回答 … 12s」。
+ * 直播脚标：轮尾一行「正在回答 · 12s」。
  *
  * 流式的增量是一阵一阵到的——两阵之间界面纹丝不动，
  * 用户分不清「在执行」还是「卡住了」。脚标常驻在正文下面，
@@ -74,36 +75,28 @@ const isUser = computed(() => props.role === 'user')
  */
 const liveActive = computed(() => Boolean(props.live) && Boolean(props.streaming))
 
-const now = ref(Date.now())
-let clock: ReturnType<typeof setInterval> | undefined
-
-watch(
-  liveActive,
-  (on) => {
-    if (on) {
-      now.value = Date.now()
-      if (clock === undefined) clock = setInterval(() => (now.value = Date.now()), 1000)
-    } else if (clock !== undefined) {
-      clearInterval(clock)
-      clock = undefined
-    }
-  },
-  { immediate: true },
+// 秒表与活动条共用同一份实现与同一个起点：两处显示的时间必须一致。
+const { label: liveElapsed } = useTurnClock(
+  () => liveActive.value,
+  () => props.startedAt ?? 0,
 )
 
-onBeforeUnmount(() => {
-  if (clock !== undefined) clearInterval(clock)
+/**
+ * 脚标上写什么。
+ *
+ * 优先级：扩展设的状态文字 > 实时阶段 > 一句兜底。
+ * 扩展的文字更具体（它会说「正在跑测试」），而阶段是引擎自己的事实，不依赖任何扩展。
+ */
+const liveLabel = computed(() => {
+  if (chat.statusText) return chat.statusText
+  const live = chat.live
+  if (live.phase === 'tool' && live.tool_name) return t('chat.liveTool', { name: live.tool_name })
+  if (live.phase === 'thinking') return t('chat.thinkingLive')
+  return t('chat.liveAnswering')
 })
 
-/** 秒表：60 秒内显示纯秒，过了就带分。 */
-const liveElapsed = computed(() => {
-  if (!props.startedAt) return ''
-  const s = Math.max(0, Math.floor((now.value - props.startedAt) / 1000))
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
-})
-
-/** 已经吐出的输出 token：用量帧是累计值，到一笔就涨一笔。 */
-const liveOut = computed(() => props.usage?.output ?? 0)
+/** 已经吐出的输出 token：实时读数优先，它比用量帧更早到。 */
+const liveOut = computed(() => chat.live.output_tokens || props.usage?.output || 0)
 
 /** 引擎报的生成速度：给就显示，不给不占位。 */
 const liveSpeed = computed(() => {
@@ -264,7 +257,7 @@ function fmtMs(ms: number): string {
            两阵之间就让这一行替流「证明自己还活着」。 -->
       <div v-if="liveActive" class="live-foot">
         <span class="live-dot" />
-        <span class="live-label">{{ chat.statusText || t('chat.liveAnswering') }}</span>
+        <span class="live-label">{{ liveLabel }}</span>
         <span class="live-read">
           <span v-if="liveSpeed">{{ liveSpeed }}</span>
           <span v-if="liveOut">↑ {{ fmtCount(liveOut) }}</span>

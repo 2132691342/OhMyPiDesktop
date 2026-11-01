@@ -1,8 +1,6 @@
 package engine
 
-// 引擎抽象层只测会悄无声息出错的地方：判种、渠道判定、能力表、分片重组。
-// 同一主题合成一条表驱动：五条散落的用例要改五处、跑起来也慢；一条只改一处。
-// 不测「能不能解一个 JSON」「函数有没有被调用」这类不会错的东西。
+// 引擎抽象层只测会悄无声声出错的地方：判种、渠道判定、能力表、分片重组。同一主题合成一条表驱动。
 
 import (
 	"context"
@@ -24,7 +22,7 @@ func (f fakeDialect) Consume(*Engine, Frame) bool            { return false }
 
 // ---------------- 判种 / 渠道 / 能力 ----------------
 
-// 判种是一串条件分支，只在 matchKind 里就没法直接测（每次验证都要真起一个进程）。
+// 判种是一串条件分支，只在 matchKind 里没法直接测（每次验证都要真起一个进程）。
 // 判错的代价是把两个引擎认反：界面对着一个引擎发另一个引擎的命令，引擎静默不认。
 func TestMatchKind(t *testing.T) {
 	const helpOMP = "omp v18.13.1\n\nUSAGE\n  $ omp [COMMAND]\n\nCOMMANDS\n  acp\n  auth\n"
@@ -51,9 +49,8 @@ func TestMatchKind(t *testing.T) {
 	}
 }
 
-// 渠道事实一条钉全：判错的后果很具体——判成 npm 会给出一条错误的卸载命令，
-// 判不出来才会只给手动路径。渠道判定、卸载命令与能力位的一致性、插件子命令
-// 的拼装都在这一条里，因为它们同属「发出去的命令对不对」。
+// 渠道事实一条钉全：判错的后果很具体——判成 npm 会给出一条错误的卸载命令，判不出来才会只给手动路径。
+// 渠道判定、卸载命令与能力位的一致性、插件子命令的拼装都在这一条里，因为它们同属「发出去的命令对不对」。
 func TestChannelFacts(t *testing.T) {
 	t.Run("渠道判定", func(t *testing.T) {
 		home := `C:\Users\me`
@@ -75,7 +72,7 @@ func TestChannelFacts(t *testing.T) {
 			}
 		}
 
-		// 同级 node_modules 的 shim 只看路径段会判成未知，必须靠同级目录识别。
+		// 同级 node_modules 的 shim 只看路径段会判成未知，必须靠同级目录识别；
 		// 这是 npm / pnpm 全局安装最常见的形态，判错就等于没有卸载按钮。
 		root := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent"), 0o755); err != nil {
@@ -137,8 +134,7 @@ func TestChannelFacts(t *testing.T) {
 	})
 }
 
-// Caps 是按钮是否出现的唯一依据：改错一个位，就等于给用户开一个点不动的入口。
-// 每一项都钉死，改能力时必须同时改这张表。
+// Caps 是按钮是否出现的唯一依据：改错一个位，就等于给用户开一个点不动的入口。每一项都钉死。
 func TestCapsMatchCommands(t *testing.T) {
 	want := map[Kind]Caps{
 		KindOMP: {
@@ -159,7 +155,6 @@ func TestCapsMatchCommands(t *testing.T) {
 
 // ---------------- 分片重组 ----------------
 
-// chunkFrame 造一片分片帧。
 func chunkFrame(t *testing.T, chunkID string, index, count int, payload string, totalLen int) []byte {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{
@@ -172,7 +167,6 @@ func chunkFrame(t *testing.T, chunkID string, index, count int, payload string, 
 	return raw
 }
 
-// newTestProc 造一个只用于分片重组的进程壳。
 func newTestProc() *Proc { return &Proc{opts: Options{Dialect: fakeDialect{}}} }
 
 // 分片重组：乱序 / 重复 / 换 id / 长度不符 / base64 非法整段丢弃，坏序列之后要能重新开始。

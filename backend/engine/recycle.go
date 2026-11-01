@@ -33,6 +33,24 @@ func (s *Supervisor) Stats() (live int, max int) {
 	return len(s.engines), maxEngines
 }
 
+// StopOne 停掉某一个 (Kind, WorkDir) 的实例并把它从实例表里摘除。
+// 界面上「实例」那一行列的是这两个键，所以停止也必须按它们定位——
+// 按 kind 停会把用户在别的目录里正用着的那个一起停掉。
+func (s *Supervisor) StopOne(kind Kind, workDir string) bool {
+	k := key(kind, workDir)
+	s.mu.Lock()
+	e, ok := s.engines[k]
+	if ok {
+		delete(s.engines, k)
+	}
+	s.mu.Unlock()
+	if !ok {
+		return false
+	}
+	e.Stop()
+	return true
+}
+
 // Sweep 回收空闲引擎与超出上限的引擎，返回被回收的数量。两条规则，都只碰「能安全停掉的」：
 // 空闲超过 idleTTL 且没有进程在跑、也不在忙；总数超过 maxEngines 时按最久未用淘汰到上限为止。
 // 正在流式回答（Busy）的引擎永不回收——回收它等于把用户正在看的那轮打断。

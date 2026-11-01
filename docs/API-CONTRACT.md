@@ -96,6 +96,7 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 | GET | `/engines` | 引擎状态：每个引擎的 `kind / exe / version / source / channel / caps / installed / layout`，加上在跑的进程 `running[]` |
 | POST | `/engines/detect` | 重新探测（忽略一分钟缓存），返回同 `/engines` |
 | POST | `/engines/restart` | 重启 `{engine?}`；省略则重启全部 |
+| POST | `/engines/stop` | 停一个存活实例 `{engine, work_dir}`；工作目录必填，只给引擎名会停错目录那个 |
 
 ### 应用（装 / 升级 / 卸载）
 
@@ -306,7 +307,8 @@ r.Use(s.guard())   // 回环 / 令牌 / 方法白名单
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/health/engines` | 两个引擎的健康快照：探测结果（版本 / 渠道 / 最新版）+ 进程事实（pid / 协议 / 启动时刻 / 命令数 / 最近错误）+ 落盘计数（会话 / 技能 / 插件 / MCP）+ 配置现状 |
+| GET | `/health/engines` | 两个引擎的健康快照：探测结果（版本 / 渠道 / 最新版）+ 进程事实（pid / 协议 / 启动时刻 / 命令数 / 最近错误）+ 落盘计数（会话 / 技能 / 插件 / MCP）+ 配置现状 + `engine_runs`（每个存活实例的明细：引擎、工作目录、PID、协议、启动时刻、命令数、最近错误、忙闲） |
+| POST | `/engines/stop` | `{engine, work_dir}` 停一个存活实例。工作目录必填：同一个引擎在多个目录各有一个进程，只给引擎名会停错那个。返回 `{stopped}`；`false` 表示那一刻它已经自己退出了 |
 
 ### 工作区（文件与 Git）
 
@@ -409,7 +411,8 @@ GET /events?since=41
 | 事件 | 载荷要点 |
 |---|---|
 | `stream:open` | `seq`：当前序号 |
-| `chat:start` | `run_id` / `kind` / `work_dir` / `session_id` / `user_message` |
+| `chat:start` | `run_id` / `kind` / `work_dir` / `session_id` / `user_message` / `started_at`（引擎受理时刻） |
+| `chat:live` | 这一轮的实时读数：`{run_id, phase, tool_name, tool_call_id, output_tokens}`。`phase` = `thinking｜text｜tool`，空串表示还没报过。只在读数真的变了时发——它跟着每一次可见变化一起算，不去重帧数会翻倍 |
 | `chat:turn` | 整轮骨架 `{run_id, user_message, blocks, model}` |
 | `chat:patch` | **增量**：`{run_id, mode, index, kind}`，`mode=delta` 带 `delta`，`mode=block` 带 `block` |
 | `chat:blocks` | 整表替换（换助手消息时） |
@@ -493,7 +496,7 @@ pi 给的是标准 unified diff（`details.patch`）与一份自己的编号差�
 `backend/server.ContractVersion` 与 `frontend/src/types/api.ts` 手工对齐；
 改响应字段形态必须同时 +1。
 
-当前：`15`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
+当前：`16`。响应字段的**形态**变化（增删字段、改名、变类型）必须同时 +1；
 只增可选字段不需要。
 
 新增端点本身不需要升版本（前端没调它就不受影响）；

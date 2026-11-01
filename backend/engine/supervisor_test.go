@@ -1,17 +1,13 @@
 package engine
 
 // 实例回收：实例数有界、忙引擎不被回收、并发同键同实例、停止清空、退出收尾。
-// 这一层错了的两种表现都很安静：实例无限增长（每个占着一个子进程与一份内存），
-// 或者正在回答的那一轮被回收掉（用户看到的是回答突然断了）。
+// 实例无限增长（每个占着一个子进程与一份内存），或者正在回答的那一轮被回收掉（回答突然断了）。
 
 import (
 	"testing"
 	"time"
 )
 
-// ---------------- 实例回收 ----------------
-
-// newTestSupervisor 建一个不带事件出口的监督者。
 func newTestSupervisor() *Supervisor {
 	return NewSupervisor(
 		func(string, string, any) {},
@@ -21,14 +17,12 @@ func newTestSupervisor() *Supervisor {
 	)
 }
 
-// newTestSupervisorWith 建一个能收事件的监督者：事件出口在装配完成后才注入。
 func newTestSupervisorWith(emit Emitter) *Supervisor {
 	s := newTestSupervisor()
 	s.SetEmitter(emit)
 	return s
 }
 
-// tempDir 造一个互不相同的工作目录（进程键的一部分）。
 func tempDir(i int) string { return "/tmp/probe-" + string(rune('a'+i)) }
 
 func countEngines(s *Supervisor) int {
@@ -37,7 +31,6 @@ func countEngines(s *Supervisor) int {
 	return len(s.engines)
 }
 
-// backdate 把所有实例的最后使用时间往前推，模拟空闲。
 func backdate(s *Supervisor, d time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -50,8 +43,6 @@ func backdate(s *Supervisor, d time.Duration) {
 }
 
 // 实例数必须有界，且正在回答的引擎绝不能被回收。
-// 回收掉正在回答的引擎会打断用户正在看的那一轮；不回收则实例无限增长，
-// 每个进程都占着一个子进程与一份内存。
 func TestSupervisorRecyclesEngines(t *testing.T) {
 	t.Run("反复取不同键时实例数有界", func(t *testing.T) {
 		s := newTestSupervisor()
@@ -153,8 +144,7 @@ func TestShutdownIdempotent(t *testing.T) {
 	s.Shutdown()
 }
 
-// 进程退出时的收尾：正在回答的那一轮要自己发 done 与 error；
-// 空闲时退出则不该发——否则界面白白收掉一轮不存在的话。
+// 进程退出时的收尾：正在回答的那一轮要自己发 done 与 error；空闲时退出则不该发——否则界面白白收掉一轮不存在的话。
 func TestEngineExitFinishesTurn(t *testing.T) {
 	t.Run("死掉的引擎收尾那一轮", func(t *testing.T) {
 		events := make(chan [2]any, 8)
@@ -166,8 +156,6 @@ func TestEngineExitFinishesTurn(t *testing.T) {
 		e := s.Engine(KindOMP, tempDir(2))
 		runID, _, _, _ := e.beginRun()
 		e.tr.BeginTurn(runID, "在吗", "omp/x")
-
-		// 模拟进程死亡：OnExit 的那条路径。
 		e.AbortRun("引擎进程意外退出")
 
 		var sawDone, sawError bool

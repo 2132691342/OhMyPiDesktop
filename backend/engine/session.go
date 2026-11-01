@@ -205,11 +205,17 @@ func (e *Engine) Prompt(ctx context.Context, payload PromptPayload) (string, err
 	}
 	turn := e.tr.BeginTurn(runID, payload.Message, model)
 
+	// started_at 让界面的秒表能对齐引擎真正受理的那一刻（前端自己也起一个表，
+	// 两者之差就是「引擎冷启动花了多久」，用户看得见）。
 	e.send("", "chat:start", map[string]any{
 		"run_id": runID, "kind": kind, "work_dir": dir, "session_id": sessionID,
 		"user_message": payload.Message, "image_count": len(payload.Images),
+		"started_at": time.Now().UnixMilli(),
 	})
 	e.send("", "chat:turn", turn)
+	// 开局先报一次空读数：界面的活动条从「引擎已受理」这一刻开始跑，
+	// 而不是从第一个 token 到达开始——中间的冷启动与预填最长可达十几秒。
+	e.emitLive(runID)
 
 	if err := p.Call(ctx, "prompt", payload, nil, 120*time.Second); err != nil {
 		e.mu.Lock()

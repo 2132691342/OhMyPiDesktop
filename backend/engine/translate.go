@@ -77,7 +77,30 @@ type Translator struct {
 	// 自己算的理由：pi 在帧顶层给 durationMs，omp 没有任何现成字段可读，
 	// 而界面上「这个工具跑了多久」对两个引擎都得有。
 	toolStart map[string]time.Time
+	// live 是这一轮的实时读数（阶段 / 正在跑的工具 / 输出 token）。
+	// 它不是「界面用不用」的问题：流式的增量一阵一阵到，两阵之间界面纹丝不动，
+	// 用户分不清「在执行」与「卡住了」——这份读数就是那条证据。
+	live LiveState
 }
+
+// LiveState 是一轮进行中的实时读数。零值表示「还没开始」。
+type LiveState struct {
+	// Phase 当前阶段：thinking / text / tool
+	Phase string
+	// ToolName 正在跑的工具名；不在跑工具时为空
+	ToolName string
+	// ToolCallID 正在跑的工具 id；用来判断「换了一个工具」
+	ToolCallID string
+	// OutputTokens 到目前为止的输出 token（引擎每帧报的是累计值）
+	OutputTokens int
+}
+
+// Phase 名：与前端活动条的映射一一对应。
+const (
+	PhaseThinking = "thinking"
+	PhaseText     = "text"
+	PhaseTool     = "tool"
+)
 
 // NewTranslator 构造翻译器。
 func NewTranslator() *Translator {
@@ -96,6 +119,7 @@ func (t *Translator) BeginTurn(runID, userMessage, model string) *Turn {
 	t.toolIdx = map[int]int{}
 	t.toolByID = map[string]int{}
 	t.toolStart = map[string]time.Time{}
+	t.live = LiveState{}
 	t.curMsgID = ""
 	return t.snapshotLocked()
 }
@@ -110,6 +134,7 @@ func (t *Translator) Reset() {
 	t.toolIdx = map[int]int{}
 	t.toolByID = map[string]int{}
 	t.toolStart = map[string]time.Time{}
+	t.live = LiveState{}
 	t.curMsgID = ""
 }
 
@@ -195,8 +220,10 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 		}
 		switch f.Event.Type {
 		case "text_start":
+			t.live.Phase = PhaseText
 			return t.addBlock(&t.textIdx, f.Event.ContentIndex, Block{Kind: BlockText, Streaming: true})
 		case "text_delta":
+			t.live.Phase = PhaseText
 			return t.appendDelta(&t.textIdx, f.Event.ContentIndex, BlockText, f.Event.Delta)
 		case "text_end":
 			if idx, ok := t.textIdx[f.Event.ContentIndex]; ok {
@@ -208,8 +235,10 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 			}
 			return nil
 		case "thinking_start":
+			t.live.Phase = PhaseThinking
 			return t.addBlock(&t.thinkIdx, f.Event.ContentIndex, Block{Kind: BlockThinking, Streaming: true})
 		case "thinking_delta":
+			t.live.Phase = PhaseThinking
 			return t.appendDelta(&t.thinkIdx, f.Event.ContentIndex, BlockThinking, f.Event.Delta)
 		case "thinking_end":
 			if idx, ok := t.thinkIdx[f.Event.ContentIndex]; ok {
@@ -221,6 +250,7 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 			}
 			return nil
 		case "toolcall_start":
+			t.live.Phase = PhaseTool
 			return t.addBlock(&t.toolIdx, f.Event.ContentIndex, Block{Kind: BlockTool, Status: "pending"})
 		case "toolcall_end":
 			if f.Event.ToolCall == nil || f.Event.ToolCall.ID == "" {
@@ -268,6 +298,9 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 			t.turn.Blocks[idx].Intent = f.Intent
 		}
 		t.turn.Blocks[idx].Status = "running"
+		t.live.Phase = PhaseTool
+		t.live.ToolName = t.turn.Blocks[idx].ToolName
+		t.live.ToolCallID = f.ToolCallID
 		// 记下开始的时刻：omp 结束帧里没有任何耗时字段，只能自己量。
 		// 有引擎给的 startedAt 就用它（更准，跨进程时钟一致）。
 		start := time.Now()
@@ -332,6 +365,13 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 			}
 		}
 		delete(t.toolStart, f.ToolCallID)
+		// 工具结束不等于这一轮结束：下一帧可能是下一个工具、也可能是一段正文。
+		// 阶段先退回「正在写」，下一帧自己会把它改成具体值。
+		if t.live.ToolCallID == f.ToolCallID {
+			t.live.Phase = PhaseText
+			t.live.ToolName = ""
+			t.live.ToolCallID = ""
+		}
 		// 差异在 result.details 里，不在 content 里：content 是给模型看的一句人话（"Successfully replaced 3 blocks"），
 		// 真正的改动在 details.diff / details.patch；漏掉这一步，界面上就永远看不到「引擎改了什么」。
 		diffText, filePath := ExtractToolDiff(f.Result)
@@ -365,6 +405,23 @@ func (t *Translator) Apply(typeName string, raw json.RawMessage) *Update {
 		return nil
 	}
 	return nil
+}
+
+// Live 返回这一轮的实时读数副本。
+func (t *Translator) Live() LiveState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.live
+}
+
+// SetOutputTokens 更新已吐出的输出 token。
+// 引擎每帧报的是「到目前」的累计值，所以这里只覆盖不累加。
+func (t *Translator) SetOutputTokens(n int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if n > t.live.OutputTokens {
+		t.live.OutputTokens = n
+	}
 }
 
 // ToolDelta 把「工具执行的流式文本」写成工具块的输出（两个引擎的私有帧都归到这里）。

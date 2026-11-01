@@ -143,7 +143,29 @@ export function routeFrame(
     case 'chat:start':
       chat.streaming = true
       chat.promptError = ''
+      chat.runError = ''
+      // 引擎真正受理的那一刻：慢机冷启动时「点了发送 → 首字到达」能差十几秒，
+      // 秒表从这一刻起跑才是「引擎在干活」而非「我在等引擎启动」。
+      if (asNumber(data.started_at)) chat.setRunStart(asNumber(data.started_at))
+      chat.resetLive()
       return
+    case 'chat:live': {
+      const runID = asString(data.run_id)
+      // 属于另一轮的读数丢掉：两个工作目录共一条 SSE，切过去之后
+      // 旧实例的读数跳进来会让活动条说一个不属于当前会话的工具名。
+      if (runID && chat.turn && runID !== chat.turn.run_id) return
+      const phase = asString(data.phase)
+      chat.live = {
+        run_id: runID,
+        phase: phase === 'thinking' || phase === 'text' || phase === 'tool' ? phase : '',
+        tool_name: asString(data.tool_name),
+        tool_call_id: asString(data.tool_call_id),
+        output_tokens: asNumber(data.output_tokens),
+      }
+      // 每一帧读数就是一次「引擎还在动」的证据：活动条靠它判断安静了多久。
+      chat.lastActivityAt = Date.now()
+      return
+    }
     case 'chat:turn': {
       const runID = asString(data.run_id)
       const blocks = readBlocks(data.blocks)
@@ -164,11 +186,13 @@ export function routeFrame(
     case 'chat:patch': {
       const patch = readPatch(data)
       if (patch) chat.applyPatch(patch)
+      chat.lastActivityAt = Date.now()
       return
     }
     case 'chat:blocks': {
       if (chat.turn && asString(data.run_id) === chat.turn.run_id) {
         chat.turn.blocks = readBlocks(data.blocks)
+        chat.lastActivityAt = Date.now()
       }
       return
     }
@@ -223,15 +247,21 @@ export function routeFrame(
     case 'chat:prompt_result': {
       const status = asString(data.status)
       if (status && status !== 'completed') {
-        chat.promptError = asString(data.message, '这一轮没有完成')
+        chat.runError = asString(data.message, '这一轮没有完成')
+        chat.promptError = chat.runError
       }
       return
     }
-    case 'chat:error':
-      chat.promptError = asString(data.message, '出错了')
+    case 'chat:error': {
+      // 这一轮没完成，但它已经结束了——必须同时解除 streaming，
+      // 否则活动条会停在「运行中」而没有任何东西在跑（引擎进程死了就是这条路）。
+      const message = asString(data.message, '出错了')
+      chat.runError = message
+      chat.promptError = message
       chat.streaming = false
-      deps.toast('error', chat.promptError)
+      deps.toast('error', message)
       return
+    }
     case 'chat:open_url': {
       // 优先用 launchUrl（短回环重定向），它比原始长地址更可能在默认浏览器里打开。
       const url = asString(data.launch_url) || asString(data.url)

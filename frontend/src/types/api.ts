@@ -156,6 +156,34 @@ export interface EngineHealth {
   caps: Record<string, boolean>
 }
 
+/**
+ * 一个存活的引擎进程。
+ *
+ * 键是「引擎种类 + 工作目录」：同一个引擎可能在多个目录各有一个进程，
+ * 所以停一个必须两个字段都给——只给 kind 会停错那个。
+ */
+export interface EngineRun {
+  engine_kind: EngineKind
+  engine_label: string
+  work_dir: string
+  process_id: number
+  protocol_version: number
+  started_at: number
+  call_count: number
+  last_error?: string
+  busy: boolean
+  session_id: string
+}
+
+/** 一轮进行中的实时读数。`phase` 为空串表示引擎还没报过。 */
+export interface ChatLive {
+  run_id: string
+  phase: '' | 'thinking' | 'text' | 'tool'
+  tool_name: string
+  tool_call_id: string
+  output_tokens: number
+}
+
 /** 两个引擎的健康快照 + 全局计数。概览页首屏用。 */
 export interface HealthData {
   engines: EngineHealth[]
@@ -180,6 +208,8 @@ export interface HealthData {
   live_engines: number
   /** 实例数上限 */
   max_engines: number
+  /** 存活实例的明细：哪个引擎、在哪个目录、PID、跑了多久、忙不忙 */
+  engine_runs: EngineRun[]
 }
 
 export interface Bootstrap {

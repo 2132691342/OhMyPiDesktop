@@ -40,20 +40,28 @@ const continuedFlags = computed<boolean[]>(() =>
  * 直播的用户那句要不要画。
  *
  * 服务器历史里已经有这句了就不画——否则用户会看到自己刚发的话出现两次。
+ *
+ * 只看「最后一行是不是这句用户消息」：它不需要扫内容，
+ * 所以可以跟着每一个 delta 重算而几乎不花代价。
  */
 const liveUserVisible = computed(() => {
   if (!props.live) return false
-  return turnPresence(props.turns, props.live.userMessage, props.live.blocks) !== 1
+  const tail = props.turns.at(-1)
+  if (!tail) return true
+  return !(tail.role === 'user' && (tail.blocks?.[0]?.text ?? '') === props.live.userMessage)
 })
 
 /**
  * 直播的助手回复要不要画。
  *
- * 整轮已经在服务器历史里 → 不画。
- * 只有用户那句在 → 要画（助手回复还在流）。
+ * 整轮已经在服务器历史里 → 不画。而「整轮是不是已经在历史里」需要逐块比对，
+ * 代价与历史长度成正比——**只在流停了之后才算**：
+ * 流式期间历史不可能已经收下正在长的那一轮，拿每一个 delta 去扫一遍历史
+ * 只会把主线程拖成「一段一段地跳」。
  */
 const liveAssistantVisible = computed(() => {
   if (!props.live) return false
+  if (props.live.streaming) return true
   return turnPresence(props.turns, props.live.userMessage, props.live.blocks) !== 2
 })
 

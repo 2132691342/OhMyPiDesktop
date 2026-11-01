@@ -3,6 +3,7 @@
 // 上层只需要 try/catch，不用每次判断 code。
 import axios, { type AxiosInstance } from 'axios'
 import { getEndpoint } from './wails'
+import { recordFailure } from '@/utils/diag'
 import type {
   AgentRow,
   AppPrefs,
@@ -71,7 +72,10 @@ export async function ensureClient(): Promise<AxiosInstance> {
     (res) => {
       const body = res.data as { code?: string; message?: string; detail?: string; data?: unknown }
       if (body && typeof body.code === 'string' && body.code !== '0') {
-        throw new ApiError(body.code, body.message || '请求失败', body.detail)
+        const err = new ApiError(body.code, body.message || '请求失败', body.detail)
+        // 记一条失败现场：错误码的「下一步」写在文档里，而用户面对的是一条已经消失的提示。
+        recordFailure(err.code, err.message, err.detail ?? '', where(res.config.method, res.config.url))
+        throw err
       }
       return res
     },
@@ -79,10 +83,18 @@ export async function ensureClient(): Promise<AxiosInstance> {
       // 连不上后端是网络问题（8003），不是「缺包管理器」——
       // 同一个码两种意思会让界面没法分流。
       const message = err?.code === 'ECONNABORTED' ? '后端响应超时' : (err?.message ?? '连不上后端')
+      recordFailure('8003', message, String(err?.stack ?? ''), where(err?.config?.method, err?.config?.url))
       throw new ApiError('8003', message)
     },
   )
   return client
+}
+
+/** 拼一个「方法 + 路径」的定位串；axios 的 config 可能缺大半，所以每一段都兜底。 */
+function where(method: unknown, url: unknown): string {
+  const m = typeof method === 'string' ? method.toUpperCase() : ''
+  const u = typeof url === 'string' ? url : ''
+  return [m, u].filter(Boolean).join(' ') || 'unknown'
 }
 
 /** SSE 需要自己拼地址与令牌：EventSource 不带自定义头，令牌走查询参数。 */
@@ -132,6 +144,9 @@ export const api = {
   engineStatus: () => get<EngineStatus>('/engines'),
   detectEngines: () => post<EngineStatus>('/engines/detect'),
   restartEngines: (engine?: EngineKind) => post<{ ok: boolean }>('/engines/restart', k(engine)),
+  // 停一个存活实例：入参必须带工作目录，只给引擎名会停错目录里那个
+  stopEngine: (engine: EngineKind, workDir: string) =>
+    post<{ stopped: boolean }>('/engines/stop', { engine, work_dir: workDir }),
   // 引擎健康度：概览页一屏要用的全部事实
   health: () => get<HealthData>('/health/engines'),
 

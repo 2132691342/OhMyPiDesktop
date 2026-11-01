@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"OhMyPiDesktop/backend/pkg"
 )
@@ -113,8 +114,33 @@ func (e *Engine) onTurnEnd(f Frame, runID string) {
 	payload := map[string]any{"run_id": runID}
 	if head.Message.Usage != nil {
 		payload["usage"] = head.Message.Usage
+		e.tr.SetOutputTokens(head.Message.Usage.Output)
 	}
+	e.emitLive(runID)
 	e.send("", "chat:turn_end", payload)
+}
+
+// emitLive 把这一轮的实时读数推给界面：阶段 + 正在跑的工具 + 输出 token。
+// 它跟着每一条可见变化一起调，但只在读数真的变了时才发——
+// 流式时每一帧 delta 都调一次，不去重的话帧数直接翻倍，而读数的变化率远低于 delta。
+func (e *Engine) emitLive(runID string) {
+	if runID == "" {
+		return
+	}
+	live := e.tr.Live()
+	// run_id 进签名：新的一轮即使读数与上一轮一模一样，也必须重新报一次。
+	sig := fmt.Sprintf("%s|%s|%s|%s|%d", runID, live.Phase, live.ToolName, live.ToolCallID, live.OutputTokens)
+	e.mu.Lock()
+	if e.lastLive == sig {
+		e.mu.Unlock()
+		return
+	}
+	e.lastLive = sig
+	e.mu.Unlock()
+	e.send("", "chat:live", map[string]any{
+		"run_id": runID, "phase": live.Phase, "tool_name": live.ToolName,
+		"tool_call_id": live.ToolCallID, "output_tokens": live.OutputTokens,
+	})
 }
 
 // onRetryStart 报告自动重试：用户要看见「卡了一下」而不是一个转圈。
@@ -164,6 +190,7 @@ func (e *Engine) pushUpdate(up *Update) {
 		payload["blocks"] = up.Blocks
 		e.send("", "chat:blocks", payload)
 	}
+	e.emitLive(turn.RunID)
 }
 
 // SetQueue 广播排队快照。

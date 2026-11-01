@@ -7,12 +7,13 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppIcon from '@/components/common/AppIcon.vue'
 import EngineHealthCard from '@/components/overview/EngineHealthCard.vue'
+import EngineProcesses from '@/components/overview/EngineProcesses.vue'
 import RecentSessions from '@/components/overview/RecentSessions.vue'
 import UsageCharts from '@/components/overview/UsageCharts.vue'
 import { api } from '@/api/http'
 import { useAppStore } from '@/stores/app'
 import { useToasts } from '@/composables/useToasts'
-import type { HealthData, SessionRow } from '@/types/api'
+import type { EngineRun, HealthData, SessionRow } from '@/types/api'
 
 const { t } = useI18n()
 const app = useAppStore()
@@ -23,6 +24,8 @@ const health = ref<HealthData | null>(null)
 const loading = ref(false)
 const span = ref<'today' | 'week' | 'month'>('week')
 const rows = ref<SessionRow[]>([])
+// 正在停的那个实例（`kind|work_dir`）。行的 loading 靠它
+const stoppingRun = ref('')
 
 const engines = computed(() => health.value?.engines ?? [])
 const recent = computed(() => rows.value.slice(0, 6))
@@ -99,6 +102,29 @@ async function openSession(path: string) {
     await router.push({ name: 'chat', query: { session: path } })
   } catch (err) {
     toasts.push('error', err instanceof Error ? err.message : String(err))
+  }
+}
+
+/**
+ * 停一个引擎进程。
+ *
+ * 停的是一个进程，不是引擎：会话、配置、凭据一个字不动，
+ * 下一句话会按时重新拉起一个。所以不需要二次确认。
+ */
+async function stopEngine(run: EngineRun): Promise<void> {
+  const key = `${run.engine_kind}|${run.work_dir}`
+  stoppingRun.value = key
+  try {
+    const res = await api.stopEngine(run.engine_kind, run.work_dir)
+    if (!res.stopped) {
+      // 已经自己退出了：不是错误，但要说一句，否则用户会以为按钮失灵。
+      toasts.push('info', t('overview.processGone'))
+    }
+    await load()
+  } catch (err) {
+    toasts.push('error', err instanceof Error ? err.message : String(err))
+  } finally {
+    stoppingRun.value = ''
   }
 }
 
@@ -214,6 +240,16 @@ onMounted(() => void load())
       </section>
 
       <UsageCharts :span="span" :rows="rows" />
+
+      <!-- 引擎进程：切目录会新建进程，不解释的话用户只看到「机器变卡」 -->
+      <EngineProcesses
+        :runs="health?.engine_runs ?? []"
+        :max-engines="health?.max_engines ?? 0"
+        :stopping="stoppingRun"
+        :ready="ready"
+        @stop="stopEngine"
+        @refresh="load"
+      />
 
       <!-- 最近会话 -->
       <RecentSessions

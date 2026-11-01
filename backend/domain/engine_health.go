@@ -123,4 +123,33 @@ type HealthVO struct {
 	LiveEngines int `json:"live_engines"`
 	// MaxEngines 实例数上限；达到后按最久未用淘汰
 	MaxEngines int `json:"max_engines"`
+	// EngineRuns 当前存活的每一个引擎进程（键是「引擎种类 + 工作目录」）。
+	// 与上面的 LiveEngines 是不是同一个事实：那个是计数，这里是明细——
+	// 用户问的「到底起了几个进程、在哪个目录、跑多久了」只有明细能回答。
+	EngineRuns []EngineRunVO `json:"engine_runs"`
+}
+
+// EngineRunVO 是一个存活的引擎进程。
+// 界面靠它做两件事：看见「现在到底起了几个进程」，以及停掉一个不用的。
+type EngineRunVO struct {
+	// EngineKind 引擎种类（omp / pi）
+	EngineKind string `json:"engine_kind"`
+	// EngineLabel 给人看的引擎名
+	EngineLabel string `json:"engine_label"`
+	// WorkDir 这个进程的工作目录；它是进程键的一半
+	WorkDir string `json:"work_dir"`
+	// ProcessID 进程号；进程已退出时为 0
+	ProcessID int `json:"process_id"`
+	// ProtocolVersion 生效的协议版本；0 表示还没握手完
+	ProtocolVersion int `json:"protocol_version"`
+	// StartedAt 进程拉起时刻（Unix 毫秒）
+	StartedAt int64 `json:"started_at"`
+	// CallCount 这个进程处理过的命令数
+	CallCount int64 `json:"call_count"`
+	// LastError 最近一次命令失败的原文；没失败过为空
+	LastError string `json:"last_error,omitempty"`
+	// Busy 正在流式回答
+	Busy bool `json:"busy"`
+	// SessionID 正绑着的会话 id
+	SessionID string `json:"session_id"`
 }
